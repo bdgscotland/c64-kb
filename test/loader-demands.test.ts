@@ -38,6 +38,9 @@ describe("serial_bus_exclusive", () => {
         "krill_loader_integration:serial_bus_exclusive",
         "sparkle_irq_loader:serial_bus_exclusive",
         "sparkle_irq_loader:kernal_rom_out",
+        "bitfire_loader:serial_bus_exclusive",
+        "bitfire_loader:kernal_rom_out",
+        "in_game_level_streaming:serial_bus_exclusive",
         "fastloader_2bit_protocol:serial_bus_exclusive",
       ]);
       expect(warn.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("demands unknown"))).toEqual(

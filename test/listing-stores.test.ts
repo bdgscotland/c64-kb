@@ -159,6 +159,8 @@ describe("listing scan over the real recipe pages", () => {
       if (scanRecipePage(readFileSync(f, "utf8"), p, techniques).length > 0) warned.add(p);
     }
     expect([...warned].sort()).toEqual([
+      "recipes/kickassembler/bitfire-dd00-bank.md",
+      "recipes/kickassembler/bitfire-level-stream.md",
       "recipes/kickassembler/crt-banked.md",
       "recipes/kickassembler/easyflash-save.md",
       "recipes/kickassembler/sparkle-dd02-bank.md",

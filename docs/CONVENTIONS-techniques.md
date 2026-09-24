@@ -97,16 +97,20 @@ such pair, against the fli-image, sideborder-open, dysp and tech-tech
 recipes that run them together (#29). Claims unknown on either side keep
 the rule.
 
-Four loader words were considered and left out, because no page in this
-repo can state them truthfully yet. `dd00_plain_stores` is Bitfire's rule
-(plain stores of `$00`-`$03`, no read-modify-write); the KB has no Bitfire
-page, and Krill's rule is close to the reverse: a whole-byte store breaks
-it, and a read-modify-write of bits 0-1 while it is idle is tolerated
-(`pitfalls/loader.md`, `fastloader_dd00_write_corrupts_resident`).
-`io_visible_in_irq`, `loads_in_background` and `no_concurrent_loading` are
-Bitfire and Spindle rules; no page here describes a loader that loads in
-the background (Sparkle's calls block, per its manual; an earlier version of
-this sentence called Sparkle a background loader).
+Four loader words were considered and left out. `dd00_plain_stores` is
+Bitfire's rule (plain stores of `$00`-`$03`, no read-modify-write), now
+measured on `bitfire_loader` (recipe `bitfire-dd00-bank`), and Krill v194's
+README prescribes the same store (`pitfalls/loader.md`,
+`fastloader_dd00_write_corrupts_resident`); it is still not in the
+vocabulary, because no compatibility rule reads it yet and the pitfall's
+table carries each loader's rule. An earlier version of this paragraph
+said the KB had no Bitfire page and that Krill's rule was close to the
+reverse. `io_visible_in_irq`, `loads_in_background` and
+`no_concurrent_loading` are Bitfire and Spindle rules. No page here
+describes a loader that loads in the background: Sparkle's and Bitfire's
+load calls block while interrupts keep running (Sparkle per its manual,
+Bitfire measured in `bitfire-dd00-bank`; an earlier version of this
+sentence called Sparkle a background loader).
 
 An optional `**Requires:**` line names the techniques this one presupposes:
 the named technique is set up before, or runs underneath, this one. The

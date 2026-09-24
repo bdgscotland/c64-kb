@@ -321,6 +321,124 @@ Transfer: 72 C64 cycles a byte (p. 3). At 985,248 cycles a second on PAL that is
 
 ---
 
+## bitfire_loader — Bitfire: a fixed-interleave loader, packer and disk writer
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** DD00, DD02
+**Uses kernal:** (none)
+**Demands:** serial_bus_exclusive, kernal_rom_out
+**Alternative to:** sparkle_irq_loader (VIC bank by plain `$DD00` stores instead of `$DD02` writes; resident at `$F000` under the KERNAL by default instead of `$0100`-`$03FF`; files loaded by number, raw or packed, instead of script bundles)
+**Cost:** bytes_code=505, zp_bytes=11
+**Cost basis:** derived-listing
+**Cost measured on:** kickassembler-bitfire-dd00-bank (default `config.inc`: `bitfire_resident_size` in the built `loader_kickass.inc`, zero page `$02`-`$0C`)
+
+### Why
+
+Bitfire, by Tobias Bindhammer (Bitbreaker), is a disk loader, a packer
+(Dali) and a disk-image writer (`d64write`), under the BSD 3-Clause
+licence, at https://github.com/bboxy/bitfire. Its readme gives the aim:
+a loader "as fast as possible while being as tiny as possible", with a
+resident part of `$84` to `$200` bytes depending on configuration. Its
+disk layout drops the 1541's two-byte sector links: files are written at
+a fixed interleave with every byte used, so the drive can compute the
+sector chain from the start position and the size (readme, "Disclayout").
+The load calls block, and the transfer is clocked by the C64, so raster
+interrupts, music and effects keep running while a file loads. That was
+measured here (recipe `bitfire-dd00-bank`): a raster interrupt switched
+the VIC bank 681 times during eight loads on PAL and every file matched
+its checksum.
+
+### How
+
+1. **Build the tools.** `make` in the repository root builds `d64write`,
+   the Dali packer and `loader/installer`, and writes
+   `loader/loader_kickass.inc` (also ACME, C6510 and the link-macro files
+   for 64tass, ca65, DASM and DreamAss) with every entry point for the
+   configuration in `config.inc`. The default puts the resident part at
+   `$F000` and uses zero page `$02`-`$0C`; the loader also reads `$00`
+   with `LAX` and needs `$37` there (readme, "Zeropage usage").
+2. **Write the disk.** `d64write -c disk.d64 --boot main.prg -s installer
+   -b file0 -b file1 ...` writes the boot file into the directory track,
+   standard files with directory entries, and Bitfire-format files with
+   no entry, numbered from 0 in `-b` order. Bitfire's own directory holds
+   each file's load address and length, 63 to a sector in track 18
+   (readme, "Disclayout"). In the recipe each 4 KB file took 17 blocks.
+3. **Install.** Load the installer (a PRG at `$1000`) and `JSR $1000`
+   (`bitfire_install_`) with the KERNAL still in; it uploads the drive
+   code. From then on the drive runs Bitfire, not DOS, so KERNAL disk
+   calls stall; the `reset_drive` macro hands the drive back.
+4. **Load.** `LDA #n : JSR bitfire_loadraw_` (`$F038` in the default
+   build) loads file `n` to its own load address and returns when it is
+   in. `$EF` loads the next file. `link_load_comp` decrunches a Dali file
+   while it loads (readme, "Functions via loader_acme.inc"). With the
+   resident part at `$F000`, the KERNAL must be banked out (`$35` in
+   `$01`) around the call.
+5. **Switch the VIC bank with a plain store.** `LDA #bank : STA $DD00`,
+   bank `$00`-`$03`, at any time, also from an interrupt while a file
+   loads. Never a read-modify-write of `$DD00`. Arbitrary `$DD00` values
+   only between the `bus_lock` and `bus_unlock` macros, with no load
+   running (readme, "Bank switching").
+
+### Why it works
+
+The receive loop in `loader/resident.asm` clocks each bit pair by
+storing `$37` and `$3F` to `$DD02`, which switches bit 3 (ATN out)
+between input and output; it only reads `$DD00`. The `$DD00` latch
+therefore has to hold 0 in bits 3-5, and bits 0-1, outputs in both DDR
+values, are free for the VIC bank. A plain store of `$00`-`$03` keeps
+bits 3-5 at 0. A read-modify-write reads the pins: while the loader has
+bit 3 as an input the pin reads 1, and writing that back puts a 1 in the
+latch, so ATN is driven when the next `$3F` makes it an output.
+
+Measured in VICE x64sc 3.10 with true drive emulation, PAL and NTSC
+(recipe `bitfire-dd00-bank`, rung 1): with plain stores from a raster
+interrupt twice a frame, eight 4 KB files loaded with no wrong byte and
+the VIC never in the wrong bank. With a read-modify-write, every load
+returned within 14 frames and every file was wrong; a store trace showed
+the interrupt writing `$8B` and `$89`, bit 3 set. Sparkle's `$DD02` rule
+also broke every file and never selected bank 2. Sparkle's rule and
+Bitfire's are the reverse of each other: Sparkle drives the bus through
+`$DD00`, Bitfire through `$DD02`.
+
+`pitfalls/loader.md` `fastloader_dd00_write_corrupts_resident` sets the
+rules of Krill's loader, Sparkle and Bitfire side by side.
+
+### Variations
+
+**Decrunch while loading.** `link_load_comp` and `link_load_next_comp`
+decrunch a Dali-packed file as its blocks arrive; `link_decomp` decrunches
+a raw-loaded one later. Not run here.
+
+**Framework.** `link_player` is a base interrupt inside the resident part
+that plays music and counts frames while parts load; the link macros load
+the next part and jump into it, so the previous part can be overwritten.
+Not run here.
+
+**Configuration.** `config.inc` moves the resident part and the zero
+page, turns off the decruncher (`CONFIG_LOADER_ONLY`) and keeps the
+motor running (`CONFIG_MOTOR_ALWAYS_ON`). The readme gives `$7E` bytes for
+the plain load-raw resident part. Not measured here.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 (recipe `bitfire-dd00-bank`; frame counts
+rung 1, seconds rung 3): eight raw 4 KB files, 32,768 bytes, loaded in
+340 PAL frames (6.78 s, about 4.8 kB/s) and 408 NTSC frames (6.82 s),
+with a raster interrupt running twice a frame. Loading is not per-frame
+work; the interrupt's own cost is its handler's.
+
+### Recipes
+
+- `recipes/kickassembler/bitfire-dd00-bank.md`: builds a Bitfire disk with `d64write`, switches the VIC bank with plain `$DD00` stores from a raster interrupt while eight files load, and checks each file by checksum; two variants use a read-modify-write and Sparkle's `$DD02` write instead. Run in VICE, PAL and NTSC; not pinned in `runs.json`, pictures under `docs/figures/`.
+- `recipes/kickassembler/bitfire-level-stream.md`: loads each next level of a game while the game runs in a raster interrupt (`in_game_level_streaming`).
+
+### Sources
+
+- Bitfire repository, Tobias Bindhammer, commit `5a3964b` (2026-09-10): `readme.txt` ("Bank switching", "Zeropage usage", "Disclayout", the function and macro lists), `loader/resident.asm` (the receive loop), `macros/link_macros_kickass.inc` (`bus_lock`, `bus_unlock`), `LICENSE` (BSD 3-Clause): https://github.com/bboxy/bitfire
+
+---
+
 ## byteboozer_packer — ByteBoozer compression specifics
 
 **Complexity:** low
@@ -479,6 +597,100 @@ Per-part load time (Krill fast loader, 50 KB packed part, ~30 KB after Exomizer 
 ### Recipes
 
 - No recipe yet. (An earlier version of this page pointed at `recipes/kickassembler/cracktro-template.md`; it is a one-part PRG whose only hand-off is a fire-button JMP to a configured entry address, with no load between parts.)
+
+---
+
+## in_game_level_streaming — Load the next level while the current one is played
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D012, D019, D01A
+**Uses kernal:** (none)
+**Demands:** serial_bus_exclusive
+**Cost:** cycles_per_frame=75030, bytes_data=4128
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-bitfire-level-stream (one level switch: copy of seventeen pages from staging to play buffer and sixteen pointer relocations, screen on, PAL, one call; the level size is the recipe's)
+
+The Cost line is the switch, a one-off at each level's end (3.8 PAL
+frames), not work done every frame; the loading itself costs the game
+nothing but the cycles the loader takes from the main program.
+
+### Why
+
+A game whose levels do not all fit in memory has to load between them,
+and a load stops the game unless the game can run while it happens.
+`multi_load_sequencing` covers the demo form: a part ends and a
+transition effect runs while the next part loads. A game wants no
+transition at all: the next level should already be in memory when the
+player reaches the end of this one.
+
+### How
+
+1. **Put the game in the interrupt.** Everything that must happen every
+   frame (movement, drawing, the frame counter) runs in a raster
+   interrupt. The main program does only the loading and the switch.
+2. **Use a loader whose calls tolerate interrupts.** Bitfire's and
+   Sparkle's load calls block the main program, but the C64 clocks the
+   transfer, so the interrupt can take any cycle and the drive waits
+   (`bitfire_loader`, `sparkle_irq_loader`). A loader that needs every
+   cycle, or that runs with interrupts off, stops the game.
+3. **Load ahead into a staging buffer.** Shortly after a level starts,
+   ask for the next level file. It loads to one fixed staging address;
+   the level being played is in a separate play buffer, untouched.
+4. **Switch at the level's end.** The interrupt sets a flag when the
+   level ends; the main program sees the flag, tells the interrupt to
+   pause the playfield, copies the staging buffer into the play buffer
+   and relocates the level's absolute pointers by the difference of the
+   two addresses, then lets play resume.
+
+### Why it works
+
+The loader call and the game never compete for the same cycles in a way
+that matters: the interrupt pre-empts the loader, and the loader's
+protocol is clocked by the C64, so a delay only slows the load.
+Measured (recipe `bitfire-level-stream`, VICE x64sc 3.10, PAL and NTSC,
+rung 1): three 17-block levels loaded in 39 to 57 frames each, while the
+game ran every one of 930 PAL and 936 NTSC frames; a CIA timer that
+counts real frames found none missed. The same program with the loads
+made under `SEI` missed 126 PAL and 154 NTSC frames.
+
+The staging buffer is what makes the lookahead safe: the next file can
+land while the current level is still read from the play buffer, and a
+Bitfire file has one load address, so every level file is assembled for
+the staging address and relocated on the copy. The relocation is one
+add per pointer high byte, sixteen in the recipe.
+
+The end-of-level signal must be one byte the interrupt writes. A main
+loop that compares a 16-bit counter the interrupt increments can read
+the low byte before a carry and the high byte after it; in one build of
+the recipe that ended levels at frame 256 instead of 300
+(`irq_shared_word_torn_read`, `pitfalls/cpu.md`).
+
+### Variations
+
+**Double buffering without a copy.** Two play buffers and level files
+assembled for alternate buffers remove the copy and its 3.8 frames, at
+the cost of a second buffer and a fixed order of levels. Not built here.
+
+**Packed levels.** Load a Dali-packed file with `link_load_comp`, or load
+it raw and decrunch it at the switch; the load is shorter and the switch
+longer. Not built here.
+
+**Several files per level.** Load the level's graphics, map and music as
+separate files, one per stretch of play, when a level is larger than one
+staging buffer. Not built here.
+
+### Cycle budget
+
+Measured, recipe `bitfire-level-stream` (rung 1): the loads took 39 to 57
+frames for 4,128 bytes each, started at frame 10 of a 300-frame level and
+arrived by frame 67; the switch took 75,024 to 75,030 cycles (3.8 PAL
+frames) for the copy and relocation. The recipe's switch is 10 PAL
+frames and 12 NTSC because it also reads every row back as a check.
+
+### Recipes
+
+- `recipes/kickassembler/bitfire-level-stream.md`: four levels streamed with Bitfire while a raster interrupt runs the game, with a CIA frame counter for missed frames and a `SEI` control. Run in VICE, PAL and NTSC; not pinned in `runs.json`, pictures under `docs/figures/`.
 
 ---
 

@@ -1788,3 +1788,146 @@ time.
 - Emmanuel Marty, LZSA repository (`src/lzsa.c` version string 1.4.1,
   README's licence section, `asm/6502/` headers): https://github.com/emmanuel-marty/lzsa
 - Usage text from each tool run here without arguments.
+
+---
+
+## tinycrunch_and_tscrunch — TSCrunch and TinyCrunch: byte-aligned crunchers that trade ratio for decrunch speed
+
+**Complexity:** low
+**Region:** both
+**Uses kernal:** (none)
+**Alternative to:** zx0_lzsa_decrunchers (faster decrunch per byte, weaker ratio: on the mixed test file below TSCrunch's sfx is 1,432 bytes in 110,386 cycles against Dali's 1,157 in 137,664)
+
+### Why
+
+The crunchers in `zx0_lzsa_decrunchers` and `pucrunch_decruncher` read
+a bit stream: the decruncher shifts a byte of flags or gamma codes for
+every token. A byte-aligned format reads whole bytes, so each token costs
+fewer cycles, at the price of a larger output. Two such crunchers are in
+use on the C64 and both ship with Krill's loader (`krill_loader_integration`):
+
+- **TSCrunch** by Antonio Savona, an "optimal, byte-aligned, LZ+RLE
+  hybrid encoder, designed to maximize decoding speed on NMOS 6502"
+  (README), written as the asset cruncher for the game A Pig Quest.
+  Encoders in C, Go and Java; three KickAssembler decrunchers (regular,
+  small, extreme); a self-extracting mode. Apache-2.0, `LICENSE` in
+  https://github.com/tonysavon/TSCrunch. Version 1.3.2 (commit `4511a75`)
+  was built here from `tscrunch.c`.
+- **TinyCrunch** by Christopher Jam, "a small, fast LZ codec originally
+  thrown together in a hurry for Jam Ball 2" (readme), with three
+  byte-aligned fixed-length token formats, a 100-byte decoder, a faster
+  decoder for self-extractors and a block callback for fast-loader use.
+  Encoder in Python; decoders in ca65 syntax. Version 1.2 (2018), from
+  CSDb release 168629. The archive states no licence: neither the readme
+  nor any source file carries one, so this page takes facts only and
+  keeps no copy.
+
+### How
+
+```text
+tscrunch -x $080d game.prg game-ts.prg     # self-extractor, decruncher in zero page
+tscrunch -x2 $080d game.prg game-ts2.prg   # self-extractor, decruncher in the stack page
+tscrunch -p game.prg level.ts              # raw stream from a PRG, load address dropped
+tscrunch -i level.prg level-inplace.prg    # in-place stream with its load address
+python tc_encode.py -x game.prg game-tc.prg   # TinyCrunch self-extractor, entry $080D
+python tc_encode.py -r level.bin level.tc     # TinyCrunch raw, no header
+```
+
+For data in memory, TSCrunch's `decrunch.asm` is included in the
+program and called through its `TS_DECRUNCH(src, dst)` macro; it keeps
+its pointers in `$F8`-`$FE`. Built here, the regular decruncher is 198
+bytes (`tsdecrunch` to the end of its code in the symbol file). TinyCrunch's decoders take
+the stream address in A and X; its readme gives 100 bytes for the small
+decoder and 79 for the headerless one, and says its self-extractor
+overwrites `$00FA`-`$01BA` and four stack bytes at `$01F3`-`$01F6`.
+TinyCrunch's decoders were not assembled here.
+
+### Why it works
+
+A byte-aligned token puts its type and length in bit fields of one byte
+and its offset in the next one or two. The decoder reads that byte, masks
+or shifts it once and branches; there is no bit reservoir to refill.
+TSCrunch adds run-length tokens for repeated bytes, which is why its
+output on the mixed file, with its 1 KB zero run and byte ramp, is
+smaller than TinyCrunch's. The cost is ratio: on code, whose bytes repeat
+little, both formats leave the file almost as it was.
+
+### Variations
+
+**Where the self-extractor runs.** TSCrunch's `-x` stub runs from the
+zero page and does not save it; `-x2` runs from the stack page. Measured
+here (below), a payload that prints through `CHROUT` printed under `-x2`
+and not under `-x`, for the reason `decruncher_overwrites_kernal_zero_page`
+gives. TinyCrunch's stub printed.
+
+**In-place.** `tscrunch -i` writes a stream that decrunches within its
+own target area; `decrunch.asm` then needs `#define INPLACE`. TinyCrunch's
+`-i` does the same. Not measured here.
+
+**Inside a loader.** Krill's loader can decrunch either format while a
+file loads (`krill_loader_integration`, "Integrated decruncher").
+Not run here.
+
+### Measured
+
+Run on 2026-09-24 in the windowless x64sc build of VICE 3.10 (rung 1). Two
+KickAssembler payloads at `$0801` with `SYS 2061`: a 4,639-byte file of
+code and mixed filler (a 1 KB zero run, a 1 KB byte ramp, a 256-byte sine
+table, 40 copies of a line of text, 64 six-byte instruction groups) and a
+4,247-byte file whose filler is the first 4 KB of the KERNAL ROM. They
+follow the description of the two subjects in `pucrunch_decruncher`
+closely enough that the Dali, bitfire and Exomizer code-file figures
+below come within 0.6 % of that section's, but they are not the same
+files, so compare within this table. A harness copied the self-extractor
+to its load address as LOAD would, set `$2D/$2E` and `$AE/$AF` to its
+end, started a CIA2 32-bit cascade and jumped to the SYS address; the
+payload stops the cascade as its first act. The harness alone reads 8
+cycles. Two PAL runs gave the same figures to the cycle (bitfire's was run
+once). Printed means the
+payload's `CHROUT` line reached the screen.
+
+| Cruncher | Mixed: bytes | Mixed: cycles PAL | Mixed: cycles NTSC | Code: bytes | Code: cycles PAL | Printed |
+|---|---|---|---|---|---|---|
+| none | 4,639 | 8 | 8 | 4,247 | 8 | yes |
+| TSCrunch `-x` | 1,432 | 110,386 | 111,340 | 4,141 | 164,468 | no |
+| TSCrunch `-x2` | 1,441 | 115,589 | 116,668 | 4,150 | 172,723 | yes |
+| TinyCrunch `-x` | 1,943 | 110,754 | 111,873 | 4,110 | 102,625 | yes |
+| Dali `--sfx` (bitfire's build) | 1,157 | 137,664 | 138,900 | 3,798 | 312,429 | yes |
+| bitfire zx0 `--sfx` | 1,151 | 128,206 | 128,848 | 3,793 | 297,387 | no |
+| Exomizer 3.1.3b0 `sfx sys` | 1,218 | 232,904 | 234,831 | 3,780 | 590,870 | yes |
+
+On the mixed file both byte crunchers decrunch in about 110,000 cycles,
+a fifth faster than Dali and half Exomizer's time, and TSCrunch's file is
+275 bytes larger than Dali's. On the code file the difference is larger:
+TinyCrunch took a third of Dali's time and TSCrunch about half, but both
+files are within 4 % of the uncrunched size, where the bit crunchers
+saved about 450 bytes. NTSC figures run 0.5 to 1 % higher, as the NTSC
+columns show. The screen was on in every run.
+
+Raw streams and the in-memory decruncher: `tscrunch -p` wrote 1,201 bytes
+for the mixed file and 3,910 for the code file; `tc_encode.py -r` wrote
+1,488 and 3,875. TSCrunch's `decrunch.asm`, assembled with KickAssembler
+5.25 and called with interrupts off, decrunched the mixed stream in
+86,178 cycles PAL (86,747 NTSC) and the code stream in 94,200 (94,970),
+about 19 and 22 cycles per output byte, and both results were
+byte-identical to the input. TinyCrunch's self-extractor is 455 bytes
+larger than its raw stream on the mixed file and 235 on the code file;
+why it differs by file was not looked into.
+
+The zero page at the payload's entry, against the uncrunched run: 197
+bytes changed under TSCrunch `-x` (`$02` to `$FE`), with `$9A` (the output
+device) at `$B1` and `$99` at `$C8`, so `CHROUT` went to a serial device;
+12 under `-x2`, 11 under TinyCrunch, 16 under Dali and 11 under Exomizer,
+none of them the bytes `CHROUT` reads.
+
+### Recipes
+
+- No recipe yet. As for the other crunchers on this page, the verifier
+  has no step for running a cruncher, and neither tool is in this
+  repository.
+
+### Sources
+
+- Antonio Savona, TSCrunch repository, commit `4511a75` (`README.md`, `tscrunch -h` from the C encoder built here, `decrunch.asm`, `decrunch_small.asm`, `decrunch_extreme.asm`, `LICENSE`): https://github.com/tonysavon/TSCrunch
+- Christopher Jam, TinyCrunch 1.2, `tinycrunch_v1.2.tar.gz` from CSDb release 168629 (`readme.txt`, `tc_encode.py -h`; no licence stated): https://csdb.dk/release/?id=168629
+- Dali and bitfire's zx0 as built from bitfire commit `5a3964b` (`zx0_lzsa_decrunchers`); Exomizer 3.1.3b0 (`exomizer -v`).
