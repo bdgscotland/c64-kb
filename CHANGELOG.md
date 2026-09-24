@@ -5,7 +5,20 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 836, schema 39, tools 2.16.0, package 0.29.0.
+Data 837, schema 39, tools 2.16.0, package 0.29.0.
+
+**Voice 3 gets a hard restart when an effect hands it back (data 837;
+#120).** A music note within two frames of a sound effect ending had no
+hard restart and could start about 33 ms late (one lead note on PAL
+frame 916). The effect's end now gates voice 3 off with AD and SR at 0
+and hands it to the music two calls later, gating any note the music
+started meanwhile from its first wavetable row. The harness counts every
+note, hand-backs included: all parts on time on PAL, NTSC and the 6581;
+in the SID log every gate had AD and SR at 0 for at least 39,238 cycles
+before it. The worst play call falls to 1,215 PAL / 1,223 NTSC (was
+1,250); every page quoting it carries the new figure with a clause, and
+the per-feature table's "all off" line (1,019, stale since before #118)
+is now 1,075.
 
 **The music player starts a note's gate before its AD and SR (data 836; #118).**
 The player wrote AD and SR 155-175 cycles before the gate, which undoes
