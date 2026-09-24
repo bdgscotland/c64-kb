@@ -82,8 +82,9 @@ sprites take: 16 pad values, by the set of sprites and by badline or not
 (`rb_init`). Sprites 3-7 fetch at a line's start, over the stores: they
 stay off. A sprite is never switched off after its picture is built (its
 lines' pads assume it fetches); a car off the side of the road is moved
-behind the left border instead. The method has no recipe of its own in
-c64-kb yet: issue #77.
+behind the left border instead. The method alone, with a probe store
+that shows each line's cycle in the picture, is c64-kb's
+`recipes/kickassembler/road-sprite-lines.md`.
 
 ## The road's timing
 
