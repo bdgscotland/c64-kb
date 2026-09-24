@@ -1471,7 +1471,7 @@ different game; each figure is the largest in that run's 800 frames.
   them, the same order as the table's own spread between runs.
 
 The parts' largest readings do not fall in one frame, so their sum
-(10,617 on PAL) is above `MAX` (8,693). What the table means for the
+(10,617 on PAL) is above `MAX` (8,693 in the runs before #93, 9,055 now). What the table means for the
 design's budget is in `game-design/designs/platformer-scaffold.md`.
 
 ## Why this works
