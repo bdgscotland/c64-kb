@@ -1,0 +1,76 @@
+{
+  "note": "Part 3 BORDER maxed out (2026-09-24) inside the demo at an arbitrary frame of the part's dwell. Frame-independent checks only: eight sprites (five on NTSC) sweep X 0 to 511 and Y on sines, the bar gradient rolls a line a frame and the big rows scroll, so no sprite position, bar colour or text can be pinned here (test/expect-p3.json pins them at the standalone's freeze). What is kept comes from the part's constants: the bottom border is opened by the 246-252 run each frame, so lines 0 to 50 of every frame show the background in the middle and BORDER_COL 11 at the sides; the top run colours lines 30 to 42 (36 to 42 on NTSC) and the bottom run 207 to 215 (PAL only: NTSC's frame has no room); the two big rows are white on lines 227 to 242; lines 216 to 226 are blank rows with the resting border. The ink minima allow the gradient's four black entries in a row and a first line whose write lands late.",
+  "checks": [
+    {
+      "name": "verdict absent (mid-demo shot, border is not the pass or fail colour, program has not reached end screen)",
+      "type": "verdict"
+    },
+    {
+      "name": "side border below the top run is BORDER_COL 11 (line 46, left border; the vertical border is open, the sides still show $D020)",
+      "type": "pixel",
+      "vic_x": 4,
+      "line": 46,
+      "colour": 11
+    },
+    {
+      "name": "black where nothing is drawn: the middle of line 46 is the background",
+      "type": "pixel",
+      "vic_x": 160,
+      "line": 46,
+      "colour": 0
+    },
+    {
+      "name": "black where nothing is drawn: blank rows below the bottom run, lines 218 to 221",
+      "type": "rect",
+      "vic_x": 24,
+      "line": 218,
+      "width": 320,
+      "height": 4,
+      "colour": 0
+    },
+    {
+      "name": "side border at line 218 is BORDER_COL 11 (the bottom run's tail put it back; NTSC never changed it)",
+      "type": "pixel",
+      "vic_x": 4,
+      "line": 218,
+      "colour": 11
+    },
+    {
+      "name": "top bar run: lines 36 to 42 carry gradient colours across the middle (at most four black entries in a row, first line may be late)",
+      "type": "ink",
+      "vic_x": 40,
+      "line": 36,
+      "width": 300,
+      "height": 7,
+      "min": 500,
+      "max": 2200
+    },
+    {
+      "name": "bottom bar run (PAL only): lines 207 to 215 carry gradient colours",
+      "type": "ink",
+      "vic_x": 40,
+      "line": 207,
+      "width": 300,
+      "height": 9,
+      "min": 1200,
+      "max": 2700,
+      "models": ["pal"]
+    },
+    {
+      "name": "the big rows: white ink only on lines 227 to 242",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 227,
+      "width": 320,
+      "height": 16,
+      "min": 300,
+      "max": 4000,
+      "colours": [1]
+    },
+    {
+      "name": "no readout or stray ink: the blank row between the bottom run and the big rows (screen row 21) is identical on both models; row 24 carries the open-border bars now",
+      "type": "same",
+      "cells": [21, 20, 21, 39]
+    }
+  ]
+}

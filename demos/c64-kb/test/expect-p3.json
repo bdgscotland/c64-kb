@@ -1,0 +1,166 @@
+{
+  "note": "Part 3 BORDER maxed out (2026-09-24), standalone runner frozen at frame 300, exit screenshot at 14,000,000 cycles on both models (7M is before the freeze). At the freeze the stub paints the border green (BORDER_PASS 5); selfcheck has switched the bar runs to $D021 only, so the sides keep the verdict and the middle keeps the bars. Eight sprites on PAL (five on NTSC, bases 63 + 24k) on X and Y sines, frozen after 300 Y steps and 301 X steps (setup's build advances X once): ring X 230 Y 73, disc X 24 Y 77 (NTSC 86), C X 371 Y 83 (NTSC 101), the 6 X 4 Y 119 (NTSC 146), the 4 X 300 Y 122 (NTSC 158), K X 14 Y 148 (PAL only); B and the thin ring are off-screen right on PAL. Bars: gradient roll 20 at the freeze; the top run (PAL 30 to 42, NTSC 36 to 42) shows entries 20.. from its first line, but PAL's line-30 write lands after the sample column so 31 is the first coloured line there. The two big rows (lines 227 to 242) show halves 37 to 76 of the message: 'E: BORDER   EIGHT SPR'. Boxes were measured on the shots with PIL (colour index by nearest palette entry) and agree with the arithmetic except the C's lines, one higher than computed.",
+  "checks": [
+    {
+      "name": "verdict: selfcheck passed (sample in the left border, line 26)",
+      "type": "verdict",
+      "at": [2, 10]
+    },
+    {
+      "name": "bar colour: line 36 is light red on both models (gradient entry 26 at roll 20)",
+      "type": "pixel",
+      "vic_x": 300,
+      "line": 36,
+      "colour": 10
+    },
+    {
+      "name": "bar colour: PAL line 32 is yellow (entry 22)",
+      "type": "pixel",
+      "vic_x": 300,
+      "line": 32,
+      "colour": 7,
+      "models": ["pal"]
+    },
+    {
+      "name": "bar colour: NTSC line 37 is yellow (its run starts at 36 with entry 20)",
+      "type": "pixel",
+      "vic_x": 300,
+      "line": 37,
+      "colour": 7,
+      "models": ["ntsc"]
+    },
+    {
+      "name": "black where nothing is drawn: the middle of lines 45 to 48, below the top run, border open",
+      "type": "rect",
+      "vic_x": 24,
+      "line": 45,
+      "width": 320,
+      "height": 4,
+      "colour": 0
+    },
+    {
+      "name": "black across the whole width on band lines 53 to 72: side borders open, no sprite there at the freeze",
+      "type": "rect",
+      "vic_x": 0,
+      "line": 53,
+      "width": 376,
+      "height": 20,
+      "colour": 0
+    },
+    {
+      "name": "sprite 3, the light green 6, in the LEFT border (X 4)",
+      "type": "sprite",
+      "colour": 13,
+      "vic_x": 4,
+      "line": 120,
+      "width": 24,
+      "height": 21,
+      "models": ["pal"]
+    },
+    {
+      "name": "sprite 3, the light green 6, in the LEFT border (X 4, NTSC base)",
+      "type": "sprite",
+      "colour": 13,
+      "vic_x": 4,
+      "line": 147,
+      "width": 24,
+      "height": 21,
+      "models": ["ntsc"]
+    },
+    {
+      "name": "sprite 5, the light blue K, in the left border (PAL only: NTSC parks 5 to 7)",
+      "type": "sprite",
+      "colour": 14,
+      "vic_x": 14,
+      "line": 149,
+      "width": 24,
+      "height": 21,
+      "models": ["pal"]
+    },
+    {
+      "name": "sprite 2, the cyan C, in the RIGHT border: X 371, its first five columns are the last visible ones",
+      "type": "sprite",
+      "colour": 3,
+      "vic_x": 371,
+      "line": 84,
+      "width": 5,
+      "height": 21,
+      "models": ["pal"]
+    },
+    {
+      "name": "sprite 2, the cyan C, in the RIGHT border (NTSC base)",
+      "type": "sprite",
+      "colour": 3,
+      "vic_x": 371,
+      "line": 102,
+      "width": 5,
+      "height": 21,
+      "models": ["ntsc"]
+    },
+    {
+      "name": "sprite 0, the white ring, mid-screen, rows 1 to 19 of the shape",
+      "type": "sprite",
+      "colour": 1,
+      "vic_x": 230,
+      "line": 75,
+      "width": 24,
+      "height": 19
+    },
+    {
+      "name": "sprite 1, the yellow disc, 22 columns by 19 rows",
+      "type": "sprite",
+      "colour": 7,
+      "vic_x": 25,
+      "line": 79,
+      "width": 22,
+      "height": 19,
+      "models": ["pal"]
+    },
+    {
+      "name": "sprite 1, the yellow disc (NTSC base)",
+      "type": "sprite",
+      "colour": 7,
+      "vic_x": 25,
+      "line": 88,
+      "width": 22,
+      "height": 19,
+      "models": ["ntsc"]
+    },
+    {
+      "name": "sprite 4, the pink 4",
+      "type": "sprite",
+      "colour": 10,
+      "vic_x": 300,
+      "line": 123,
+      "width": 24,
+      "height": 21,
+      "models": ["pal"]
+    },
+    {
+      "name": "sprite 4, the pink 4 (NTSC base)",
+      "type": "sprite",
+      "colour": 10,
+      "vic_x": 300,
+      "line": 159,
+      "width": 24,
+      "height": 21,
+      "models": ["ntsc"]
+    },
+    {
+      "name": "the big rows: white ink only on lines 227 to 242 (measured 1,456 pixels)",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 227,
+      "width": 320,
+      "height": 16,
+      "min": 1000,
+      "max": 2000,
+      "colours": [1]
+    },
+    {
+      "name": "the big rows read the same on both models",
+      "type": "same",
+      "area": { "vic_x": 24, "line": 227, "width": 320, "height": 16 }
+    }
+  ]
+}

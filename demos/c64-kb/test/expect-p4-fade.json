@@ -1,0 +1,51 @@
+{
+  "note": "Part 4 FIRE standalone with -define FADE: seq_fade set at frame 270, graded at frame 300 (build/p4_test_fade.prg, -limitcycles 9500000). Thirty fadeout calls have run: one census, then 29 dissolve frames of 60 cells (PAL) or 50 (NTSC) in 10-bit LFSR order, each visit three places down the luminance order 0 6 9 2 11 4 8 14 12 5 10 3 15 7 13 1. The field was blue-white (palette 1) at the freeze, so every lit cell is one of its colours or on their step-down orbits: 6 to 0; 14 11 6 0; 3 12 4 9 0; 15 5 8 2 0; 1 15 5 8 2 0. The chain took three colour steps (frames 8, 16, 24): yellow 7, light red 10, light blue 14, dark grey 11, so the glyphs are dark grey and still on, frozen at the grading phase (90). The two models differ in N, so no same check. Pinned 2026-09-24 from shots/p4-test_fade-pal.png and -ntsc.png.",
+  "checks": [
+    {
+      "name": "own verdict after 30 fade frames (each of the ten cells is its palette colour or some step3 applications below it; LFSR period; sprite 0 Y)",
+      "type": "verdict"
+    },
+    {
+      "name": "the C glyph at the head of the chain, dark grey after three colour steps, alone in its window: ink box 20 by 19 at vic_x 282 + 2, line 65 + 2 (phase 90: sine 230, X = 24 + 230 + 28; sine[180] = 6, Y = 64 + 1)",
+      "type": "sprite",
+      "colour": 11,
+      "vic_x": 284,
+      "line": 67,
+      "width": 20,
+      "height": 19,
+      "search": { "vic_x": 278, "line": 58, "width": 28, "height": 34 }
+    },
+    {
+      "name": "lower ten rows after more than one full sweep (1,450 NTSC and 1,740 PAL visits against 1,000 cells): between 4,000 and 24,000 lit pixels of 25,600, none of them light blue, cyan or white any more (14 to 11, 3 to 12, 1 to 15), every one on a palette 1 step-down orbit",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 170,
+      "width": 320,
+      "height": 80,
+      "background": 0,
+      "min": 4000,
+      "max": 24000,
+      "colours": [15, 5, 8, 2, 11, 6, 12, 4, 9]
+    },
+    {
+      "name": "seed row 24, white at the freeze, visited at least once everywhere: light grey, green, orange or dark red, no white left, at least 400 lit pixels",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 243,
+      "width": 320,
+      "height": 8,
+      "background": 0,
+      "min": 400,
+      "colours": [15, 5, 8, 2]
+    },
+    {
+      "name": "top row 0, columns 16 to 29 over the cold gap: still black (the dissolve only darkens)",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": 152,
+      "line": 51,
+      "width": 112,
+      "height": 8
+    }
+  ]
+}

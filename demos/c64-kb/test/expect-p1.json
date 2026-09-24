@@ -1,0 +1,145 @@
+{
+  "checks": [
+    {
+      "name": "verdict",
+      "type": "verdict",
+      "models": ["pal", "ntsc"]
+    },
+    {
+      "name": "logo_rule_pal",
+      "type": "rect",
+      "models": ["pal"],
+      "vic_x": 136,
+      "line": 156,
+      "width": 128,
+      "height": 6,
+      "colour": 1,
+      "_comment": "Solid white rule at band row 13 (raster lines 155-162). matCell(k,13*40+c) returns code 0 (font all-$FF) for the LOGO_W columns under the word; colour RAM white at those positions. This reads a known matrix cell value (code 0) through the custom font: if either the matrix content or font is wrong, white pixels are absent. Phase-independent width: since 2026-09-24 the word is C64-KB, 23 cells wide at column 7 of matrix 0, so the rule starts at vic_x 24 + 7*8 = 80 and is 184 pixels long; the wobble shifts each band line right by 1 to 55 pixels (the sine is clamped to 1..55, k_max 6), so the rule occupies 80+s to 264+s for s in 1..55, and the pixels white at every phase run from 135 to 264. This rect covers 136 to 263 of them. The MEASURED word (31 cells at column 3) had its rule at 48 to 296 plus the shift, and this rect was 112 wide 176 for it."
+    },
+    {
+      "name": "logo_rule_ntsc",
+      "type": "rect",
+      "models": ["ntsc"],
+      "vic_x": 136,
+      "line": 156,
+      "width": 128,
+      "height": 6,
+      "colour": 1,
+      "_comment": "Same rule on NTSC, the same phase-independent width."
+    },
+    {
+      "name": "top_border_open_pal",
+      "type": "rect",
+      "models": ["pal"],
+      "vic_x": 60,
+      "line": 32,
+      "width": 200,
+      "height": 12,
+      "colour": 0,
+      "_comment": "Lines 32-43 are in the top border area (display starts at line 51). With the h249/h20 border trick, this area shows $D021=0 (black) not border green."
+    },
+    {
+      "name": "top_border_open_ntsc",
+      "type": "rect",
+      "models": ["ntsc"],
+      "vic_x": 60,
+      "line": 32,
+      "width": 200,
+      "height": 12,
+      "colour": 0,
+      "_comment": "Same top-border check on NTSC (display also starts at line 51)."
+    },
+    {
+      "name": "bottom_border_black_pal",
+      "type": "rect",
+      "models": ["pal"],
+      "vic_x": 60,
+      "line": 252,
+      "width": 200,
+      "height": 2,
+      "colour": 0,
+      "_comment": "Lines 252-253: between display end (line 250) and sprite start (line 255). Should be black background, not border green."
+    },
+    {
+      "name": "scroller_pal",
+      "type": "ink",
+      "models": ["pal"],
+      "vic_x": 24,
+      "line": 256,
+      "width": 296,
+      "height": 12,
+      "min": 30,
+      "colours": [1],
+      "_comment": "Eight sprites at Y=254 appear at raster lines 255-274. Lines 256-267 checked. min=30 white pixels verifies rendered glyphs (2x2 doubled from custom font) are visible in the opened lower border."
+    },
+    {
+      "name": "scroller_ntsc",
+      "type": "ink",
+      "models": ["ntsc"],
+      "vic_x": 24,
+      "line": 256,
+      "width": 296,
+      "height": 6,
+      "min": 30,
+      "colours": [1],
+      "_comment": "NTSC: sprite Y=254 gives raster lines 255-262 (8 rows). Lines 256-261 checked."
+    },
+    {
+      "name": "plasma_above_not_black",
+      "type": "ink",
+      "models": ["pal", "ntsc"],
+      "vic_x": 24,
+      "line": 51,
+      "width": 320,
+      "height": 64,
+      "min": 4000,
+      "_comment": "Rows 0-7 (lines 51-114), the plasma above the logo: at least 4,000 of the 20,480 pixels are not black. Before 2026-09-24 these rows were blank on black; the plasma paints their colour RAM every fourth frame, so a build whose main never runs the plasma, or whose matrix rows are not code 0, leaves them black and fails here."
+    },
+    {
+      "name": "plasma_above_not_white",
+      "type": "ink",
+      "models": ["pal", "ntsc"],
+      "vic_x": 24,
+      "line": 51,
+      "width": 320,
+      "height": 64,
+      "background": 1,
+      "min": 4000,
+      "_comment": "The same rows are not all white either: setup fills colour RAM white, so a plasma whose repaint never happened shows 320 by 64 solid white and fails here. Together with the check above: the rows are neither all black nor all white. The ramp's top bucket (white) is never reached by design, so most of the region is not white."
+    },
+    {
+      "name": "plasma_below_not_black",
+      "type": "ink",
+      "models": ["pal", "ntsc"],
+      "vic_x": 24,
+      "line": 163,
+      "width": 320,
+      "height": 56,
+      "min": 3500,
+      "_comment": "Rows 14-20 (lines 163-218), the plasma below the logo: at least 3,500 of the 17,920 pixels are not black."
+    },
+    {
+      "name": "plasma_below_not_white",
+      "type": "ink",
+      "models": ["pal", "ntsc"],
+      "vic_x": 24,
+      "line": 163,
+      "width": 320,
+      "height": 56,
+      "background": 1,
+      "min": 3500,
+      "_comment": "Rows 14-20 are not all white."
+    },
+    {
+      "name": "rows_21_23_blank",
+      "type": "rect",
+      "models": ["pal", "ntsc"],
+      "vic_x": 24,
+      "line": 219,
+      "width": 320,
+      "height": 24,
+      "colour": 0,
+      "_comment": "Rows 21-23 (lines 219-242) stay blank on black: the plasma must not reach past row 20. Row 24 is left out because the standalone runner prints the worst and typical words there."
+    }
+  ]
+}

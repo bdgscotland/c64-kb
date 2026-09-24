@@ -1,0 +1,135 @@
+{
+  "note": "Part 1 LOGO mid-demo at verify.sh's cycle counts (PAL 12,000,000, NTSC 11,000,000). Re-pinned 2026-09-24 against the real part; the file used to describe the dummy module. The two models are at different frames, so every check states a fact that holds at any phase: the word C64-KB is 55 glyph cells of 3 by 5 plus a 23-cell rule on band row 13, 4,992 white pixels, wobbled right by 1 to 55 pixels and never clipped; the plasma rows run the ramp from black to light green and never reach white; the scroller sprites sit at Y 254 in the opened lower border, which on NTSC wraps into lines 0 to 11 (screenshot rows 235 to 246). Measured on the 2026-09-24 shots: band white 4,991 PAL (one torn line) and 4,992 NTSC; plasma non-black 20,476 and 16,256 PAL, 20,472 and 16,512 NTSC; scroller white 540 PAL, 268 plus 388 NTSC.",
+  "checks": [
+    {
+      "name": "verdict absent (mid-demo shot, border is black, program has not reached end screen; verify.sh does not count this line)",
+      "type": "verdict"
+    },
+    {
+      "name": "border is black: D020 stays 0 through the part",
+      "type": "pixel",
+      "vic_x": 4,
+      "line": 30,
+      "colour": 0
+    },
+    {
+      "name": "top border lines 32 to 43 are black (D020 and D021 both 0; the border trick's restore line is 20)",
+      "type": "rect",
+      "vic_x": 60,
+      "line": 32,
+      "width": 200,
+      "height": 12,
+      "colour": 0
+    },
+    {
+      "name": "logo band rows 8 to 13: white ink only, 4,992 pixels from the word's cells and rule (a torn exit line may move a few)",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 115,
+      "width": 320,
+      "height": 48,
+      "min": 4960,
+      "max": 5024,
+      "colours": [1]
+    },
+    {
+      "name": "logo rule on band row 13: the 128 pixels white at every wobble phase (vic_x 136 to 263, lines 156 to 161)",
+      "type": "rect",
+      "vic_x": 136,
+      "line": 156,
+      "width": 128,
+      "height": 6,
+      "colour": 1
+    },
+    {
+      "name": "columns 0 to 2 of the band rows are reserved black colour RAM and the wobble only shifts right",
+      "type": "rect",
+      "vic_x": 24,
+      "line": 115,
+      "width": 24,
+      "height": 48,
+      "colour": 0
+    },
+    {
+      "name": "plasma rows 0 to 7: ink present, every non-black pixel a ramp colour and none white",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 51,
+      "width": 320,
+      "height": 64,
+      "min": 4000,
+      "colours": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    },
+    {
+      "name": "plasma rows 14 to 20: ink present, every non-black pixel a ramp colour and none white",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 163,
+      "width": 320,
+      "height": 56,
+      "min": 3500,
+      "colours": [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]
+    },
+    {
+      "name": "rows 21 to 24 stay black: the plasma stops at row 20 and the demo prints nothing there",
+      "type": "rect",
+      "vic_x": 24,
+      "line": 219,
+      "width": 320,
+      "height": 32,
+      "colour": 0
+    },
+    {
+      "name": "lines 251 to 254, between the display's end and the sprites, are black",
+      "type": "rect",
+      "vic_x": 60,
+      "line": 251,
+      "width": 200,
+      "height": 4,
+      "colour": 0
+    },
+    {
+      "name": "PAL scroller sprites in the lower border, lines 256 to 267: white glyph pixels present",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 256,
+      "width": 296,
+      "height": 12,
+      "min": 60,
+      "colours": [1],
+      "models": ["pal"]
+    },
+    {
+      "name": "NTSC scroller sprites, lines 256 to 262 before the frame wraps: white glyph pixels present",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 256,
+      "width": 296,
+      "height": 7,
+      "min": 30,
+      "colours": [1],
+      "models": ["ntsc"]
+    },
+    {
+      "name": "NTSC scroller sprites continue on lines 0 to 11 of the next frame (screenshot rows 235 to 246)",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 0,
+      "width": 296,
+      "height": 12,
+      "min": 30,
+      "colours": [1],
+      "models": ["ntsc"]
+    },
+    {
+      "name": "rows 21 to 24 read the same on PAL and NTSC (nothing frame-dependent below the plasma)",
+      "type": "same",
+      "cells": [21, 0, 24, 39]
+    },
+    {
+      "name": "the reserved left columns of the band rows read the same on PAL and NTSC",
+      "type": "same",
+      "area": { "vic_x": 24, "line": 115, "width": 24, "height": 48 }
+    }
+  ]
+}

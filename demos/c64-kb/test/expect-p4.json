@@ -1,0 +1,65 @@
+{
+  "note": "Part 4 FIRE standalone, graded at frame 300 (build/p4_test.prg, -limitcycles 9500000; 7,000,000 is frame 200 on this build and shows the palette before the first switch). At 300 the chain has stepped 2 per frame for 301 line-20 interrupts (phase 90; the first fires before frame 0's line 255) and the palette switched once at frame 200, so the field is blue-white (palette 1: 6 14 3 15 1) and the only yellow on the screen is the six glyphs; the test freezes the chain at grading so the shot holds the grading frame. The B glyph trails the head by 70 phase steps (p = 20: sine 188, X = 24 + 188 + 23 = 235; sine[40] = 234, Y = 64 + 58 = 122) and sits alone on the left of the chain; its ink is columns 2 to 21 and rows 1 to 19 of the 24 by 21 cell, and a sprite's row 0 shows on raster line Y + 1, so the ink box is vic_x 237, line 124, 20 by 19. Measured 2026-09-24 from shots/p4-test-pal.png and -ntsc.png: the harness read that box on both models.",
+  "checks": [
+    {
+      "name": "own verdict (border green: LFSR period 1,023, sprite 0 Y matches the sine at the chain phase, ten cells match their half's palette)",
+      "type": "verdict"
+    },
+    {
+      "name": "the B glyph, yellow, alone in its window on the left of the chain: ink box 20 by 19 at vic_x 235 + 2, line 122 + 2 (phase 90, p = 20)",
+      "type": "sprite",
+      "colour": 7,
+      "vic_x": 237,
+      "line": 124,
+      "width": 20,
+      "height": 19,
+      "search": { "vic_x": 224, "line": 112, "width": 46, "height": 40 }
+    },
+    {
+      "name": "the C glyph at the head of the chain, yellow, alone in its window: ink box 20 by 19 at vic_x 282 + 2, line 65 + 2 (phase 90: sine 230, X = 24 + 230 + 28; sine[180] = 6, Y = 64 + 1)",
+      "type": "sprite",
+      "colour": 7,
+      "vic_x": 284,
+      "line": 67,
+      "width": 20,
+      "height": 19,
+      "search": { "vic_x": 278, "line": 58, "width": 28, "height": 34 }
+    },
+    {
+      "name": "seed row 24 burns in palette 1 only (blue, light blue, cyan, light grey, white): at least 1,000 lit pixels of 2,560",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 243,
+      "width": 320,
+      "height": 8,
+      "background": 0,
+      "min": 1000,
+      "colours": [6, 14, 3, 15, 1]
+    },
+    {
+      "name": "row 20 carries palette 1 colours only, at least 600 lit pixels",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 211,
+      "width": 320,
+      "height": 8,
+      "background": 0,
+      "min": 600,
+      "colours": [6, 14, 3, 15, 1]
+    },
+    {
+      "name": "top row 0, columns 16 to 29 over the cold gap: black",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": 152,
+      "line": 51,
+      "width": 112,
+      "height": 8
+    },
+    {
+      "name": "same picture on both models (300 frames from seed $5A, 300 chain steps, one palette switch)",
+      "type": "same",
+      "cells": [0, 0, 24, 39]
+    }
+  ]
+}

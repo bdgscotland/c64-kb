@@ -1,0 +1,104 @@
+{
+  "checks": [
+    {
+      "name": "own verdict (border)",
+      "type": "verdict"
+    },
+    {
+      "name": "title C64-KB",
+      "type": "text",
+      "row": 1,
+      "col": 17,
+      "text": "C64-KB"
+    },
+    {
+      "name": "credit line 1",
+      "type": "text",
+      "row": 3,
+      "col": 0,
+      "text": "EVERY EFFECT HERE IS A PAGE OF THE KB"
+    },
+    {
+      "name": "part 1 label",
+      "type": "text",
+      "row": 7,
+      "col": 0,
+      "text": "P1"
+    },
+    {
+      "name": "part 2 label",
+      "type": "text",
+      "row": 8,
+      "col": 0,
+      "text": "P2"
+    },
+    {
+      "name": "part 3 label",
+      "type": "text",
+      "row": 9,
+      "col": 0,
+      "text": "P3"
+    },
+    {
+      "name": "part 4 label",
+      "type": "text",
+      "row": 10,
+      "col": 0,
+      "text": "P4"
+    },
+    {
+      "name": "part 5 label",
+      "type": "text",
+      "row": 11,
+      "col": 0,
+      "text": "P5"
+    },
+    {
+      "name": "parts verdict line",
+      "type": "text",
+      "row": 12,
+      "col": 0,
+      "text": "PARTS 5/5 PASS"
+    },
+    {
+      "name": "part 1 technique names (KB)",
+      "type": "text",
+      "row": 14,
+      "col": 0,
+      "text": "P1 TECH.TECH PLASMA SPRITE.BORDER.SCRL"
+    },
+    {
+      "name": "graph facts line",
+      "type": "text",
+      "row": 20,
+      "col": 0,
+      "text": "16 TECHNIQUES 48 HARD CONFLICTS 5 PARTS"
+    },
+    {
+      "name": "thanks line 1",
+      "type": "text",
+      "row": 22,
+      "col": 10,
+      "text": "THANKS FOR WATCHING"
+    },
+    {
+      "name": "thanks line 2 (the C64 scene)",
+      "type": "text",
+      "row": 23,
+      "col": 0,
+      "text": "THANKS C64 SCENE. THE TRICKS ARE YOURS."
+    },
+    {
+      "name": "frame metre, 200 play frames",
+      "type": "meter",
+      "row": 24,
+      "col": 20,
+      "frames": 200
+    },
+    {
+      "name": "title and credits same on both models",
+      "type": "same",
+      "cells": [0, 0, 6, 39]
+    }
+  ]
+}

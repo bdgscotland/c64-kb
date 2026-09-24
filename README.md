@@ -83,11 +83,16 @@ differs by one pixel fails the gate.
 
 ## Built from the KB
 
-[MEASURED](demos/measured/README.md) is a five-part demo written from
-the techniques and recipes above and nothing else, run headless under the
+[C64-KB](demos/c64-kb/README.md) is a five-part demo written from the
+techniques and recipes above and nothing else, run headless under the
 harness on PAL and NTSC with a verdict byte, a frame meter and pinned
-screenshots; its README lists each part's technique, recipe and measured
-frame cost.
+screenshots. Its end screen prints each part's worst and typical frame from
+the part's own stopwatch, its tune plays from a data image under the
+KERNAL, and its README lists each part's techniques and figures.
+The build fed the KB back: the plasma and the luminance dissolve are
+technique pages with recipes now, and six pitfalls came out of it.
+
+![The end screen: five parts, each with its worst and typical cycles, PARTS 5/5 PASS and the frame meter](demos/c64-kb/screenshots/end-pal.png)
 
 ## Quick start
 
