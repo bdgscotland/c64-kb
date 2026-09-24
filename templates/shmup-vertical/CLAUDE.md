@@ -83,6 +83,7 @@ make shot check       # autopilot build, headless PAL and NTSC, graded by expect
 make selftest         # the FORCE_FAULT build must fail the same checks
 make disk             # build/<name>.d64
 make claims           # every store the program makes, against what it declares
+make watch            # frame deadline and SID player, from a VICE trace (run by make check)
 make drive STEPS='"until:PRESS FIRE" tap:fire print'   # the normal build, played headless
 make run              # windowed VICE, for a human
 ```
@@ -140,6 +141,12 @@ make run              # windowed VICE, for a human
   differs, and `check.py` refuses the picture.
 - A program that reads `$D41B` or `$D41C` sets `SOUND_SINK := dump`; under
   the default `+sound` both read wrong values.
+- With `DEADLINE_LINE` or `SID_FRAMES` set in the Makefile, `make check`
+  runs `make watch`, a VICE store trace of the autopilot run: every frame's
+  work, `WORK_BEGIN` to `WORK_END` (1, then 0, stored to `$02FE`), must end
+  before line `DEADLINE_LINE`, and the SID must be written in at least
+  `SID_FRAMES` frames. `make selftest` then runs `make watchtest`: the
+  `OVERRUN=1` build must fail the deadline, the `NO_PLAYER=1` build the SID.
 - The shots autostart the PRG with the disk attached. On PAL the first disk
   call after that can hang (c64-kb pitfall
   `first_open_after_reset_hangs_on_pal`); prove the disk path once by

@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 
 // The template harness's Python tools (#42, #59): check.py's refusals, the
 // ink check and mid-run pins; plan-gate.py's seed, pass line and "the KB's
-// answer changed"; drive.py's screen regions. VICE is not needed: pictures
+// answer changed"; drive.py's screen regions; watch.py's deadline and SID
+// grading of a written trace (#75). VICE is not needed: pictures
 // are drawn with Pillow, check-compatibility is a stub `npx` on PATH. Skips
 // where python3 or Pillow is missing.
 const root = join(import.meta.dirname, "..");
@@ -188,5 +189,62 @@ describe("drive.py", () => {
       harness,
     ]);
     expect(r.out.trim()).toBe("[(1024, 0, 24), (51200, 21, 24), (34816, 3, 3)]");
+  });
+});
+
+describe("watch.py", () => {
+  // A -monlog trace as the windowless x64sc 3.10 writes it: a head with the
+  // raster line and cycle, then the instruction with the clock. PAL frames of
+  // 312 x 63 cycles; frame n starts at clock n * 19,656.
+  const FRAME = 19656;
+  const hit = (addr: string, mnemonic: string, a: number, [frame, line]: [number, number]): string => {
+    const clock = frame * FRAME + line * 63 + 10;
+    const hex = a.toString(16).toUpperCase().padStart(2, "0");
+    const lo = addr.slice(2).toUpperCase();
+    const hi = addr.slice(0, 2).toUpperCase();
+    return (
+      `#1 (Trace store ${addr})  ${String(line)}/$${line.toString(16).padStart(3, "0")},  10/$0a\n` +
+      `.C:1234  8D ${lo} ${hi}    ${mnemonic} $${addr.toUpperCase()}      - A:${hex} X:00 Y:00 SP:f3 ..-..I..    ${String(clock)}\n`
+    );
+  };
+  function watch(log: string, args: string[]): Run {
+    const dir = mkdtempSync(join(tmpdir(), "harness-watch-"));
+    const path = join(dir, "trace.log");
+    writeFileSync(path, log);
+    return py([join(harness, "watch.py"), "none.prg", "--log", path, ...args]);
+  }
+  const DEADLINE = ["--deadline", "251"];
+
+  it("holds each WORK_END to the first line N after its WORK_BEGIN", () => {
+    // Begun on line 252; ends on line 100 of the next frame: before line 251.
+    const pass = watch(hit("02fe", "STA", 1, [10, 252]) + hit("02fe", "STA", 0, [11, 100]), DEADLINE);
+    expect(pass.status).toBe(0);
+    expect(pass.out).toContain("PASS PAL   deadline: 1 frames' work, each ended before line 251");
+    // Ends on line 252 of the next frame: one line and 10 cycles late.
+    const late = watch(hit("02fe", "STA", 1, [10, 252]) + hit("02fe", "STA", 0, [11, 252]), DEADLINE);
+    expect(late.status).toBe(1);
+    expect(late.out).toContain("ended on line 252, 73 cycles late");
+    // Ends on line 100 a frame later still: the line alone looks early.
+    const frameLate = watch(hit("02fe", "STA", 1, [10, 252]) + hit("02fe", "STA", 0, [12, 100]), DEADLINE);
+    expect(frameLate.status).toBe(1);
+    expect(frameLate.out).toContain(`${String((312 - 251 + 100) * 63 + 10)} cycles late`);
+    // No pair at all is a failure, not a pass.
+    const none = watch(hit("02fe", "STA", 0, [10, 100]), DEADLINE);
+    expect(none.status).toBe(1);
+    expect(none.out).toContain("no WORK_BEGIN / WORK_END pair");
+  });
+
+  it("counts the frames that store to the SID", () => {
+    const log = [3, 3, 4, 9].map((f) => hit("d418", "STA", 15, [f, 20])).join("");
+    const pass = watch(log, ["--sid-frames", "3"]);
+    expect(pass.status).toBe(0);
+    expect(pass.out).toContain("in 3 frames (4 stores, 7 frames from the first to the last)");
+    expect(watch(log, ["--sid-frames", "4"]).status).toBe(1);
+  });
+
+  it("refuses a mark whose value the trace does not show", () => {
+    const r = watch(hit("02fe", "INC", 0, [10, 252]), DEADLINE);
+    expect(r.status).toBe(2);
+    expect(r.out).toContain("FAIL REFUSED PAL");
   });
 });

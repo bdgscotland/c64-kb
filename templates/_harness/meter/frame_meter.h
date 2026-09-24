@@ -58,6 +58,15 @@
 #ifndef FRAME_METER
 #define FRAME_METER AUTOPILOT
 #endif
+// make watchtest's two builds define one of these (harness.mk SILENT_DEFINE,
+// OVERRUN_DEFINE): NO_PLAYER leaves the music and effects player uncalled,
+// OVERRUN makes a frame's work end past DEADLINE_LINE.
+#ifndef NO_PLAYER
+#define NO_PLAYER 0
+#endif
+#ifndef OVERRUN
+#define OVERRUN 0
+#endif
 
 extern unsigned meter_last, meter_worst, meter_typical, meter_frames, meter_zero;
 
@@ -68,14 +77,23 @@ void meter_frame(void);
 void meter_stop(unsigned raw);
 void meter_print(void);
 
+// WORK_BEGIN and WORK_END mark where the frame's work starts and ends, for
+// the harness's DEADLINE_LINE check (watch.py): a store of 1, then of 0, to
+// $02FE, which a VICE store trace reads with its raster line and clock. They
+// are not the meter's brackets: put WORK_END after everything that must be
+// done before the line, bookkeeping included.
 #if FRAME_METER
 #define METER_START (cia2.cra = 0x11)          // force-load $FFFF, start, count phi2
 #define METER_PAUSE meter_add(meter_read())    // add this bracket to the frame's sum
 #define METER_STOP  meter_stop(meter_read())   // add it, then record the frame
+#define WORK_BEGIN  (*(volatile char *)0x02fe = 1)
+#define WORK_END    (*(volatile char *)0x02fe = 0)
 #else
 #define METER_START
 #define METER_PAUSE
 #define METER_STOP
+#define WORK_BEGIN
+#define WORK_END
 #endif
 
 #pragma compile("frame_meter.c")

@@ -349,7 +349,9 @@ static void play_frame(void)
         }
         return;
     }
+#if !NO_PLAYER                      // make watchtest: the build without it fails SID_FRAMES
     sound_update();
+#endif
     key_scan();
     bool line = false;
     if (pic_dirty)
@@ -402,7 +404,9 @@ int main(void)
             play_frame();
         else
         {
+#if !NO_PLAYER
             sound_update();
+#endif
             key_scan();
 #if AUTOPILOT
             if (state == ST_TITLE && state_frames == 2)

@@ -45,6 +45,11 @@ CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite
 # This starter's own proofs, which npm run verify:templates runs too.
 VERIFY_TARGETS := flickercheck gameover drivetest
 
+# make watch (in make check): the player writes the SID. The autopilot run
+# stored to it in 2,561 frames on PAL and 2,540 on NTSC; without the tune and
+# sfx_update (NO_PLAYER) 146 and 148 (harness/watch.py, VICE x64sc 3.10).
+SID_FRAMES := 1200
+
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)

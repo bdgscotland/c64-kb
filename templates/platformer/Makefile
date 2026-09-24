@@ -29,14 +29,25 @@ SHOT_CYCLES_NTSC := 24000000
 #   at its splits, and view_init sets both.
 # - The KERNAL's IRQ runs until main's SEI, so IRQ is declared.
 # - $DC0D (all CIA1 interrupts off) counts against the three CIA1 units;
-#   the meter's $DD0D against CIA2's three, declared as the harness's.
+#   the meter's $DD0D against CIA2's three, declared as the harness's, and
+#   so is WORK_BEGIN and WORK_END's byte, $02FE (make watch).
 # - The whole run, title to verdict, is traced (--cycles, the PAL pin).
-CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, vic_xscroll, vic_matrix_base, vic_char_base, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$54' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 26000000
+CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, vic_xscroll, vic_matrix_base, vic_char_base, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$54' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod, work_mark=$$02FE' --kernal IRQ --cycles 26000000
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 # Proof targets `npm run verify:templates -- --selftest` runs after selftest.
 VERIFY_TARGETS := tearcheck stage drivetest
+
+# make watch (in make check): the player writes the SID. The autopilot run
+# stored to it in 360 frames on PAL and 373 on NTSC; without the tune and
+# sfx_update (NO_PLAYER) 14 and 14 (harness/watch.py, VICE x64sc 3.10).
+SID_FRAMES := 180
+# ... and every play frame's work, WORK_BEGIN after the line-251 tick to
+# WORK_END after view_publish, ends before the next line 251, where the
+# engine applies the published page and XSCROLL. Measured: the least to
+# spare 100 lines on PAL, 50 on NTSC. OVERRUN=1 ends one in 64 on line 252.
+DEADLINE_LINE := 251
 
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))

@@ -47,6 +47,11 @@ VERIFY_TARGETS := disktest modelcheck selftest-scan drivetest
 # digs to a gem.
 DRIVE_STEPS := "until:FIRE TO START" tap:fire "until:LIVES" hold:right "until:GEMS 01/06" print
 
+# make watch (in make check): the player writes the SID. The autopilot run
+# stored to it in 636 frames on PAL and 703 on NTSC; without music_play and
+# sfx_update (NO_PLAYER) 19 and 18 (harness/watch.py, VICE x64sc 3.10).
+SID_FRAMES := 300
+
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
 include $(HARNESS)/harness.mk

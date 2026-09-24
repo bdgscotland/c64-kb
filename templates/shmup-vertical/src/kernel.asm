@@ -266,7 +266,9 @@ split_tb_on:
         inc split_self          // C adds the untimed start of this IRQ
 !:      lda #0
         sta split_late
+#if !NO_PLAYER                  // make watchtest: the build without it fails SID_FRAMES
         jsr music_play
+#endif
         lda #<irq_entry
         sta $fffe
         lda #>irq_entry

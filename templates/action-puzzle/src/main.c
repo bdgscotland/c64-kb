@@ -530,8 +530,10 @@ int main(void)
         if (state == ST_PLAY)
         {
             METER_START;
+#if !NO_PLAYER                                  // make watchtest: the build without it fails SID_FRAMES
             music_play();
             sfx_update();
+#endif
             play_frame_work();
             METER_STOP;                         // the frame's own work ends here
             if (slice == 0)
@@ -551,8 +553,10 @@ int main(void)
         }
         else
         {
+#if !NO_PLAYER                                  // make watchtest: the build without it fails SID_FRAMES
             music_play();
             sfx_update();
+#endif
             if (state == ST_TITLE && pressed(JOY_FIRE))
                 new_game();
             else if (state == ST_NEXT)

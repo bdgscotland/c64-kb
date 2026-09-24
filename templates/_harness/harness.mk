@@ -27,6 +27,19 @@
 #                    VICE's dummy sink, $D41B and $D41C (OSC3, ENV3) read wrong values;
 #                    a program that reads them sets SOUND_SINK := dump (the output goes
 #                    to /dev/null). See docs/runtime/vice-reference.md, "The SID under +sound".
+#   DEADLINE_LINE    a raster line: in the autopilot run every frame's work, from WORK_BEGIN
+#                    to WORK_END (meter/frame_meter.h, .asm), must end before the first
+#                    start of that line after its begin (harness/watch.py). Empty: not checked
+#   DEADLINE_LINE_NTSC  the same on NTSC (default DEADLINE_LINE)
+#   OVERRUN_DEFINE   the define whose build must fail the deadline (default OVERRUN)
+#   SID_FRAMES       the least frames of the autopilot run that store to the SID ($D400-$D7FF):
+#                    the player runs. Empty: not checked
+#   SID_FRAMES_NTSC  the same on NTSC (default SID_FRAMES)
+#   SILENT_DEFINE    the define whose build never calls the player and must fail the SID
+#                    check (default NO_PLAYER)
+#   WATCH_CYCLES_PAL, WATCH_CYCLES_NTSC  the watched runs' length (default SHOT_CYCLES_*)
+#                    With DEADLINE_LINE or SID_FRAMES set, make check runs make watch and
+#                    make selftest runs make watchtest.
 #
 # Tools, each from the environment first:
 #   OSCAR64, KICKASS_JAR, JAVA, X64SC (headless runs), X64SC_WINDOWED (make run),
@@ -54,6 +67,15 @@ CLAIMS_ARGS      ?=
 VERIFY_TARGETS   ?=
 PLAN_GATE        ?= on
 SOUND_SINK       ?= off
+DEADLINE_LINE    ?=
+DEADLINE_LINE_NTSC ?= $(DEADLINE_LINE)
+OVERRUN_DEFINE   ?= OVERRUN
+SID_FRAMES       ?=
+SID_FRAMES_NTSC  ?= $(SID_FRAMES)
+SILENT_DEFINE    ?= NO_PLAYER
+WATCH_CYCLES_PAL  ?= $(SHOT_CYCLES_PAL)
+WATCH_CYCLES_NTSC ?= $(SHOT_CYCLES_NTSC)
+WATCH_ON = $(strip $(DEADLINE_LINE)$(SID_FRAMES))
 
 # ---- tools --------------------------------------------------------------------
 OSCAR64 ?= $(firstword $(shell command -v oscar64 2>/dev/null) $(wildcard $(HOME)/Developer/c64/oscar64/bin/oscar64) oscar64)
@@ -101,7 +123,7 @@ shot_disk = @cp $(D64) $(1:.png=.d64)
 shot_disk_flags = -8 $(1:.png=.d64) -drive8wobbleamplitude 0 -drive8wobblefrequency 0
 endif
 
-.PHONY: all build run run-auto shot check selftest disk claims zp released clean plan-gate tools verify-targets drive drivetest joyprobe
+.PHONY: all build run run-auto shot check selftest watch watchtest disk claims zp released clean plan-gate tools verify-targets drive drivetest joyprobe
 .DELETE_ON_ERROR:
 
 all: plan-gate build
@@ -206,6 +228,9 @@ shot:
 # ---- check: grade both shots against expect.json ---------------------------------
 check: $(SHOTS)
 	C64KB="$(C64KB)" $(PYTHON) $(HARNESS_DIR)/check.py expect.json shots/pal.png shots/ntsc.png
+ifneq ($(WATCH_ON),)
+	@$(MAKE) --no-print-directory watch
+endif
 
 # The check must fail on a build that fails its own test. Passes when it does.
 selftest:
@@ -221,6 +246,72 @@ selftest:
 	else \
 	  cat shots/fault-check.txt; echo "selftest: FAIL, check.py did not grade the shots (exit $$st)"; exit 1; \
 	fi
+ifneq ($(WATCH_ON),)
+	@$(MAKE) --no-print-directory watchtest
+endif
+
+# ---- watch: the frame deadline and the SID player, from a VICE store trace --------
+# harness/watch.py runs the autopilot PRG once a model with a monitor trace on
+# $02FE (WORK_BEGIN, WORK_END) and $D400-$D7FF, and grades DEADLINE_LINE and
+# SID_FRAMES. watchtest proves each check can fail: the OVERRUN_DEFINE build
+# must fail the deadline and the SILENT_DEFINE build the SID check, on PAL and
+# NTSC, and the normal build must pass both.
+WATCH = $(TIMEOUT) $(VICE_TIMEOUT) $(PYTHON) $(HARNESS_DIR)/watch.py --x64sc '$(X64SC)' --sound $(SOUND_SINK) $(if $(SHOT_DISK_DEP),--disk $(D64))
+watch_pal  = $(WATCH) --model pal --cycles $(WATCH_CYCLES_PAL) $(1)
+watch_ntsc = $(WATCH) --model ntsc --cycles $(WATCH_CYCLES_NTSC) $(1)
+DEADLINE_ARGS_PAL  = $(if $(DEADLINE_LINE),--deadline $(DEADLINE_LINE))
+DEADLINE_ARGS_NTSC = $(if $(DEADLINE_LINE_NTSC),--deadline $(DEADLINE_LINE_NTSC))
+SID_ARGS_PAL  = $(if $(SID_FRAMES),--sid-frames $(SID_FRAMES))
+SID_ARGS_NTSC = $(if $(SID_FRAMES_NTSC),--sid-frames $(SID_FRAMES_NTSC))
+
+watch: $(PRG_AUTO) $(SHOT_DISK_DEP)
+ifeq ($(WATCH_ON),)
+	@echo "watch: $(NAME) sets neither DEADLINE_LINE nor SID_FRAMES; nothing was checked."
+else
+	@mkdir -p shots
+	@$(call watch_pal,$(DEADLINE_ARGS_PAL) $(SID_ARGS_PAL)) $(PRG_AUTO) > shots/watch-pal.txt 2>&1; echo $$? > shots/watch-pal.st & \
+	 $(call watch_ntsc,$(DEADLINE_ARGS_NTSC) $(SID_ARGS_NTSC)) $(PRG_AUTO) > shots/watch-ntsc.txt 2>&1; echo $$? > shots/watch-ntsc.st & \
+	 wait; cat shots/watch-pal.txt shots/watch-ntsc.txt; \
+	 [ "$$(cat shots/watch-pal.st)" = 0 ] && [ "$$(cat shots/watch-ntsc.st)" = 0 ] || { echo "watch: FAIL"; exit 1; }
+	@echo "watch: PASS"
+endif
+
+# A variant of the autopilot build with one more define: $(1) its name, $(2) the define.
+ifneq ($(strip $(C_MAIN)),)
+define variant_prg
+build/$(NAME)-$(1).prg: $(C_DEPS) $(KICK_SRC) $(KICK_DEPS) $(METER_DEPS) | plan-gate
+	@mkdir -p build/$(1)
+	$(if $(strip $(KICK_SRC)),$(KICKASS) $(KICK_SRC) $(KICKASS_FLAGS) -define $(2) -binfile -symbolfile -libdir $(HARNESS_DIR)/meter -odir $(CURDIR)/build/$(1) -o $(CURDIR)/build/$(1)/asm.bin > build/$(1)/asm.log || { cat build/$(1)/asm.log; exit 1; })
+	$(if $(strip $(KICK_SRC)),$(PYTHON) $(HARNESS_DIR)/gen-asm-header.py build/$(1)/asm.log build/$(1)/$(basename $(notdir $(KICK_SRC))).sym build/$(1)/asm.bin build/$(1)/asm.h)
+	$(OSCAR64) $(OSCAR64_FLAGS) -i=$(CURDIR)/build/$(1) -i=$(abspath $(HARNESS_DIR))/meter -d$(AUTOPILOT_DEFINE)=1 -d$(2)=1 -o=$$@ $(C_MAIN)
+endef
+else
+define variant_prg
+build/$(NAME)-$(1).prg: $(KICK_SRC) $(KICK_DEPS) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(KICK_BUILD) -define $(AUTOPILOT_DEFINE) -define $(2) -o $(CURDIR)/$$@ > build/kick-$(1).log || { cat build/kick-$(1).log; exit 1; }
+endef
+endif
+$(eval $(call variant_prg,overrun,$(OVERRUN_DEFINE)))
+$(eval $(call variant_prg,silent,$(SILENT_DEFINE)))
+
+# $(1) the variant, $(2) the model, $(3) the check's arguments: exit 1 with a FAIL line passes.
+define watch_must_fail
+	@$(call watch_$(2),$(3)) build/$(NAME)-$(1).prg > shots/watch-$(1)-$(2).txt 2>&1; st=$$?; \
+	grep '^FAIL' shots/watch-$(1)-$(2).txt | head -2; \
+	if [ $$st -eq 1 ] && grep -q '^FAIL' shots/watch-$(1)-$(2).txt; then echo "watchtest: the $(1) build fails on $(2): PASS"; \
+	else cat shots/watch-$(1)-$(2).txt; echo "watchtest: FAIL, the $(1) build was not failed on $(2) (exit $$st)"; exit 1; fi
+endef
+
+watchtest: watch $(if $(DEADLINE_LINE),build/$(NAME)-overrun.prg) $(if $(SID_FRAMES),build/$(NAME)-silent.prg)
+ifneq ($(DEADLINE_LINE),)
+	$(call watch_must_fail,overrun,pal,$(DEADLINE_ARGS_PAL))
+	$(call watch_must_fail,overrun,ntsc,$(DEADLINE_ARGS_NTSC))
+endif
+ifneq ($(SID_FRAMES),)
+	$(call watch_must_fail,silent,pal,$(SID_ARGS_PAL))
+	$(call watch_must_fail,silent,ntsc,$(SID_ARGS_NTSC))
+endif
 
 lc = $(shell echo '$(1)' | tr A-Z a-z)
 

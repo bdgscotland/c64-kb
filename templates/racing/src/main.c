@@ -290,7 +290,9 @@ int main(void)
         PON(3)
         if (state == ST_RACE || state == ST_GRID)
             hud_draw();
+#if !NO_PLAYER                      // make watchtest: the build without it fails SID_FRAMES
         sound_frame();
+#endif
         POFF(3)
 #if FRAME_METER
         unsigned bracket = metering && !PROF ? meter_read() : 0;   // METER_PAUSE, kept

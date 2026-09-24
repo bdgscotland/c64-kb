@@ -49,6 +49,16 @@
 .macro FrameMeterStop() { jsr frame_meter.fm_stop }
 .macro FrameMeterEnd() { jsr frame_meter.fm_frame }
 .macro FrameMeterPrint() { jsr frame_meter.fm_print }
+// The frame's work starts and ends, for the harness's DEADLINE_LINE check
+// (watch.py): $01, then $00, stored to $02FE. Each clobbers A.
+.macro WorkBegin() {
+    lda #$01
+    sta $02fe
+}
+.macro WorkEnd() {
+    lda #$00
+    sta $02fe
+}
 
 // Stops timer A, then raw = $FFFF - count; saturates at $FFFF when the
 // timer passed zero (bit 0 of $DD0D, cleared by the read).
@@ -435,6 +445,8 @@ fm_hi:      .fill hold, 0
 .macro FrameMeterStop() {}
 .macro FrameMeterEnd() {}
 .macro FrameMeterPrint() {}
+.macro WorkBegin() {}
+.macro WorkEnd() {}
 .macro FrameMeterCode(screen, row, col, colour, hold) {}
 
 #endif

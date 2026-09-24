@@ -273,8 +273,10 @@ int main(void)
             break;
         }
         PON(4)
+#if !NO_PLAYER                      // make watchtest: the build without it fails SID_FRAMES
         __asm { jsr ASM_MUSIC_PLAY }
         sfx_update();
+#endif
         POFF(4)
         PON(6)
         brute_prepare();            // the brute's next picture, half a frame at a time

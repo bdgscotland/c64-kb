@@ -47,6 +47,11 @@ VERIFY_TARGETS := roadcheck mutants drivetest
 DRIVE_SCREEN := C800:19-24
 DRIVE_STEPS  := "until:PRESS FIRE" tap:fire "until:GO!" hold:fire "until:SPEED 480" print
 
+# make watch (in make check): the player writes the SID. The autopilot run
+# stored to it in 4,001 frames on PAL and 5,004 on NTSC; without sound_frame
+# (NO_PLAYER) 18 and 18 (harness/watch.py, VICE x64sc 3.10).
+SID_FRAMES := 2000
+
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)

@@ -228,6 +228,8 @@ int main(void)
     for (;;)
     {
         wait_sync();
+        if (state == ST_PLAY)
+            WORK_BEGIN;             // make watch: play's work ends before line 251 (Makefile DEADLINE_LINE)
 #if AUTOPILOT
         autopilot_blank();          // the camera of the picture now drawn, on the HUD
 #endif
@@ -238,8 +240,10 @@ int main(void)
 
         PON(4)
         view_apply();
+#if !NO_PLAYER                      // make watchtest: the build without it must fail SID_FRAMES
         __asm { jsr ASM_MUSIC_PLAY }
         sfx_update();
+#endif
         POFF(4)
 
         char joy = port_read();
@@ -274,6 +278,15 @@ int main(void)
         view_sprites();
         view_publish();
         POFF(5)
+#if OVERRUN                         // make watchtest: one frame in 64 ends on line 252, one line late
+        if ((frame & 63) == 32)
+        {
+            while (vic.raster != 252) ;
+            if (OVERRUN == 2)           // a frame late, on line 100: its raster alone looks early
+                while (vic.raster != 100) ;
+        }
+#endif
+        WORK_END;
 
         if (metering)
         {

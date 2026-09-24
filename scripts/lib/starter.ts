@@ -106,11 +106,12 @@ export function verifyTargets(dir: string): string[] {
   return r.ok ? (r.out.at(-1) ?? "").split(/\s+/).filter((t) => t !== "") : [];
 }
 
-/** The lines of a make run worth showing: shots, failures, the meter, summaries. */
+/** The lines of a make run worth showing: shots, failures, the meter, make watch, summaries. */
 export function reportLines(out: string[]): string[] {
   return out.filter(
     (l) =>
-      /^(FAIL|check:|shot:|selftest:|plan-gate:|drive:|drivetest:|joyprobe:)/.test(l) ||
+      /^(FAIL|check:|shot:|selftest:|plan-gate:|drive:|drivetest:|joyprobe:|watch:|watchtest:)/.test(l) ||
+      /^PASS \S+ +(deadline|sid):/.test(l) ||
       l.includes(" frame meter") ||
       /"\S+"\s+prg/.test(l),
   );

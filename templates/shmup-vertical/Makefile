@@ -54,6 +54,11 @@ CLAIMS_ARGS = --cycles 30000000 --disk $(abspath $(D64)) \
 # Proof targets `npm run verify:templates -- --selftest` runs after selftest.
 VERIFY_TARGETS := stage joytest longplay
 
+# make watch (in make check): the player writes the SID. The autopilot run
+# stored to it in 731 frames on PAL and 650 on NTSC; without the IRQ's
+# music_play (NO_PLAYER) 1 and 1 (harness/watch.py, VICE x64sc 3.10).
+SID_FRAMES := 300
+
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
 include $(HARNESS)/harness.mk

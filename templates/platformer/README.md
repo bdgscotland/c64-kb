@@ -73,8 +73,13 @@ autopilot run, VICE x64sc 3.10, `make shot check`:
 
 | Model | Worst | Typical (median) | Frame |
 |---|---|---|---|
-| PAL | 11,758 | 6,212 | 19,656 |
-| NTSC | 12,216 | 6,573 | 17,095 |
+| PAL | 11,774 | 6,227 | 19,656 |
+| NTSC | 12,225 | 6,590 | 17,095 |
+
+Measured 2026-09-24, with the `WORK_BEGIN` / `WORK_END` marks for `make
+watch` in the bracket. An earlier version of this table said 11,758 and
+6,212 on PAL, 12,216 and 6,573 on NTSC; the build just before the marks
+read 11,771 and 6,222, 12,216 and 6,584.
 
 Per subsystem, built with `-dPROF=n` (worst / typical, PAL; NTSC within
 400 cycles of each):
@@ -93,7 +98,7 @@ below the first window's, their typical about 1,000 cycles above it. Not
 re-measured on this build.
 
 The worst frames of the parts do not fall together: the whole frame's
-worst is 11,758, not their sum. Every figure is wall time, so badline and
+worst is 11,774, not their sum. Every figure is wall time, so badline and
 sprite DMA are in it, and so is the split IRQ when it lands inside the
 bracket (work past line 212; about 56 cycles by arithmetic). The IRQ at
 251 falls just before the bracket opens and is not counted: about 66
@@ -102,8 +107,8 @@ cycles by arithmetic.
 Against `plan-budget` (PLAN.md): it gave 10,167 to 10,765 cycles plus
 1,432 fixed, 11,599 to 12,197 in all, verdict undetermined, with the
 scroll left out (its only figure was the old recipe's 74,041-cycle shift,
-issue #18) and six techniques unknown. The measured worst is 11,758 on PAL,
-inside that range, and 12,216 on NTSC, 19 cycles above its top (an earlier build, before the walker
+issue #18) and six techniques unknown. The measured worst is 11,774 on PAL,
+inside that range, and 12,225 on NTSC, 28 cycles above its top (an earlier build, before the walker
 and HUD cuts below, was 356 and 785 cycles above its top). The parts disagree more than
 the total: the budget charges per-frame-hitbox 3,693 and decimal-print
 1,361 from their recipes, where this game tests a few box pairs and adds
@@ -124,7 +129,7 @@ and the meter's worst inside one frame on each model.
 |---|---|---|---|---|
 | walkers probing every step, HUD redrawn whole | 6 | 17,105 | 17,262 | yes |
 | walker judges the column ahead once; HUD figures only | 6 | 15,632 | 15,977 in frames 1-255; 17,618 from frame 400 | on NTSC |
-| the same | 5 | 14,523 | 14,829 in frames 1-255; 15,353 from frame 400 (measured once; no target re-measures that window) | none, either model |
+| the same | 5 | 14,514 | 14,827 in frames 1-255; 15,353 from frame 400 (measured once; no target re-measures that window) | none, either model |
 
 So `NSLOT` is 5: sprites 1-5 are enemies, sprite 6 is free. Six live
 enemies overran an NTSC frame by about 520 cycles; a sixth needs about
@@ -140,7 +145,9 @@ slots step on alternate frames.
 | `make shot check` | 23 checks: the verdict, the HUD text (so the split's 40 columns and XSCROLL 0), the player sprite where arithmetic puts it, the hopper where the run leaves it, the scrolled playfield's brick, grass and pit at camera 576, the blank row 20, PAL and NTSC identical, the meter | 23 of 23 passed |
 | `make selftest` | FORCE_FAULT makes a coin worth 20: the verdict fails, the HUD score reads 000200 | check.py rejected the build |
 | `make tearcheck` | 16 shots a model mid-play, each matched pixel for pixel against a render of the level | 32 of 32 whole or two-frame composites; the TEAR_DEMO build: 2 of 32 torn (the count moves with the code; one is enough) |
-| `make stage` | Every enemy slot live from the first play frame: no late frame, the meter inside one frame | 4 of 4 passed (worst 14,523 PAL, 14,829 NTSC) |
+| `make stage` | Every enemy slot live from the first play frame: no late frame, the meter inside one frame | 4 of 4 passed (worst 14,514 PAL, 14,827 NTSC) |
+| `make watch` (in `make check`) | Every play frame's work ends before the next line 251, where the engine applies the published page and XSCROLL (`DEADLINE_LINE`); the tune and effects store to the SID in at least 180 frames (`SID_FRAMES`) | 750 frames, the least to spare 100 lines PAL and 50 NTSC; SID stores in 360 frames PAL, 373 NTSC |
+| `make watchtest` (in `make selftest`) | `OVERRUN=1` ends one play frame in 64 on line 252; `NO_PLAYER=1` never calls the tune or `sfx_update` | both fail on PAL and NTSC: 12 of 750 frames 85 and 86 cycles late; SID stores in 14 frames |
 | `make claims` | Every store the run makes, title to verdict, against CLAIMS_ARGS | 0 violations (after vic_xscroll, vic_matrix_base and vic_char_base became claims-watch units, CLAIMS_ARGS lacked them, and its zero page stopped at $53 while main writes $54: 4 violation groups until both were fixed) |
 | `make disk` | `build/platformer.d64`; it boots to the title | |
 

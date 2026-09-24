@@ -56,6 +56,8 @@ is filled.
 | `make drive STEPS='...'` | The normal build played headless by `harness/drive.py`, the stick on the real `$DC00` (see "Driving the normal build") |
 | `make drivetest` | The starter's `DRIVE_STEPS` played that way; fails when a step never comes |
 | `make joyprobe` | `drive.py`'s own proof: a fire press at the same frame in three runs |
+| `make watch` | With `DEADLINE_LINE` or `SID_FRAMES` set: the frame deadline and the SID player, from a VICE store trace of the autopilot run (see "The frame deadline and the SID player"); `make check` runs it |
+| `make watchtest` | The `OVERRUN` build must fail the deadline and the `NO_PLAYER` build the SID check, on PAL and NTSC; `make selftest` runs it |
 | `make clean` | Removes `build/` and `shots/` |
 
 The headless runs use `-default -warp +sound +autostart-delay-random
@@ -394,7 +396,9 @@ T<typical>`, five digits each, 20 cells from row 24, column 20.
   left the program's `wait_frame` counter at `OVERRUNS 00`, and a detector
   that tests the frame flag when the work ends found NTSC joystick play
   losing a frame in 6 of 15 runs. The demo's frame slot, which must end
-  before a split line, reads the raster when its work ends instead.
+  before a split line, reads the raster when its work ends instead. The
+  harness checks the same from outside the program with `DEADLINE_LINE`
+  (see "The frame deadline and the SID player").
 - **Its own cost, outside the brackets.** Measured in VICE x64sc 3.10 with
   CIA1 timers A and B cascaded around each call (a scratch program, not a
   starter), 255 samples of 5,000 to 21,383 cycles from an LFSR: the
@@ -442,6 +446,78 @@ typical 154; each over the script's 144 play frames and the same on PAL and
 NTSC. Both bracket from raster line 250, below the last badline (`$F7`),
 and the sprite is on lines 117 to 137, so no DMA falls in the bracket. The
 grading at frame 150 runs after `METER_STOP` and is in neither figure.
+
+## The frame deadline and the SID player
+
+Two faults leave the pinned screenshot unchanged. A frame's work that ends
+past the line it must end before loses a frame or drifts, and a shot taken
+after the script can still match. A player that is never called leaves the
+run silent: #42 found that the demo with every SID store removed passed
+every gate, and that nothing checked the adventure's sound. `make watch`
+checks both.
+`harness/watch.py` runs the autopilot PRG once a model with the monitor
+tracing stores to `$02FE` and `$D400`-`$D7FF` (`-moncommands`, `-monlog`:
+the mechanism c64-kb's claims-watch uses). Each hit in the log carries its
+raster line, cycle and CPU clock.
+
+| Makefile variable | Passes when |
+|---|---|
+| `DEADLINE_LINE` (`DEADLINE_LINE_NTSC`, default the same) | Every `WORK_END` comes before the first start of that line after its `WORK_BEGIN`, counted in cycles. A run with no begin-end pair fails |
+| `SID_FRAMES` (`SID_FRAMES_NTSC`, default the same) | At least that many frames of the run store to the SID. A frame starts at raster line 0 |
+
+The program marks its work with `WORK_BEGIN` and `WORK_END` (C,
+`frame_meter.h`) or `WorkBegin()` and `WorkEnd()` (KickAssembler,
+`frame_meter.asm`): a store of 1, then 0, to `$02FE`, in AUTOPILOT builds
+only. They are not the meter's brackets: `WORK_END` goes after everything
+that must be done by the line. A starter whose `make claims` traces the
+autopilot build declares `$02FE` as harness (`--harness '...,
+work_mark=$$02FE'`). An end is held to its begin's frame, not read as a
+line: work that ends a whole frame late ends on a line that looks early.
+
+`make check` runs `make watch` when either variable is set, and `make
+selftest` then runs `make watchtest`. That builds two variants of the
+autopilot program, `OVERRUN=1` (`OVERRUN_DEFINE`) and `NO_PLAYER=1`
+(`SILENT_DEFINE`), and needs each to fail its check on PAL and NTSC; a
+KickAssembler part is assembled with the define as well. `frame_meter.h`
+defines both names as 0 when a build does not. The runs last
+`WATCH_CYCLES_PAL` and `WATCH_CYCLES_NTSC`, the shot pins by default. Exit
+codes are check.py's: 0, 1 with `FAIL` lines, 2 with `FAIL REFUSED`.
+
+The deadline, measured on the platformer (`DEADLINE_LINE := 251`, where its
+engine applies the published page and XSCROLL; marks on play frames only):
+
+| Build | PAL | NTSC |
+|---|---|---|
+| normal | 750 frames, the least to spare 6,357 cycles (100 lines; ended on line 150) | 750 frames, 3,312 cycles to spare (50 lines; ended on line 200) |
+| `OVERRUN=1`: one play frame in 64 waits for line 252 | FAIL, 12 of 750; the first ended on line 252, 85 cycles late | FAIL, 12 of 750, 86 cycles late |
+| `OVERRUN=2`: then waits for line 100 as well | FAIL, ended on line 100, 10,157 cycles late | FAIL, ended on line 100, 7,293 cycles late |
+
+`OVERRUN=2` is the case a raster read at the end of the work misses: line
+100 is before 251. With marks on every frame instead of play frames, the
+title's frame that builds the level failed, 398,107 cycles late: a load
+frame, not play, which is why the platformer marks play only.
+
+The SID check on the seven starters with a player: frames with a SID store
+in the autopilot run, to the shot pins.
+
+| Starter | Player | Normal, PAL / NTSC | `NO_PLAYER`, PAL / NTSC | `SID_FRAMES` |
+|---|---|---|---|---|
+| action-puzzle | `music_play`, `sfx_update` | 636 / 703 | 19 / 18 | 300 |
+| adventure | `sound_update` (effects, no music) | 122 / 112 | 65 / 57 | 90 |
+| beat-em-up | the tune, `sfx_update` | 2,561 / 2,540 | 146 / 148 | 1,200 |
+| demo | `MUSIC_PLAY` from the frame chain | 457 / 434 | 2 / 2 | 200 |
+| platformer | the tune, `sfx_update` | 360 / 373 | 14 / 14 | 180 |
+| racing | `sound_frame` | 4,001 / 5,004 | 18 / 18 | 2,000 |
+| shmup-vertical | `music_play` in the split IRQ | 731 / 650 | 1 / 1 | 300 |
+
+A build without its player still stores to the SID: its init silences the
+chip and an effect's start writes its voice. The adventure, with effects
+only, has the narrowest gap. The check counts frames, not stores, and not
+sound: a player that writes wrong notes or volume 0 passes. The demo's own
+`make audio` checks each voice's stores against its frames.
+
+`make watchtest` on the platformer, three builds and six runs, took 14 s;
+one 26,000,000-cycle trace took 1.7 s.
 
 ## The plan gate
 
@@ -552,9 +628,13 @@ pixel for pixel, because nothing on screen changes after the grade.
    summing IRQ work with `METER_PAUSE`.
 5. Write `expect.json`: the verdict, the text, a `sprite` or `rect` or
    `pixel` check for each feature, a `same` area, the meter with `frames`.
-6. Pin `SHOT_CYCLES_*` after the verdict, where the screen no longer
+6. With a player, set `SID_FRAMES` from a measured run and guard the
+   player's call with `#if !NO_PLAYER`. With a line the work must end
+   before, mark it with `WORK_BEGIN` / `WORK_END`, set `DEADLINE_LINE`, and
+   give `OVERRUN=1` a frame that ends past it.
+7. Pin `SHOT_CYCLES_*` after the verdict, where the screen no longer
    changes; prove it with two pins.
-7. `make shot check selftest disk`, then `npm run verify:templates --
+8. `make shot check selftest disk`, then `npm run verify:templates --
    --only <name> --selftest`.
 
 ## Not measured here

@@ -229,7 +229,10 @@ music_frame:
         bne !+
         inc music_skips+1
 !:      rts
-!play:  jsr MUSIC_PLAY
+!play:
+#if !NO_PLAYER                          // make watchtest: the build without it fails SID_FRAMES
+        jsr MUSIC_PLAY
+#endif
         inc music_calls
         bne !+
         inc music_calls+1
