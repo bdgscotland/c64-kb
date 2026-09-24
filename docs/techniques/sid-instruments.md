@@ -498,3 +498,86 @@ worst call here is 1,014 cycles on PAL.
 ### Recipes
 
 - `recipes/kickassembler/sid-ring-bell.md`
+
+---
+
+## sid_pwm_pad — A pulse-width-modulated pad: the player's width sweep moves the even harmonics
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D400, D401, D402, D403, D404, D405, D406
+**Requires:** sid_play_routine_pattern
+**Cost:** cycles_per_frame=114
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sid-pwm-pad (per play call, phase A against phase B, which holds the width: +114 on a sweep call, +12 on the call between, one voice, PAL and NTSC alike)
+**Claims:** sid_voice_1 (owns)
+**Claims basis:** derived-listing
+
+Every claim below was measured in VICE x64sc 3.10 (reSID, 6581 and 8580
+models, PAL and NTSC) by the recipe's log, the dump sink's register
+trace and WAV recordings. Nobody has listened to the recordings.
+`sid_voice_setup` in `music-sid.md` describes PWM pads driven from
+`$D41B`; this one uses the #50 player's own width sweep and leaves voice
+3 alone.
+
+### Why
+
+A held pulse is a static timbre. Moving its width moves the balance of
+its odd and even harmonics, the slow motion a pad needs, with no filter
+and no second voice.
+
+### How
+
+- An instrument with the pulse waveform (`$40`), a slow attack (attack
+  8), full sustain (`SR` `$F8`), a start width (`tn_pwh` `$02`: `$200`)
+  and a sweep byte (`tn_pws` `$30`).
+- The #50 player adds the sweep to the width every other frame (stored
+  doubled: `$30` is 48 a step, 24 a frame), turns round at `$100` and
+  `$EFF`, and writes `$D402`/`$D403` only when the width changed.
+- Each new note reloads the start width unless its pulse byte has bit 7
+  set (keep the running width).
+
+### Why it works
+
+A pulse of duty d has harmonic n at an amplitude proportional to
+|sin(π n d)| / n, so the second harmonic over the first is |cos(π d)|
+(arithmetic): 1 at a thin pulse, 0 at a square. Measured on the recipe,
+in windows of four frames through two notes of 96 frames, the ratio
+follows |cos(π × width / 4096)| to 0.026 on average and 0.079 at most on
+both models, from 0.035 near `$830` to 0.895 near `$200`; held at
+`$200` it stays at 1.042 (A3) and 0.885 (E3). Level rises as the width
+nears half: RMS 3,612 to 4,690 on the 6581 model, 2,720 to 3,532 on the
+8580.
+
+The trace a correct build leaves: `$D402`/`$D403` change every other
+call while the note sounds, by the sweep, and return to the start width
+at each new note; nothing else in the voice changes.
+
+### Variations
+
+**Keep the width across notes.** A pulse byte with bit 7 set carries the
+running width into the next note, so the sweep is continuous over a
+phrase (not built).
+
+**Two voices, opposite sweeps.** A second pad voice sweeping down against
+this one sweeping up (not built).
+
+**Tri+pulse.** Its level follows the width (`sid-reference.md`, combined
+waveforms): the same sweep would move its volume as well. Hold the width
+below `$700` for a steady level, as that page says (not built here).
+
+### Cycle budget
+
+Per play call against the same pad with its width held, PAL: +114 on a
+sweep call, +12 on the call between (the parity test), 0 on 8 calls of
+192; NTSC the same. The whole player's worst call here is 959
+cycles on PAL, the phase's first call in both phases.
+
+### Pitfalls met
+
+- `sid_write_only_registers`: the width cannot be read back from
+  `$D402`/`$D403`; the player's copy in RAM is the width.
+
+### Recipes
+
+- `recipes/kickassembler/sid-pwm-pad.md`

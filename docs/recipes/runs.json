@@ -2586,5 +2586,16 @@
       "pal": "screenshots/sid-ring-bell.png",
       "ntsc": "screenshots/sid-ring-bell-ntsc.png"
     }
+  },
+  "kickassembler/sid-pwm-pad": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-pwm-pad.png",
+      "ntsc": "screenshots/sid-pwm-pad-ntsc.png"
+    }
   }
 }

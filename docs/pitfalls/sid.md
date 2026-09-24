@@ -26,7 +26,7 @@ both chips.
 **Severity:** medium
 **Region:** both
 **Triggered by registers:** D400, D404, D40B, D412, D418
-**Triggered by techniques:** sfx_engine_beside_music, sidfx_layered_chip, sfx_in_player, digi_4bit, sidasid_emulation_notes
+**Triggered by techniques:** sfx_engine_beside_music, sidfx_layered_chip, sfx_in_player, digi_4bit, sidasid_emulation_notes, sid_pwm_pad
 
 ### Symptom
 
