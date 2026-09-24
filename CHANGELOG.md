@@ -5,8 +5,23 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 839, schema 39, tools 2.16.0, package 0.29.0.
+Data 840, schema 39, tools 2.16.0, package 0.29.0.
 
+**#110: two road techniques and the speedcode road recipe (data 840).**
+Simon Nicol's unreleased 1989 Martech road (a bitmap fast fill whose
+speedcode is patched where the colour changes) was built and measured
+against the racing starter's character road:
+- The speedcode road's full redraw is 37,628 PAL / 38,033 NTSC cycles,
+  and patching six edges on every line costs 88,000-285,000 cycles a
+  picture.
+- Its edges are no smoother than the character road's, and it needs
+  about 45 KB.
+- It loses for a full game with kerbs.
+
+`techniques/effects-vector-3d.md` gains `speedcode_bitmap_road` and
+`char_row_road`, and `recipes/kickassembler/speedcode-road.md` pins the
+speedcode road on PAL and NTSC. Both are anchored to
+`badline_cycle_loss`.
 **lfsr_random no longer claims the SID (data 839; #112, maintainer
 decision).** The technique claimed SID voice 3, its readback and
 `$D418` (init) and CIA1 timer A, and listed their registers, because
