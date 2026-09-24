@@ -5,7 +5,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 800, schema 33, tools 2.8.0, package 0.21.0.
+Data 801, schema 33, tools 2.8.0, package 0.21.0.
+
+**Every CIA1 row in the recipe traces is declared (data 801; #83).** 36
+KickAssembler recipes had undeclared CIA1 stores (the issue counted
+15). A new recipe frontmatter key, `harness: [...]`, marks a timer used
+only to measure the listing; claims-watch reads it like `--harness` and
+the ingest ignores it. 30 recipes declare timer A or B as harness;
+start-up masks are `init`; cia-revision-detect owns both timers. New
+Claims lines from traces: `tod_alarm_interrupt` owns `cia1_tod`,
+`tape_turbo_loader` owns `cia1_timer_b`, `paddle_read` owns
+`cia1_port_a` (derived from the listing). tape-turbo-loader now passes
+claims-watch with 0 violations.
 
 **IRQ recipes declare their vector and CIA1 mask (data 800; #81).** 32
 KickAssembler recipes carry a `claims:` frontmatter line from their own
