@@ -7,6 +7,8 @@ techniques: [lfsr_random]
 file_formats: [PRG]
 uses_registers: [D40E, D40F, D412, D418, D41B, DC04, DC05, DC0E, D011, D020, D021]
 uses_kernal: []
+claims: [sid_voice_3 (init), sid_voice_3_readback (init), sid_filter_volume (init), cia1_timer_a (reads)]
+claims_basis: derived-listing
 ---
 
 <!-- doc-type: recipe -->

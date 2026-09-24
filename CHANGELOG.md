@@ -5,7 +5,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 838, schema 39, tools 2.16.0, package 0.29.0.
+Data 839, schema 39, tools 2.16.0, package 0.29.0.
+
+**lfsr_random no longer claims the SID (data 839; #112, maintainer
+decision).** The technique claimed SID voice 3, its readback and
+`$D418` (init) and CIA1 timer A, and listed their registers, because
+its first recipe seeded from voice 3; every program that listed it got
+an init-order note and shared SID registers against music techniques
+whatever its seed. The LFSR step touches no hardware: its Claims line is
+`none`, its Uses registers line is gone, and the two recipes that seed
+from voice 3 (oscar64/lfsr-random, lfsr-random-seed2) declare the SID
+in their own `claims:` line. `lfsr_random` beside
+`sid_play_routine_pattern` now reports no SID conflict.
 
 **The pitfall-anchor check exempts four techniques and fails on any
 other unanchored one (data 838; #117).** Maintainer decision: the four

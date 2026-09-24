@@ -995,13 +995,14 @@ its result is a screen the character ROM can decode.
 
 **Complexity:** low
 **Region:** both
-**Uses registers:** D41B, D412, D40E, D40F, D418, DC04, DC05, DC0E
 **Cost:** cycles_per_frame=14, bytes_code=1947
 **Cost basis:** measured-vice
 **Cost bytes basis:** derived-listing
 **Cost measured on:** oscar64-lfsr-random (one 8-bit step, screen blanked; bytes are the whole PRG)
-**Claims:** sid_voice_3 (init), sid_voice_3_readback (init), sid_filter_volume (init), cia1_timer_a (reads)
+**Claims:** none
 **Claims basis:** derived-listing
+
+The LFSR step touches no hardware; the seed source is the program's choice, so the recipe that seeds from SID voice 3 (`recipes/oscar64/lfsr-random.md`) declares the SID in its own `claims:` line, and `recipes/kickassembler/lfsr-seed-cia.md` seeds from CIA1 and the frame count with no SID. An earlier version of this entry claimed `sid_voice_3`, `sid_voice_3_readback`, `sid_filter_volume` (init) and `cia1_timer_a` (reads) and listed D41B, D412, D40E, D40F, D418, DC04, DC05, DC0E as its registers, so every program that listed `lfsr_random` got an init-order note and shared SID registers against music techniques whatever its seed (#112; maintainer decision).
 
 ### Why
 
