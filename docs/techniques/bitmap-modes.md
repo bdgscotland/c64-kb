@@ -221,6 +221,121 @@ Measured with CIA1 timer A in the `hires-plot-line` recipe, display blanked, VIC
 
 ---
 
+## midpoint_circle — Circle by the midpoint algorithm and eight-way symmetry
+
+**Complexity:** medium
+**Region:** both
+**Uses kernal:** (none)
+**Requires:** hires_plot
+**Cost:** cycles_per_frame=7740
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-hires-circle (one radius-10 circle, 64 plots; screen blanked)
+**Claims:** none
+**Claims basis:** derived-listing
+
+The circle routine stores only through `hires_plot` into the bitmap and
+to its own variables (`recipes/kickassembler/hires-circle.md`).
+
+### Why
+
+Radar rings, explosions, targeting reticles and round playfield
+features need a circle. Computing `sqrt(r² - x²)` per pixel needs a
+square root; the midpoint algorithm walks the circle with additions
+only, one pixel of `y` per step.
+
+### How
+
+Walk one eighth, from `(r, 0)` up to the diagonal; mirror each point
+eight ways.
+
+1. `x = r`, `y = 0`, `d = 1 - r`, with `d` in 16 bits.
+2. While `x >= y`: plot `(cx ± x, cy ± y)` and `(cx ± y, cy ± x)`;
+   `y += 1`; if `d < 0`, `d += 2y + 1`; else `x -= 1` and
+   `d += 2(y - x) + 1`.
+
+```asm
+loop:   lda xx
+        cmp yy
+        bcc done          // x < y: the octant is finished
+        jsr plot8         // the eight mirror images
+        inc yy
+        lda d+1
+        bmi neg           // d < 0: y only
+        dec xx            // else step x in: d += 2(y - x) + 1
+        ...
+        jmp loop
+neg:    lda yy            // d += 2y + 1
+        asl
+        ora #1
+        ...
+        jmp loop
+```
+
+The full routine is in `recipes/kickassembler/hires-circle.md`.
+
+### Why it works
+
+`d` is `x² + y² - r²` evaluated at the midpoint between the two pixels
+the next step can take, straight up or up and in, kept as an integer.
+Its sign says whether that midpoint is inside the circle. Moving one
+step changes it by `2y + 1` or `2(y - x) + 1`, which the loop adds
+instead of squaring. Twelve circles drawn in VICE x64sc 3.10 gave the
+same 2,197 pixels as a Python model of the same steps, pixel for
+pixel in the PAL and NTSC screenshots.
+
+Three widths matter. `x` and `y` fit a byte. The centre's `x` needs two
+bytes on a 320-pixel bitmap. `d` needs two: with its sign read from
+one byte, the octant was wrong for 21 of the radii from 77 to 99, where
+`d` falls below -128 (`pitfalls/cpu.md`,
+`signed_compare_bmi_overflow`). With `x` unsigned, radius 0 must be
+taken apart, or its first step takes `x` from 0 to 255 and the loop
+runs on.
+
+The eight mirror images coincide at the ends of the octant, `y = 0`
+and `x = y`: the twelve circles made 2,264 plots for 2,197 pixels. An
+`ORA` plot does not care. A plot with `EOR`, used to erase by drawing
+again, clears those pixels on the first pass; skip the duplicate
+points or draw with `ORA` and erase with `AND` (rung 3).
+
+### Variations
+
+- **Filled disc.** At each step draw the horizontal spans
+  `cx - x .. cx + x` on rows `cy ± y`, and `cx - y .. cx + y` on rows
+  `cy ± x`, with whole-byte stores in the middle of each span.
+- **Multicolour bitmap.** Plot 2-bit pixels on a 160-wide grid; the
+  circle then looks twice as wide as it is tall unless the `x` offsets
+  are halved (rung 3).
+- **Clipping.** A circle partly off the screen needs each of the eight
+  points tested against 0 to 319 and 0 to 199 before its plot; without
+  it, a point off the bottom writes past the bitmap.
+
+### Cycle budget
+
+Measured with the CIA2 timer A / B cascade, one call, net of `JSR` /
+`RTS`, screen blanked, PAL and NTSC alike (rung 1); each equals the
+instruction-table count:
+
+| Circle | Steps | Cycles |
+|---|---|---|
+| radius 0 | 1 | 897 |
+| radius 10 | 8 | 7,740 |
+| radius 80 | 57 | 54,714 |
+
+One step is 946 cycles when only `y` moves and 977 when `x` moves too;
+728 of them are the eight plots at 91 each. A radius-80 circle takes
+2.8 PAL frames. The timed routine is aligned to a page: at `$0AA6`,
+with its branches crossing into the next page, it measured 7,745 and
+54,748 (`pitfalls/cpu.md`, `branch_page_cross_extra_cycle`). The
+`**Cost:**` line carries the radius-10 circle.
+
+### Recipes
+
+- `recipes/kickassembler/hires-circle.md`: twelve circles, checked
+  pixel for pixel against a Python model, three of them timed, and the
+  one-byte decision variable counted.
+
+---
+
 ## multicolor_bitmap — Multicolor bitmap (MCM)
 
 **Complexity:** low

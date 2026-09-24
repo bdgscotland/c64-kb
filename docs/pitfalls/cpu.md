@@ -22,7 +22,7 @@ three.)
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** stable_raster_irq, self_modifying_code, unrolled_loops, double_irq, sideborder_open, fli_image, charset_copy_rom_to_ram, isqrt_16bit, atan2_8bit, bresenham_line, zero_page_burst, delay_loops
+**Triggered by techniques:** stable_raster_irq, self_modifying_code, unrolled_loops, double_irq, sideborder_open, fli_image, charset_copy_rom_to_ram, isqrt_16bit, atan2_8bit, bresenham_line, zero_page_burst, delay_loops, midpoint_circle, clock_slide_raster_irq
 **Mitigated by techniques:** bit_test_trick
 
 ### Symptom
@@ -160,6 +160,10 @@ jitter_loop_fixed:
 - Technique `unrolled_loops` (`docs/techniques/cpu-cycle-tricks.md`) — remaining
   loop-exit branches must be checked for page-crossing after unrolling
 - Register `D012` — the raster compare register read in every polling loop
+- Recipe `docs/recipes/kickassembler/hires-circle.md` — the circle
+  routine at `$0AA6`, its branches taken into page `$0B`, measured 5
+  and 34 cycles above its count for radius 10 and 80; aligned, it
+  matches
 
 ---
 
@@ -519,7 +523,7 @@ jmp_abs:
 
 **Severity:** medium
 **Region:** both
-**Triggered by techniques:** lfsr_random, attract_mode_input_replay, difficulty_ramp_tables, ghost_target_tile_ai, seeded_level_fill, starfield, procedural_seed_universe, fire_effect, screen_dissolve_lfsr
+**Triggered by techniques:** lfsr_random, attract_mode_input_replay, difficulty_ramp_tables, ghost_target_tile_ai, seeded_level_fill, starfield, procedural_seed_universe, fire_effect, screen_dissolve_lfsr, random_in_range
 **Mitigated by techniques:** lfsr_random
 
 ### Symptom
@@ -585,7 +589,7 @@ lda #$ac / sta seed+1 / ok:` (rung 3, not timed).
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit, game_tree_search, bresenham_line, solid_vector_3d, voxel_landscape, car_contact_response, lane_pursuit_ai, add_sub_16bit
+**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit, game_tree_search, bresenham_line, solid_vector_3d, voxel_landscape, car_contact_response, lane_pursuit_ai, add_sub_16bit, byte_list_sort, midpoint_circle
 **Mitigated by techniques:** compare_16bit_and_signed
 
 ### Symptom
@@ -653,6 +657,9 @@ the `BVC` is taken, 14 when it falls through into the `EOR`), against
   velocities in the high byte, the place this bites first
 - Recipe `docs/recipes/kickassembler/compare-16bit-signed.md` — the
   sweep that counts the 16,384 misses
+- Recipe `docs/recipes/kickassembler/sort-bytes.md` — an insertion
+  sort with this compare leaves 7 of 63 neighbours out of order in 64
+  random signed keys; with `EOR #$80`, none (`byte_list_sort`)
 
 ---
 

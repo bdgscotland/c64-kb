@@ -551,6 +551,78 @@
       "ntsc": "screenshots/base-routines-ntsc.png"
     }
   },
+  "kickassembler/multiply-16x16": {
+    "cycles": 60000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/multiply-16x16.png",
+      "ntsc": "screenshots/multiply-16x16-ntsc.png"
+    }
+  },
+  "kickassembler/multiply-constant": {
+    "cycles": 20000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/multiply-constant.png",
+      "ntsc": "screenshots/multiply-constant-ntsc.png"
+    }
+  },
+  "kickassembler/random-range": {
+    "cycles": 100000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/random-range.png",
+      "ntsc": "screenshots/random-range-ntsc.png"
+    }
+  },
+  "kickassembler/sort-bytes": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sort-bytes.png",
+      "ntsc": "screenshots/sort-bytes-ntsc.png"
+    }
+  },
+  "kickassembler/hires-circle": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/hires-circle.png",
+      "ntsc": "screenshots/hires-circle-ntsc.png"
+    }
+  },
+  "kickassembler/clock-slide": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/clock-slide.png",
+      "ntsc": "screenshots/clock-slide-ntsc.png"
+    }
+  },
   "kickassembler/one-part-demo": {
     "cycles": 10000000,
     "models": [

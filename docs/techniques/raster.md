@@ -295,6 +295,111 @@ Total cost per raster split in double-IRQ mode: through $0314, 38-44 + ~12 on th
 
 ---
 
+## clock_slide_raster_irq — Stable raster IRQ by clock slide: a CIA timer measures the lateness, a branch into a slide removes it
+
+**Complexity:** scene-tier
+**Region:** both
+**Uses registers:** RASTER, VICIRQ, IRQMSK, DC04, DC05, DC0E
+**Demands:** midframe_raster_irqs
+**Cost:** cycles_per_frame=36, lines_active=1, irq_slots=1
+**Cost basis:** arithmetic
+**Cost measured on:** kickassembler-clock-slide (one entry, first instruction to the end of the slide, lateness 0; KERNAL out)
+**Claims:** vic_raster_irq (shares)
+**Claims basis:** derived-listing
+**Alternative to:** double_irq (one interrupt and one line instead of two interrupts over three; needs a CIA timer running for good and a start-up sync)
+
+### Why
+
+`stable_raster_irq` and `double_irq` remove the entry jitter by
+waiting for a raster line to change: the double IRQ spends a second
+interrupt and, in `recipes/kickassembler/stable-raster-irq.md`, 185 to
+190 cycles over three lines. A CIA timer that runs with the period of a
+raster line can tell the handler how late it is instead, and the
+handler can wait exactly that much less, on the interrupt's own line.
+
+### How
+
+1. Once, with interrupts off and the display blanked, start a CIA timer
+   in continuous mode with a latch of one line less one: 62 on PAL, 64
+   on NTSC. Start it on a known cycle of a line: a loop whose passes
+   are one cycle longer than a line reads `$D012` one cycle later each
+   time, and the first read that sees the next line was made on its
+   first cycle.
+2. In the raster handler, read the timer low byte early. The earliest
+   possible entry reads a fixed value `V0` (found by measurement);
+   `V0 - timer` is the lateness `j`.
+3. Store `j` as the offset of a `BPL` into a slide of `$A9` bytes ended
+   by `$24 $EA`. Skipping `j` bytes waits `j` cycles less.
+
+```asm
+irq:    sta za
+        lda #V0          // the timer value of the earliest entry
+        sec
+        sbc $dc04        // j = how many cycles late
+        and #$07
+        sta slide+1
+slide:  bpl slide+2      // skip j bytes
+        .byte $a9, $a9, $a9, $a9, $a9, $a9, $a9, $24, $ea
+        // here on the same cycle every time
+```
+
+The whole program is `recipes/kickassembler/clock-slide.md`.
+
+### Why it works
+
+The timer's period equals a raster line, and a frame is a whole number
+of lines, so the value it holds on a given cycle of a line is the same
+on every line of every frame. A late entry reads the timer later, and
+the timer counts down, so the reading falls by one for each cycle of
+lateness. In the slide, `n` bytes before the `$24` run as `LDA #$A9`
+pairs and then `BIT $EA`, or as pairs, `LDA #$24` and `NOP`: `n + 3`
+cycles either way, one per byte skipped. Measured in VICE x64sc 3.10
+over 2,000 entries: lateness 0 to 6, and one timer value after the
+slide, on PAL and NTSC; the store after the slide lands on x = 305 of
+every bar in both screenshots.
+
+The branch and the slide must sit in one page: a `BPL` taken into the
+next page costs a cycle more and shifts every entry
+(`pitfalls/cpu.md`, `branch_page_cross_extra_cycle`). The recipe checks
+it with `.errorif`.
+
+The handler's own length must not vary if the next entry's lateness is
+to depend only on the main program: an `INC` / `BNE` / `INC` counter in
+the handler of the recipe's first build shifted one entry in a later
+frame, from run to run.
+
+### Variations
+
+- **Through `$0314`.** With the KERNAL in, the handler starts 29 cycles
+  later but the jitter is the same, and the same slide removes it; only
+  `V0` changes.
+- **CIA2 timer, or timer B.** Any free-running timer works; the one
+  chosen is held for good, and the others stay free.
+- **Several lines a frame.** One timer serves every raster interrupt of
+  the frame. The recipe takes seven, three lines apart; two lines apart
+  its handler, with the recording it does, overran the next line's
+  interrupt.
+
+### Cycle budget
+
+From the handler's first instruction to the end of the slide:
+3 + 2 + 4 + 2 + 2 + 4 + 2 + 4 + 3 + (10 - j) = 36 - j cycles, by the
+instruction table; the synced point is on the same cycle of the
+interrupt's line for every `j` (rung 1, the timer read after the
+slide). With the handler entered on cycle `10 + j` (KERNAL out,
+`stable_raster_irq`), that is cycle 46 (rung 3). The `**Cost:**` line
+carries the 36 cycles and one line; the effect's own work and the
+`RTI` are extra. The start-up sync runs once, about 50 lines with the
+display blanked.
+
+### Recipes
+
+- `recipes/kickassembler/clock-slide.md`: seven stable interrupts a
+  frame on PAL and NTSC, 2,000 entries recorded, and the synced store
+  measured in the screenshots.
+
+---
+
 ## vsp_glitch — VSP (Variable Screen Position)
 
 **Complexity:** scene-tier
