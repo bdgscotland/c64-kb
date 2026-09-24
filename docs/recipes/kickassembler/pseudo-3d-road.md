@@ -822,7 +822,10 @@ amount. On both models all 100 lines matched their table entry for a write
 from cycle 56 of the line before through cycle 12 of the line itself. A
 write on cycle 54 of the line before matched 32 lines (31 on NTSC); one on
 cycle 13 or 14 matched 88, failing on exactly the twelve badlines. Cycle 55
-was not reached by the sweep. Cycle 4 sits 8 cycles inside the late edge. The header comment of an earlier
+was not reached by the sweep. Cycle 4 sits 8 cycles inside the late edge.
+These edges are what this picture shows: the first cells of most road lines
+are grass, so a write that shifts only a line's first pixels can go unseen
+here; the VIC's own window may be narrower than this sweep shows. The header comment of an earlier
 version put a "cycle-14 deadline" on the write; on a badline it is cycle 12.
 
 **Sync constants.** SYNC_PAD_PAL = 11 and SYNC_PAD_NTSC = 13 give one write
