@@ -9,6 +9,8 @@ import {
   irqChainReply,
   SessionOutput,
   sessionReply,
+  SnapshotOutput,
+  snapshotReply,
 } from "../src/server/tools-re.ts";
 import {
   RegisterLookupSchema,
@@ -43,11 +45,12 @@ import {
 // c64_run_game kills the x64sc on monitor port 6502 and starts one;
 // c64_ingest_doc writes a file under docs/ (and c64_memorization_check is
 // listed only where the Python analyzer is installed). c64_re_irq_chain and
-// c64_re_frame_profile run VICE for seconds (c64_re_session too: its runs
-// are in test/re-session.test.ts); their runs are covered by
-// test/re-tools.test.ts and test/re-calibration.test.ts, and their reply
-// builders by the stub results at the end of this file. c64_claims_watch
-// runs VICE too: test/claims-watch-tool.test.ts covers its run and reply.
+// c64_re_frame_profile run VICE for seconds (c64_re_session and
+// c64_re_snapshot too: their runs are in test/re-session.test.ts and
+// test/re-snapshot.test.ts); their runs are covered by test/re-tools.test.ts
+// and test/re-calibration.test.ts, and their reply builders by the stub
+// results at the end of this file. c64_claims_watch runs VICE too:
+// test/claims-watch-tool.test.ts covers its run and reply.
 const SKIP = new Set([
   "c64_run_game",
   "c64_ingest_doc",
@@ -55,6 +58,7 @@ const SKIP = new Set([
   "c64_re_irq_chain",
   "c64_re_frame_profile",
   "c64_re_session",
+  "c64_re_snapshot",
   "c64_claims_watch",
 ]);
 
@@ -164,7 +168,7 @@ describe("RE tool replies carry the whole result", () => {
   const o = { basis: "measured-vice" as const, rung: 1 as const };
 
   it("declares an outputSchema for both", () => {
-    for (const name of ["c64_re_irq_chain", "c64_re_frame_profile", "c64_re_session"])
+    for (const name of ["c64_re_irq_chain", "c64_re_frame_profile", "c64_re_session", "c64_re_snapshot"])
       expect(tools.find((t) => t.name === name)?.outputSchema, name).toBeDefined();
   });
 
@@ -276,6 +280,45 @@ describe("RE tool replies carry the whole result", () => {
       screenshot: "/repo/data/re/session-commando.png",
     });
     expect(r).toEqual({ text: "refused (not-in-play): in_play not reached", isError: true });
+  });
+
+  it("c64_re_snapshot: the decoded VIC state and CPU port are in the structured content", () => {
+    const result = {
+      ram_path: "/repo/data/re/abc123-35080026.bin",
+      ram_sha1: "abc123",
+      clock: 35_080_026,
+      vic: {
+        bank: 3,
+        screen: 0xe000,
+        charset: 0xd000,
+        bitmap: 0xc000,
+        sprite_pointers: [0xffc0, 0xffc0, 0xffc0, 0xffc0, 0xffc0, 0xfdc0, 0xfd80, 0xfe00],
+        d011: 0x77,
+        d016: 0xd8,
+        d018: 0x85,
+      },
+      cpu_port: { "00": 0x2f, "01": 0x36 },
+    };
+    const r = snapshotReply({ ok: true, result });
+    expect(r.text).toMatch(/VIC bank 3: screen \$E000, charset \$D000, bitmap \$C000/);
+    expect(r.text).toMatch(/CPU port \$00=\$2F \$01=\$36/);
+    const parsed = z.object(SnapshotOutput).safeParse(r.structured);
+    expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
+    expect(r.structured).toEqual(result);
+  });
+
+  it("c64_re_snapshot: no-dump is refused as text and isError", () => {
+    const r = snapshotReply({
+      ok: false,
+      reason: "no-dump",
+      error: "in_play reached at clock 100, but $0876 did not run 100001 times",
+      clock: 100,
+      screenshot: "/repo/data/re/snapshot.png",
+    });
+    expect(r).toEqual({
+      text: "refused (no-dump): in_play reached at clock 100, but $0876 did not run 100001 times",
+      isError: true,
+    });
   });
 
   it("a refusal is text and isError, with no structured content", () => {

@@ -3,7 +3,16 @@ import { z } from "zod";
 import type { Profile } from "../re/frame-profile.ts";
 import type { IrqChain } from "../re/irq-chain.ts";
 import { DISPATCH_WINDOW } from "../re/interrupts.ts";
-import { FrameProfileInput, IrqChainInput, reFrameProfile, reIrqChain, type ReResult } from "../tools/re.ts";
+import {
+  FrameProfileInput,
+  IrqChainInput,
+  reFrameProfile,
+  reIrqChain,
+  reSnapshot,
+  SnapshotInput,
+  type ReResult,
+  type SnapshotResult,
+} from "../tools/re.ts";
 import {
   reSession,
   SessionInput,
@@ -14,6 +23,7 @@ import {
 import { defineTool, READ_ONLY, type ToolReply } from "./define-tool.ts";
 
 const hex = (n: number) => "$" + n.toString(16).toUpperCase().padStart(4, "0");
+const hex2 = (n: number) => "$" + n.toString(16).toUpperCase().padStart(2, "0");
 
 const int = z.number().int();
 const obs = { id: z.string(), basis: z.literal("measured-vice"), rung: z.literal(1) };
@@ -109,6 +119,23 @@ export const SessionOutput = {
   unknowns: z.array(z.string()),
 };
 
+export const SnapshotOutput = {
+  ram_path: z.string().describe("The RAM dump, under data/re/ (gitignored): <ram_sha1>-<clock>.bin"),
+  ram_sha1: z.string(),
+  clock: int.describe("CPU clock of the dump: the (after_hits_of_play_pc + 1)th exec of in_play.pc"),
+  vic: z.object({
+    bank: int.describe("0-3, from $DD00 bits 0-1 inverted"),
+    screen: int,
+    charset: int,
+    bitmap: int,
+    sprite_pointers: z.array(int).length(8),
+    d011: int,
+    d016: int,
+    d018: int,
+  }),
+  cpu_port: z.object({ "00": int, "01": int }),
+};
+
 const refusedText = (r: Refusal): ToolReply => ({
   text: `refused (${r.reason}): ${r.error}`,
   isError: true,
@@ -127,6 +154,21 @@ export function sessionReply(r: { ok: true; result: SessionResult } | Refusal): 
       `${s.session}: ${s.image.kind} ${s.image.sha1}${s.image.file ? ` "${s.image.file}"` : ""}, ${s.model.toUpperCase()}, ${s.cycles} cycles (measured-vice, rung 1)\n` +
       `in play at clock ${s.play_clock}, frame ${s.play_frame}\ninjections: ${fired || "none"}\nscreenshot: ${s.screenshot}` +
       unknownsText(s.unknowns),
+    structured: { ...s },
+  };
+}
+
+export function snapshotReply(r: { ok: true; result: SnapshotResult } | Refusal): ToolReply {
+  if (!r.ok) return refusedText(r);
+  const s = r.result;
+  const v = s.vic;
+  return {
+    text:
+      `${s.ram_path} sha1 ${s.ram_sha1}, clock ${s.clock} (measured-vice, rung 1)\n` +
+      `VIC bank ${v.bank}: screen ${hex(v.screen)}, charset ${hex(v.charset)}, bitmap ${hex(v.bitmap)}\n` +
+      `sprite pointers: ${v.sprite_pointers.map(hex).join(", ")}\n` +
+      `D011 ${hex2(v.d011)}, D016 ${hex2(v.d016)}, D018 ${hex2(v.d018)}\n` +
+      `CPU port $00=${hex2(s.cpu_port["00"])} $01=${hex2(s.cpu_port["01"])}`,
     structured: { ...s },
   };
 }
@@ -229,4 +271,22 @@ Output (structured): session, image {sha1, kind, file, fileSha1}, disk, model, c
   annotations: READ_ONLY,
   readsGraph: false,
   run: async (args) => sessionReply(await reSession(args)),
+});
+
+export const reSnapshotTool = defineTool({
+  name: "c64_re_snapshot",
+  title: "Dump RAM and I/O at a chosen moment of play in VICE",
+  description: `Replay a session file headless in VICE x64sc to play, then dump all 64 KB of RAM (\`bank ram\`, under ROM and I/O) and the I/O area $D000-$DFFF (\`bank io\`) at a chosen hit of the session's in_play.pc, and decode the VIC-II bank, screen, char and bitmap base, the eight sprite data pointers, and the CPU port from them. A packed game's real code exists only in RAM, decrunched, after play starts: this is the tool that catches it at a known moment.
+
+after_hits_of_play_pc (default 0) counts hits of in_play.pc to skip before the dump, decimal in the call and hex to the monitor, the same as a session injection's after_hits; it is not gated by in_play.after_clock, so a PC that also runs before real play (unlike Commando's one-shot $0FEB exit) needs a caller-chosen count. Refuses "not-in-play" (with the clock reached and the exit screenshot) when in_play.pc never runs at all; "no-dump" (with play_clock, the clock reached, and the exit screenshot) when it runs, but fewer than after_hits_of_play_pc + 1 times, so the dump was never taken.
+
+Needs the windowless x64sc (\`npm run vice:headless\`), and c1541 for a D64. The RAM dump is written under data/re/ (gitignored) as <ram_sha1>-<clock>.bin; a later call with a later clock does not overwrite an earlier dump.
+
+Inputs: session (a file under ${SESSIONS_DIR}/, see c64_re_session), after_hits_of_play_pc.
+Output (structured): ram_path, ram_sha1, clock, vic {bank, screen, charset, bitmap, sprite_pointers, d011, d016, d018}, cpu_port {"00", "01"}.`,
+  inputSchema: SnapshotInput,
+  outputSchema: SnapshotOutput,
+  annotations: READ_ONLY,
+  readsGraph: false,
+  run: async (args) => snapshotReply(await reSnapshot(args)),
 });

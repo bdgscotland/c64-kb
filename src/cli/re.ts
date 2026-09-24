@@ -3,7 +3,7 @@ import path from "node:path";
 import { type Command, InvalidArgumentError, Option } from "commander";
 import { claimsWatchReply } from "../server/tools-claims.ts";
 import { claimsWatch } from "../tools/claims-watch.ts";
-import { reFrameProfile, reIrqChain } from "../tools/re.ts";
+import { reFrameProfile, reIrqChain, reSnapshot } from "../tools/re.ts";
 import { reSession } from "../tools/re-session.ts";
 
 /** --cycles for the RE commands: an integer from 100,000, the MCP tools' own floor. */
@@ -50,7 +50,16 @@ function reInput(prg: string, o: ReOpts, cmd: Command) {
   };
 }
 
-export function registerReCommands(program: Command): void {
+/** --after-hits for re-snapshot: an integer from 0, after_hits_of_play_pc's own floor. */
+function afterHitsArg(value: string): number {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0)
+    throw new InvalidArgumentError("--after-hits must be an integer from 0.");
+  return n;
+}
+
+/** re-session, re-snapshot, re-irq-chain, re-frame-profile: the observation tools. */
+function registerReplayCommands(program: Command): void {
   program
     .command("re-session <file>")
     .description(
@@ -58,6 +67,20 @@ export function registerReCommands(program: Command): void {
     )
     .action(async (file: string) => {
       const r = await reSession({ session: file });
+      process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
+      if (!r.ok) process.exitCode = 1;
+    });
+
+  program
+    .command("re-snapshot <file>")
+    .description("Replay a session to play in VICE and dump RAM and I/O at in_play.pc; print the decode")
+    .addOption(
+      new Option("--after-hits <n>", "hits of in_play.pc to skip before the dump")
+        .argParser(afterHitsArg)
+        .default(0),
+    )
+    .action(async (file: string, o: { afterHits: number }) => {
+      const r = await reSnapshot({ session: file, after_hits_of_play_pc: o.afterHits });
       process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
       if (!r.ok) process.exitCode = 1;
     });
@@ -83,7 +106,10 @@ export function registerReCommands(program: Command): void {
     );
     if (!r.ok) process.exitCode = 1;
   });
+}
 
+/** claims-watch: a program's stores against the hardware units it declares (#22 step 8). */
+function registerClaimsWatchCommand(program: Command): void {
   interface ClaimsWatchOpts extends ReOpts {
     recipe?: string;
     technique: string[];
@@ -126,4 +152,9 @@ export function registerReCommands(program: Command): void {
     process.stdout.write(`${claimsWatchReply(r).text}\n`);
     process.exitCode = r.ok && r.result.verdict === "pass" ? 0 : 1;
   });
+}
+
+export function registerReCommands(program: Command): void {
+  registerReplayCommands(program);
+  registerClaimsWatchCommand(program);
 }

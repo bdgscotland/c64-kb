@@ -34,6 +34,8 @@ export interface RunOpts {
   manifestPath?: string;
   /** Default data/re/ in the repo. */
   shotDir?: string;
+  /** Where c64_re_snapshot renames its RAM dump to <sha1>-<clock>.bin; default data/re/ in the repo. */
+  dumpDir?: string;
 }
 
 export interface Loaded {
