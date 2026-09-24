@@ -6,8 +6,15 @@
 import type { CompatibilityCheckOutput } from "../../../schemas/tool-outputs.ts";
 import { requiresClosure, type RequiresClosure } from "./closure.ts";
 import { factsOf, inputPairs, pairKey, type CompatibilityFacts } from "./facts.ts";
-import { hardRules, type BandSeparated, type HardRuleResult } from "./hard-rules.ts";
-import { absorbInto, unitRules, type ClaimSide, type PairRelation, type UnitHit } from "./unit-rules.ts";
+import { hardRules, type BandSeparated, type HardRuleResult, type Named } from "./hard-rules.ts";
+import {
+  absorbInto,
+  CHAIN_HOST,
+  unitRules,
+  type ClaimSide,
+  type PairRelation,
+  type UnitHit,
+} from "./unit-rules.ts";
 import { clobberKey, kernalClobberRules, type KernalSide, type KernalZpHit } from "./kernal-zp-rule.ts";
 
 type Conflict = CompatibilityCheckOutput["conflicts"][number];
@@ -33,11 +40,16 @@ function mergeSeparated(list: BandSeparated[], s: BandSeparated | null): void {
 class RuleRunner {
   readonly separated: BandSeparated[] = [];
   private readonly all: CompatibilityFacts;
-  constructor(all: CompatibilityFacts) {
+  private readonly closure: RequiresClosure;
+  constructor(all: CompatibilityFacts, closure: RequiresClosure) {
     this.all = all;
+    this.closure = closure;
+  }
+  private named(name: string): Named {
+    return { name, facts: factsOf(this.all, name), requires: new Set(this.closure.closureOf(name)) };
   }
   run(a: string, b: string): HardRuleResult["hits"] {
-    const r = hardRules({ name: a, facts: factsOf(this.all, a) }, { name: b, facts: factsOf(this.all, b) });
+    const r = hardRules(this.named(a), this.named(b));
     mergeSeparated(this.separated, r.separated);
     return r.hits;
   }
@@ -57,7 +69,11 @@ class RuleRunner {
   ): (UnitHit | KernalZpHit)[] {
     const sa = absorb.a ? absorbInto(this.side(a), this.side(absorb.a)) : this.side(a);
     const sb = absorb.b ? absorbInto(this.side(b), this.side(absorb.b)) : this.side(b);
-    return [...unitRules(sa, sb, rel), ...this.kernal(sa, sb, absorb.a ?? a, absorb.b ?? b)];
+    const chainHosted = [...this.all.techniques, ...this.closure.closureOnly].includes(CHAIN_HOST);
+    return [
+      ...unitRules(sa, sb, { ...rel, chainHosted }),
+      ...this.kernal(sa, sb, absorb.a ?? a, absorb.b ?? b),
+    ];
   }
   /** Each routine hit reported so far, keyed by the inputs it is attributed to. */
   private readonly reported = new Set<string>();
@@ -93,7 +109,9 @@ const NO_RELATION: PairRelation = { aRequiresB: false, bRequiresA: false };
 /**
  * Each input pair. Named techniques are checked as named, even when one
  * requires the other: the caller put both on the list, and the resolution
- * says how to keep them apart.
+ * says how to keep them apart. The exception is cpu_exclusive and the
+ * mid-frame cpu_vs_irq rule, which do not fire when one runs inside the
+ * other's code (hard-rules.ts, runsInside; #29).
  */
 function inputPairConflicts(
   all: CompatibilityFacts,
@@ -280,7 +298,13 @@ function ownChainConflict(
   };
 }
 
-function verdictOf(conflicts: readonly Conflict[]): CompatibilityCheckOutput["verdict"] {
+function verdictOf(
+  conflicts: readonly Conflict[],
+  notFound: readonly string[],
+): CompatibilityCheckOutput["verdict"] {
+  // A name the graph does not hold can conflict with nothing, so any other
+  // verdict would clear it (#41: 17 names quoted as one came back COMPATIBLE).
+  if (notFound.length > 0) return "unknown_technique";
   if (conflicts.some((c) => c.severity === "hard")) return "incompatible";
   // info (init_order) says what order keeps a pair working; it does not warn.
   return conflicts.some((c) => c.severity === "soft") ? "warnings" : "compatible";
@@ -363,18 +387,20 @@ function sharedInfrastructure(all: CompatibilityFacts, closure: RequiresClosure)
 
 export function evaluateCompatibility(all: CompatibilityFacts): CompatibilityEvaluation {
   const closure = requiresClosure(all.techniques, all.requires);
-  const rules = new RuleRunner(all);
+  const rules = new RuleRunner(all, closure);
   const conflicts = [
     ...inputPairConflicts(all, closure, rules),
     ...prerequisiteConflicts(all, closure, rules),
     ...ownChainConflicts(all, closure, rules),
   ];
+  const notFound = all.techniques.filter((t) => !factsOf(all, t).found);
   return {
     conflicts,
     band_separated: rules.separated,
     shared_infrastructure: sharedInfrastructure(all, closure),
     data_coverage: dataCoverage(all, closure),
-    verdict: verdictOf(conflicts),
+    not_found: notFound,
+    verdict: verdictOf(conflicts, notFound),
     closureOnly: closure.closureOnly,
   };
 }

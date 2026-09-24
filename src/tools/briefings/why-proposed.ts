@@ -3,6 +3,8 @@
  * Rules are tried in order; the first that matches wins.
  */
 
+import { briefTokens, oneSpelling } from "./discovery.ts";
+
 const CATEGORY_REASONS = new Map<string, string>([
   ["music", "SID music / audio requested in brief"],
   ["input", "Player input (joystick / keyboard) the brief's controls need"],
@@ -64,15 +66,39 @@ function ruleMatches(rule: NameRule, name: string, desc: string): boolean {
 }
 
 /**
+ * The brief's words that are words of the technique's name or title, as
+ * the keyword scorer counts them. An earlier version quoted the brief's
+ * first 60 characters back, which named no reason at all (#41).
+ */
+function matchedWords(techniqueName: string, title: string, description: string): string[] {
+  const words = new Set(
+    oneSpelling(`${techniqueName.replace(/_/g, " ")} ${title}`.toLowerCase())
+      .split(/[^a-z0-9$]+/)
+      .filter((w) => w.length >= 3),
+  );
+  return briefTokens(description).filter((t) => words.has(t));
+}
+
+/**
  * Determine a human-readable "why proposed" string for a technique
  * given the original description.
  */
-export function whyProposed(techniqueName: string, category: string, description: string): string {
+export function whyProposed(
+  techniqueName: string,
+  category: string,
+  description: string,
+  title = "",
+): string {
   const byCategory = CATEGORY_REASONS.get(category);
   if (byCategory !== undefined) return byCategory;
   const desc = description.toLowerCase();
   const name = techniqueName.toLowerCase();
   const rule = NAME_RULES.find((r) => ruleMatches(r, name, desc));
   if (rule) return rule.reason;
-  return EXACT_NAME_REASONS.get(name) ?? `Relevant to the brief: "${description.slice(0, 60)}"`;
+  const exact = EXACT_NAME_REASONS.get(name);
+  if (exact !== undefined) return exact;
+  const matched = matchedWords(name, title, description);
+  return matched.length > 0
+    ? `The brief's words ${matched.map((w) => `"${w}"`).join(", ")} are in its name or title`
+    : "Found by semantic search of the brief; no word of its name or title is in the brief";
 }

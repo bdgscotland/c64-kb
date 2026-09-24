@@ -7,6 +7,8 @@ import { defineConfig } from "vitest/config";
 const UNIT = [
   "test/bm25.test.ts",
   "test/briefing-budget.test.ts",
+  "test/briefing-discovery.test.ts",
+  "test/check-compatibility-rules.test.ts",
   "test/chunker.test.ts",
   "test/claim-rules.test.ts",
   "test/config.test.ts",

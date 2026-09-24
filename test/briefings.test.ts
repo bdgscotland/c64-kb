@@ -781,7 +781,7 @@ describe("gameBriefing reads the archetype from the graph", () => {
     expect(r.structured.build_order[0]!.recipes).toEqual(["oscar64-simple-shmup"]);
   });
 
-  it("reports archetype_not_found with the known names for a name the graph lacks", async () => {
+  it("refuses a name the graph lacks: archetype_not_found with the known names, and no plan (#41)", async () => {
     // "racer" shares no word with any fixture archetype, so nothing resolves or is offered.
     const r = await gameBriefing("vertical scrolling shoot-em-up", "racer");
     expect(r.structured.archetype).toBeUndefined();
@@ -789,11 +789,12 @@ describe("gameBriefing reads the archetype from the graph", () => {
       requested: "racer",
       known: ["action_puzzle", "puzzle", "vertical_shmup"],
     });
-    expect(r.structured.brief).toContain("not an archetype the graph knows");
+    expect(r.structured.brief).toMatch(/^Refused: genre "racer" is not an archetype the graph knows/);
     expect(r.text).toContain("Known archetypes: action_puzzle, puzzle, vertical_shmup");
-    // The plan is still built from the description; nothing is forced.
-    expect(r.structured.build_order[0]!.label).toContain("Game scaffold");
-    expect(r.structured.build_order[0]!.recipes).toEqual([]);
+    // An earlier version went on to plan from the description alone.
+    expect(r.structured.proposed_techniques).toEqual([]);
+    expect(r.structured.build_order).toEqual([]);
+    expect(r.text).not.toContain("## Proposed Techniques");
     expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
   });
 });
@@ -972,8 +973,8 @@ describe("demoBriefing reads a demo archetype from the graph", () => {
     });
     expect(r.structured.brief).toContain('form "trackmo" is not an archetype the graph knows');
     expect(r.text).toContain("Known archetypes: cracktro, dentro, puzzle");
-    // Nothing forced: the fingerprint techniques are not in the plan.
-    expect(r.structured.proposed_techniques.map((t) => t.name)).not.toContain("sideborder_open");
+    // Refused: no plan at all (#41).
+    expect(r.structured.proposed_techniques).toEqual([]);
     expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
   });
 
@@ -1029,6 +1030,16 @@ describe("gameBriefing proposer precision and handoff", () => {
     });
     await f.linkTechniqueDemands("sprite_multiplex_8", "changes_sprite_set", "re-points sprites mid-frame");
     await f.linkTechniqueDemands("sprite_multiplex_24", "changes_sprite_set", "re-points sprites mid-frame");
+    // Both own the one raster compare: a hard unit_contention between them.
+    for (const owner of ["sprite_multiplex_8", "sprite_multiplex_24"]) {
+      await f.linkClaims({
+        owner,
+        ownerKind: "Technique",
+        unit: "vic_raster_irq",
+        mode: "owns",
+        basis: "derived-listing",
+      });
+    }
     const recipes: [string, string, string | null][] = [
       ["oscar64-sprite-multiplex-8", "oscar64", "sprite_multiplex_8"],
       ["kickassembler-sprite-multiplex-24", "kickassembler", "sprite_multiplex_24"],
@@ -1071,6 +1082,19 @@ describe("gameBriefing proposer precision and handoff", () => {
     expect(r.structured.toolchain_split.cycle_tight_handoff).not.toContain("sprite_multiplex_8");
     expect(r.structured.toolchain_split.rationale).toContain(
       "kept in Oscar64 because a recipe exists: sprite_multiplex_8",
+    );
+  });
+
+  it("lists every hard conflict an incompatible verdict rests on (#41)", async () => {
+    // Before, only region_mismatch reached compatibility.conflicts, so the
+    // brief said incompatible over a body of soft notes.
+    const r = await gameBriefing("a sprite multiplexer for 8 sprites and a 24 sprite multiplexer", undefined);
+    expect(r.structured.brief).toContain("Compatibility: incompatible");
+    const hard = r.structured.compatibility.conflicts;
+    expect(hard.map((c) => c.kind)).toContain("unit_contention");
+    expect(hard.every((c) => c.severity === "hard")).toBe(true);
+    expect(r.text).toMatch(
+      /\*\*unit_contention\*\* \(hard\): sprite_multiplex_(8|24) × sprite_multiplex_(8|24)/,
     );
   });
 

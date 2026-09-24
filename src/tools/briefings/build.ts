@@ -12,12 +12,13 @@ import {
   type TechniqueLookupOutput,
 } from "../../schemas/tool-outputs.ts";
 import {
+  describedReason,
   resolveArchetype,
   routeArchetypeFromBrief,
   seedsFor,
   type ArchetypeResolution,
 } from "./archetype.ts";
-import { contradictsBriefAxis, resolveProposedTechniques } from "./discovery.ts";
+import { contradictsBriefAxis, resolveProposedTechniques, unaskedEffect } from "./discovery.ts";
 import { whyProposed } from "./why-proposed.ts";
 import { collectPitfalls } from "./plan-pitfalls.ts";
 import { toolchainSplit } from "./toolchain.ts";
@@ -25,7 +26,7 @@ import { buildOrder } from "./build-order.ts";
 import { computeBudget } from "./budget.ts";
 import { fetchBudgetMembers } from "../query/plan-budget.ts";
 import { designsOfArchetype } from "../query/game-design.ts";
-import { briefSummary, renderBriefingText } from "./render.ts";
+import { briefSummary, renderArchetype, renderBriefingText } from "./render.ts";
 
 export type BriefingResult = { structured: BriefingOutput; text: string };
 
@@ -67,19 +68,27 @@ function selectTechniques(
   });
 }
 
-/** The reason a technique is in the plan: the archetype's fingerprint when it forced it, else the brief. */
-function reasonFor(t: TechniqueLookupOutput, description: string, resolved: ArchetypeResolution | undefined) {
+interface ReasonContext {
+  description: string;
+  resolved: ArchetypeResolution | undefined;
+  isGame: boolean;
+}
+
+/**
+ * The reason a technique is in the plan: the archetype's fingerprint when
+ * it forced it, then a description rule, else the brief's words.
+ */
+function reasonFor(t: TechniqueLookupOutput, ctx: ReasonContext) {
+  const { description, resolved } = ctx;
   if (resolved?.mode === "graph" && resolved.features.includes(t.name)) {
     return `In the ${resolved.archetype.name} archetype's technique fingerprint`;
   }
-  return whyProposed(t.name, t.category, description);
+  return (
+    describedReason(t.name, description, ctx.isGame) ?? whyProposed(t.name, t.category, description, t.title)
+  );
 }
 
-function proposedOf(
-  t: TechniqueLookupOutput,
-  description: string,
-  resolved: ArchetypeResolution | undefined,
-): Proposed {
+function proposedOf(t: TechniqueLookupOutput, ctx: ReasonContext): Proposed {
   // An empty or unknown complexity or region word is left out, as the
   // output schema allows only its enum values.
   const complexity = ComplexitySchema.safeParse(t.complexity || undefined);
@@ -89,7 +98,7 @@ function proposedOf(
     title: t.title,
     category: t.category,
     complexity: complexity.success ? complexity.data : undefined,
-    why_proposed: reasonFor(t, description, resolved),
+    why_proposed: reasonFor(t, ctx),
     uses_registers: t.uses_registers.map((r) => r.name),
     uses_kernal: t.uses_kernal.map((k) => k.name),
     region: region.success ? region.data : undefined,
@@ -105,9 +114,13 @@ async function compatibilityOf(techs: TechniqueLookupOutput[]) {
     } satisfies { verdict: string; compatibility: BriefingOutput["compatibility"] };
   }
   const { structured } = await checkCompatibility(techs.map((t) => t.name));
+  // Every hard conflict the verdict rests on, and every soft one. An earlier
+  // version kept only region_mismatch and the shared-register/KERNAL kinds,
+  // so a vertical_shmup plan read "incompatible" over a body of soft notes
+  // (#41).
   const compatibility: BriefingOutput["compatibility"] = {
-    conflicts: structured.conflicts.filter((c) => c.kind === "region_mismatch"),
-    warnings: structured.conflicts.filter((c) => c.kind === "shared_register" || c.kind === "shared_kernal"),
+    conflicts: structured.conflicts.filter((c) => c.severity === "hard"),
+    warnings: structured.conflicts.filter((c) => c.severity === "soft"),
     shared_infrastructure: structured.shared_infrastructure,
   };
   return { verdict: structured.verdict, compatibility };
@@ -132,9 +145,15 @@ async function proposeTechniques(
   }
   const enriched = await Promise.all(techNames.map(async (name) => (await techniqueLookup(name)).structured));
   // A forced technique stays whatever its axis; a found one on the axis the
-  // brief did not ask for goes.
+  // brief did not ask for goes, and so does, in a game plan, a demo effect
+  // the brief does not name.
   const onAxis = enriched.filter(
-    (t) => seeds.forced.includes(t.name) || !contradictsBriefAxis(t, seeds.searchDescription),
+    (t) =>
+      seeds.forced.includes(t.name) ||
+      !(
+        contradictsBriefAxis(t, seeds.searchDescription) ||
+        (isGame && unaskedEffect(t, seeds.searchDescription))
+      ),
   );
   return selectTechniques(onAxis, seeds.archetypeForced, proposalLimit);
 }
@@ -196,16 +215,43 @@ async function resolutionFor(
   return isGame ? routeArchetypeFromBrief(description) : undefined;
 }
 
+/**
+ * A named archetype the graph does not hold: no plan, only the names that
+ * would work. An earlier version went on to plan from the brief's words
+ * alone under the unknown name (#41).
+ */
+function refusal(
+  description: string,
+  resolved: Extract<ArchetypeResolution, { mode: "not_found" }>,
+  isGame: boolean,
+): BriefingResult {
+  const kindWord = isGame ? "genre" : "form";
+  const structured: BriefingOutput = {
+    brief: `Refused: ${kindWord} "${resolved.requested}" is not an archetype the graph knows, so no plan was made for "${description}". Pass one of the known archetypes, or none to route the brief by its words.`,
+    proposed_techniques: [],
+    compatibility: { conflicts: [], warnings: [], shared_infrastructure: [] },
+    pitfalls: [],
+    toolchain_split: { primary: "oscar64", rationale: "No plan.", cycle_tight_handoff: [] },
+    build_order: [],
+    budget: computeBudget([]),
+    ...archetypeFields(resolved),
+  };
+  const text = `# C64 ${isGame ? "Game" : "Demo"} Briefing\n\n**Brief:** ${structured.brief}\n\n${renderArchetype(structured)}`;
+  return { structured, text };
+}
+
 export async function buildBriefing(
   description: string,
   archetype: string | undefined,
   isGame: boolean,
 ): Promise<BriefingResult> {
   const resolved = await resolutionFor(description, archetype, isGame);
+  if (archetype !== undefined && resolved?.mode === "not_found")
+    return refusal(description, resolved, isGame);
   const techs = await proposeTechniques(description, archetype, resolved, isGame);
   const techNames = techs.map((t) => t.name);
 
-  const proposed_techniques = techs.map((t) => proposedOf(t, description, resolved));
+  const proposed_techniques = techs.map((t) => proposedOf(t, { description, resolved, isGame }));
   const { verdict, compatibility } = await compatibilityOf(techs);
   const pitfalls = await collectPitfalls(techNames, resolved?.mode === "graph" ? resolved.risks : []);
   const toolchain_split = await toolchainSplit(techs);

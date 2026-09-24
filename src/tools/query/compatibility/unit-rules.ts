@@ -44,10 +44,25 @@ export interface ClaimSide {
 export interface PairRelation {
   aRequiresB: boolean;
   bRequiresA: boolean;
+  /** The check's set holds the chain host (irq_chain_table), inputs or prerequisites. */
+  chainHosted?: boolean;
 }
 
 // The technique that hosts other raster effects as entries in its table.
-const CHAIN_HOST = "irq_chain_table";
+export const CHAIN_HOST = "irq_chain_table";
+
+/**
+ * Two owners of the raster compare with the chain host in the set: the
+ * host programs $D012 and each owner's handler becomes one of its entries,
+ * which is the resolution the hard hit gives. Reported soft, so following
+ * that resolution does not make the verdict worse (#41: adding
+ * irq_chain_table to raster_bars + raster_split_modes turned one hard
+ * conflict into three).
+ */
+function hostedRasterIrq(a: ClaimSide, b: ClaimSide, rel: PairRelation, unit: string): boolean {
+  if (unit !== "vic_raster_irq") return false;
+  return a.name === CHAIN_HOST || b.name === CHAIN_HOST || (rel.chainHosted ?? false);
+}
 
 interface Entry {
   kind: UnitRuleKind;
@@ -131,8 +146,18 @@ function matchZeroPage({ ca, cb, a, b, unit }: Pair): Match {
   };
 }
 
+/** Two owners of one unit; nothing between a technique and its own prerequisite. */
+function matchOwners(p: Pair): Match | null {
+  const { a, b, rel, unit } = p;
+  if (rel.aRequiresB || rel.bRequiresA) return null;
+  if (p.ca.unit === "zero_page") return matchZeroPage(p);
+  const severity = hostedRasterIrq(a, b, rel, unit) ? "soft" : "hard";
+  return { unit, bothShare: false, kind: "unit_contention", severity, first: a, second: b };
+}
+
 /** The rule two modes on one unit fire, with the pair ordered as its text reads. */
-function matchModes({ ca, cb, a, b, rel, unit }: Pair): Match | null {
+function matchModes(p: Pair): Match | null {
+  const { ca, cb, a, b, rel, unit } = p;
   const related = rel.aRequiresB || rel.bRequiresA;
   const is = (x: ClaimMode, y: ClaimMode) => ca.mode === x && cb.mode === y;
   const has = (x: ClaimMode, y: ClaimMode) => is(x, y) || is(y, x);
@@ -140,11 +165,7 @@ function matchModes({ ca, cb, a, b, rel, unit }: Pair): Match | null {
   const order = (firstMode: ClaimMode) =>
     ca.mode === firstMode ? { first: a, second: b } : { first: b, second: a };
   const base = { unit, bothShare: false };
-  if (has("owns", "owns")) {
-    if (related) return null;
-    if (ca.unit === "zero_page") return matchZeroPage({ ca, cb, a, b, rel, unit });
-    return { ...base, kind: "unit_contention", severity: "hard", first: a, second: b };
-  }
+  if (has("owns", "owns")) return matchOwners(p);
   if (has("owns", "shares")) {
     const o = order("owns");
     const ownerRequiresSharer = o.first === a ? rel.aRequiresB : rel.bRequiresA;
@@ -194,12 +215,14 @@ function contentionText(e: Entry, list: string): Pick<UnitHit, "rationale" | "re
     const host = [first.name, second.name].find((n) => n === CHAIN_HOST);
     const guest = host === first.name ? second.name : first.name;
     const rest = others ? "; for the other units, give one technique different ones" : "";
-    return {
-      rationale,
-      resolution: host
-        ? `${host} is the host: rewrite ${guest}'s raster handler(s) as entries in ${host}'s table, so the table alone programs $D012 and ${guest} runs inside it${rest}.`
-        : `There is one raster compare. Run both as handlers in one interrupt chain (irq_chain_table): one technique owns $D012 and the other's handler becomes a chain entry that shares it${others ? "; for the other units, give one technique different ones (another sprite range, another voice)" : ""}.`,
-    };
+    // Soft only when the chain host is in the set (hostedRasterIrq).
+    const hostedPair = !host && e.severity === "soft";
+    let resolution = `There is one raster compare. Run both as handlers in one interrupt chain (irq_chain_table): one technique owns $D012 and the other's handler becomes a chain entry that shares it${others ? "; for the other units, give one technique different ones (another sprite range, another voice)" : ""}.`;
+    if (host)
+      resolution = `${host} is the host: rewrite ${guest}'s raster handler(s) as entries in ${host}'s table, so the table alone programs $D012 and ${guest} runs inside it${rest}.`;
+    else if (hostedPair)
+      resolution = `${CHAIN_HOST} is in the set: rewrite both raster handlers as entries in its table, so the table alone programs $D012.`;
+    return { rationale, resolution };
   }
   return {
     rationale,

@@ -122,18 +122,41 @@ function open15(ctx: LintContext): void {
   });
 }
 
+// Interrupt handler code: an acknowledge of the VIC interrupt, or RTI. A
+// file with it runs under an interrupt installed somewhere, maybe in the
+// file that imports it (shmup-vertical's mux.asm, imported by kernel.asm).
+const HANDLER_CODE = /\b(sta|stx|sty|inc|dec|asl|lsr)\s+\$d019\b|\brti\b/i;
+const BRANCH = /\b(?:bne|beq|bcc|bcs|bpl|bmi)\s+(\S+)/i;
+
+/**
+ * A busy-wait: a branch within three lines of the $D012 read that goes
+ * back to it (`*-n`, an anonymous backward label, or a label on the read
+ * line or the two before it). A forward branch is a test, not a wait:
+ * mux.asm's `cmp $d012 / bcs on_time` asks whether the line has passed.
+ */
+function branchesBack(lines: string[], i: number): boolean {
+  for (let k = i; k < Math.min(lines.length, i + 4); k++) {
+    const target = BRANCH.exec(lineAt(lines, k))?.[1];
+    if (target === undefined) continue;
+    if (/^\*\s*-|^!?-+$/.test(target)) return true;
+    const name = target.replace(/[.$^*+?()[\]{}|\\]/g, "\\$&");
+    const def = new RegExp(String.raw`^\s*${name}:?(\s|$)`, "i");
+    for (let j = Math.max(0, i - 2); j <= k; j++) if (def.test(lineAt(lines, j))) return true;
+  }
+  return false;
+}
+
 /** Raster poll with the KERNAL IRQ live. */
 function rasterPoll(ctx: LintContext): void {
-  if (/\$0314|\$0318|\$fffe|\$fffa|\bsei\b/i.test(ctx.src)) return;
+  if (/\$0314|\$0318|\$fffe|\$fffa|\bsei\b/i.test(ctx.src) || HANDLER_CODE.test(ctx.src)) return;
   ctx.lines.forEach((line, i) => {
     if (!/\b(lda|cmp|ldx|ldy|cpx|cpy|bit)\s+(\$d012|0xd012|53266)\b/i.test(line)) return;
-    const window = ctx.lines.slice(i, i + 4).join("\n");
-    if (!/\b(bne|beq|bcc|bcs|bpl|bmi)\b/i.test(window)) return;
+    if (!branchesBack(ctx.lines, i)) return;
     report(ctx, i, {
       rule: "raster_poll_with_kernal_irq_live",
       pitfall: "raster_irq_first_line_jitter",
       message:
-        "Busy-wait on $D012 in a file that never installs an interrupt (no $0314, $FFFE or SEI). The KERNAL jiffy interrupt is still live, so the poll can be pre-empted across the line it waits for and the loop's entry point moves by whole lines from frame to frame. Either take the interrupt (SEI, or a handler on $0314) or have a raster interrupt own a tick byte the loop waits on. Heuristic: the interrupt may be installed in another file.",
+        "Busy-wait on $D012 in a file that never installs an interrupt and holds no handler code (no $0314, $FFFE, SEI, $D019 acknowledge or RTI). The KERNAL jiffy interrupt is still live, so the poll can be pre-empted across the line it waits for and the loop's entry point moves by whole lines from frame to frame. Either take the interrupt (SEI, or a handler on $0314) or have a raster interrupt own a tick byte the loop waits on. Heuristic: the interrupt may be installed in another file.",
       page: PAGES.rasterPoll,
       certainty: "heuristic",
     });

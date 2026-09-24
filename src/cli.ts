@@ -276,6 +276,8 @@ program
     const { checkCompatibility } = await import("./tools/query.ts");
     const result = await checkCompatibility(techniques);
     emit(result);
+    // A refusal (a name with no technique) is a failure to a script, not a verdict.
+    if (result.structured.verdict === "unknown_technique") process.exitCode = 1;
   });
 
 program

@@ -4,16 +4,18 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { FalkorService } from "../src/services/falkor.ts";
 import { checkCompatibility } from "../src/tools/query.ts";
 import { extractGraphEntities } from "../src/graph/extract.ts";
+import { applyEdge, applyNode, isNodeEntity } from "../src/graph/apply.ts";
 
-// Ground truth for the unit rules (#22). Every recipe in docs/recipes was
-// built and run in VICE, so the techniques one recipe implements do coexist
-// on the machine. check_compatibility over a recipe's technique set must
-// therefore report no hard unit_contention or zero_page_overlap, directly
-// or through a prerequisite. The graph is built here from the real
-// technique pages (nodes, REQUIRES, CLAIMS), so a Claims line that sets two
-// cooperating techniques against each other fails this test by name.
+// Ground truth for the compatibility rules (#22, every hard kind since
+// #29). Every recipe in docs/recipes was built and run in VICE, so the
+// techniques one recipe implements do coexist on the machine.
+// check_compatibility over a recipe's technique set must therefore report
+// no hard conflict of any kind, directly or through a prerequisite. The
+// graph is built here from the real pages (Technique and KernalRoutine
+// nodes; REQUIRES, CLAIMS, DEMANDS, REQUIRES_REGION and KERNAL USES edges),
+// so a Demands or Claims line that sets two cooperating techniques against
+// each other fails this test by name.
 const DOCS = path.resolve(__dirname, "../docs");
-const UNIT_KINDS = new Set(["unit_contention", "zero_page_overlap"]);
 
 function markdownUnder(dir: string): string[] {
   return fs
@@ -24,14 +26,23 @@ function markdownUnder(dir: string): string[] {
 
 const extract = (abs: string) => extractGraphEntities(fs.readFileSync(abs, "utf8"), path.relative(DOCS, abs));
 
-// Technique nodes first, then their REQUIRES and CLAIMS edges, as ingest's two passes do.
+const NODES = new Set(["technique", "kernal_routine"]);
+const EDGES = new Set([
+  "technique_requires",
+  "claims",
+  "technique_demands",
+  "technique_requires_region",
+  "technique_uses_kernal",
+]);
+
+// Nodes first, then the edges the hard rules read, as ingest's two passes do.
 async function loadTechniques(f: FalkorService): Promise<void> {
-  const ents = markdownUnder(path.join(DOCS, "techniques")).flatMap(extract);
-  for (const e of ents) if (e.type === "technique") await f.addTechnique(e);
-  for (const e of ents) {
-    if (e.type === "technique_requires") await f.linkTechniqueRequires(e.technique, e.requires);
-    if (e.type === "claims") await f.linkClaims(e);
-  }
+  const ents = [
+    ...markdownUnder(path.join(DOCS, "techniques")),
+    ...markdownUnder(path.join(DOCS, "hardware")),
+  ].flatMap(extract);
+  for (const e of ents) if (isNodeEntity(e) && NODES.has(e.type)) await applyNode(f, e);
+  for (const e of ents) if (!isNodeEntity(e) && EDGES.has(e.type)) await applyEdge(f, e);
 }
 
 describe("recipes against their own technique sets", () => {
@@ -62,14 +73,26 @@ describe("recipes against their own technique sets", () => {
     expect([...recipeSets.values()].filter((t) => t.length > 1).length).toBeGreaterThan(10);
   });
 
-  it("no recipe's technique set has a hard unit conflict", async () => {
+  it("the graph holds the demands and KERNAL uses the hard rules read", async () => {
+    const rows = await f.roQuery(
+      `MATCH (t:Technique {name: 'fli_image'})-[:DEMANDS]->(r:Resource) RETURN r.name AS name ORDER BY name`,
+    );
+    expect(rows.data.map((r) => (r as { name: string }).name)).toEqual([
+      "constant_sprite_set",
+      "cpu_every_line",
+    ]);
+    const kernal = await f.roQuery(`MATCH (:Technique)-[u:USES]->(:KernalRoutine) RETURN count(u) AS n`);
+    expect((kernal.data[0] as { n: number }).n).toBeGreaterThan(0);
+  });
+
+  it("no recipe's technique set has a hard conflict of any kind", async () => {
     const failures: string[] = [];
     for (const [recipe, techniques] of [...recipeSets].sort()) {
       if (techniques.length < 2) continue;
       const { conflicts } = (await checkCompatibility(techniques)).structured;
       for (const c of conflicts) {
         const kind = c.underlying_kind ?? c.kind;
-        if (c.severity !== "hard" || !UNIT_KINDS.has(kind)) continue;
+        if (c.severity !== "hard") continue;
         const via = c.via?.length ? ` via ${c.via.join(", ")}` : "";
         failures.push(`${recipe}: ${kind} ${c.a} × ${c.b}${via} on ${c.shared.join(", ")}`);
       }

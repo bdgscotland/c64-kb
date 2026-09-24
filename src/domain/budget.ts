@@ -243,10 +243,25 @@ function chargeOf(m: BudgetMember, region: VideoRegion): Charge {
 }
 
 /** The recipe to measure a missing figure on: the one named after the technique first, else the first implementing one. */
+/**
+ * A technique's recipes, the one that realises it most directly first: the
+ * recipe named after it, then the one sharing most words with its name,
+ * then alphabetical. technique_lookup lists them in this order and
+ * plan_budget's "measure it on" takes the first, so the two name the same
+ * recipe. An earlier version took the alphabetical first, and
+ * joystick_edge_detect was to be measured on oscar64-attract-replay while
+ * its card led with oscar64-joystick-input (#41).
+ */
+export function rankRecipesFor(technique: string, recipes: readonly string[]): string[] {
+  const stem = technique.replace(/_/g, "-");
+  const words = new Set(technique.split("_"));
+  const shared = (r: string) => r.split("-").filter((w) => words.has(w)).length;
+  const exact = (r: string) => (r.endsWith(`-${stem}`) ? 1 : 0);
+  return [...recipes].sort((a, b) => exact(b) - exact(a) || shared(b) - shared(a) || a.localeCompare(b));
+}
+
 function recipeToMeasure(m: BudgetMember): string | null {
-  const recipes = m.recipes ?? [];
-  const stem = m.name.replace(/_/g, "-");
-  return recipes.find((r) => r.endsWith(`-${stem}`)) ?? recipes.at(0) ?? null;
+  return rankRecipesFor(m.name, m.recipes ?? []).at(0) ?? null;
 }
 
 function missingWhy(m: BudgetMember): string {
@@ -405,6 +420,16 @@ interface Sorted {
   irq_slots: number;
 }
 
+/**
+ * A figure above this is multi-frame work on every model: the longest frame,
+ * PAL's 19,656. One threshold for both, so a member is summed or left out
+ * the same way on PAL and NTSC; a figure between the two frames is summed
+ * on NTSC and shows as over that frame. An earlier version used each
+ * region's own frame, and cave_scan_engine's 18,559 was summed on PAL and
+ * silently left out on NTSC (#41).
+ */
+const MULTI_FRAME_ABOVE = Math.max(...Object.values(REGION_TIMING).map((t) => t.cycles_per_frame));
+
 /** Put one member where it belongs: summed, left out as multi-frame, unknown, or not found. */
 function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
   if (!m.found) {
@@ -419,7 +444,7 @@ function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
     return;
   }
   const measured_on = m.cost?.measured_on ?? null;
-  if (charge.high > REGION_TIMING[region].cycles_per_frame) {
+  if (charge.high > MULTI_FRAME_ABOVE) {
     into.excluded.push({ name: m.name, reason: "multi_frame", cycles: charge.high, measured_on });
     return;
   }
