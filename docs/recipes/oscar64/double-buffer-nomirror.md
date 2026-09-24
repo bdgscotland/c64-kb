@@ -57,6 +57,23 @@ static char tpl[2][256];
 
 static unsigned draw_cycles;          // cost of the previous draw
 
+// Measurement builds only (-dREDRAW_ROWS=n): the draw copies n 40-byte
+// rows from a 1,000-byte map per page instead of the template fill, and
+// the timer stops before the caption. Not defined, the program is the one
+// the pictures below come from.
+#ifdef REDRAW_ROWS
+static char map[2][1000];
+
+static void copy_rows(char * s, const char * m, char n)
+{
+    for (char r = 0; r < n; r++) {
+        for (char c = 0; c < 40; c++) s[c] = m[c];
+        s += 40;
+        m += 40;
+    }
+}
+#endif
+
 static void put_str(char * dst, const char * s)
 {
     while (*s) {
@@ -87,6 +104,19 @@ static void draw_page(char p, unsigned frame)
     cia1.tb  = 0xffff;
     cia1.crb = 0x11;                  // force load, start, count phi2
 
+#ifdef REDRAW_ROWS
+    copy_rows(s, map[p], REDRAW_ROWS);
+#if MIRROR_SPRITE_POINTERS
+    s[0x3f8] = SPR_BLOCK;
+#endif
+    cia1.crb = 0x00;
+    draw_cycles = 0xffff - cia1.tb;
+    put_str(s,       "FRAME 00000 PAGE A  DRAW 00000");
+    put_dec5(s + 6,  frame);
+    s[17] = 1 + p;
+    put_dec5(s + 25, draw_cycles);
+    return;
+#endif
     if (p == 0) {
         do {
             char v = t[i];
@@ -123,6 +153,12 @@ int main(void)
         tpl[0][k] = (((r + c) & 7) < 4) ? 0x66 : 0x20;   // diagonals
         tpl[1][k] = (r & 2) ? 0xa0 : 0x20;               // bands
     }
+#ifdef REDRAW_ROWS
+    for (unsigned k = 0; k < 1000; k++) {
+        map[0][k] = tpl[0][k & 255];
+        map[1][k] = tpl[1][k & 255];
+    }
+#endif
 
     memset(COLOUR, 1, 1000);          // one colour RAM, white, set once
     vic.color_border = 0;

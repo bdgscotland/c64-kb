@@ -59,6 +59,23 @@ static char tpl[2][256];
 
 static unsigned draw_cycles;          // cost of the previous draw
 
+// Measurement builds only (-dREDRAW_ROWS=n): the draw copies n 40-byte
+// rows from a 1,000-byte map per page instead of the template fill, and
+// the timer stops before the caption. Not defined, the program is the one
+// the pictures below come from.
+#ifdef REDRAW_ROWS
+static char map[2][1000];
+
+static void copy_rows(char * s, const char * m, char n)
+{
+    for (char r = 0; r < n; r++) {
+        for (char c = 0; c < 40; c++) s[c] = m[c];
+        s += 40;
+        m += 40;
+    }
+}
+#endif
+
 static void put_str(char * dst, const char * s)
 {
     while (*s) {
@@ -89,6 +106,19 @@ static void draw_page(char p, unsigned frame)
     cia1.tb  = 0xffff;
     cia1.crb = 0x11;                  // force load, start, count phi2
 
+#ifdef REDRAW_ROWS
+    copy_rows(s, map[p], REDRAW_ROWS);
+#if MIRROR_SPRITE_POINTERS
+    s[0x3f8] = SPR_BLOCK;
+#endif
+    cia1.crb = 0x00;
+    draw_cycles = 0xffff - cia1.tb;
+    put_str(s,       "FRAME 00000 PAGE A  DRAW 00000");
+    put_dec5(s + 6,  frame);
+    s[17] = 1 + p;
+    put_dec5(s + 25, draw_cycles);
+    return;
+#endif
     if (p == 0) {
         do {
             char v = t[i];
@@ -125,6 +155,12 @@ int main(void)
         tpl[0][k] = (((r + c) & 7) < 4) ? 0x66 : 0x20;   // diagonals
         tpl[1][k] = (r & 2) ? 0xa0 : 0x20;               // bands
     }
+#ifdef REDRAW_ROWS
+    for (unsigned k = 0; k < 1000; k++) {
+        map[0][k] = tpl[0][k & 255];
+        map[1][k] = tpl[1][k & 255];
+    }
+#endif
 
     memset(COLOUR, 1, 1000);          // one colour RAM, white, set once
     vic.color_border = 0;
@@ -176,6 +212,37 @@ GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas x64sc -default -warp +
 ```
 
 Add `-model ntsc` for the NTSC picture.
+
+### Row redraw builds
+
+`-dREDRAW_ROWS=n` builds the measurement the technique's per-row Cost
+comes from (#106). The draw then copies n 40-byte rows of a 1,000-byte
+map into the hidden page with a byte loop, restores the pointer block,
+and stops the timer before the caption, so DRAW is the rows alone. The
+default build is byte-identical to one without the `#ifdef` blocks.
+
+```bash
+oscar64 -tm=c64 -O2 -dREDRAW_ROWS=3 -o=rows3.prg double-buffer.c
+```
+
+DRAW read from the exit screenshot's caption, the largest of four runs
+at 8,000,000, 8,019,656, 8,039,312 and 8,058,968 cycles, VICE x64sc 3.10:
+
+| Rows | PAL | NTSC | 57 + 814 × rows |
+|---|---|---|---|
+| 0 | 15 | 15 | 57 |
+| 1 | 786 | 786 | 871 |
+| 2 | 1,576 | 1,576 | 1,685 |
+| 3 | 2,326 | 2,326 | 2,499 |
+| 4 | 3,076 | 3,076 | 3,313 |
+| 8 | 6,090 | 6,348 | 6,569 |
+| 12 | 9,348 | 9,671 | 9,825 |
+| 16 | 12,768 | 12,998 | 13,081 |
+| 20 | 16,071 | 16,328 | 16,337 |
+| 25 | 20,077 | 20,077 | 20,407 |
+
+From 16 rows on NTSC and 20 on PAL the draw and the wait take more than
+a frame, and the frame number advances every other frame.
 
 ## Expected output
 

@@ -855,9 +855,9 @@ to the raster and sprite recipes landing in Phase 4+.
 **Region:** both
 **Uses registers:** D018, D011
 **Requires:** screen_ram_relocation
-**Cost:** cycles_per_frame=57
+**Cost:** cycles_per_frame=13196, cycles_per_item=814, cycles_item_base=57
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-double-buffer (the flip and the page toggle, 31 cycles, plus the sprite-pointer copy, 26; PAL and NTSC; the page redraw and the wait for the blank are not in it)
+**Cost measured on:** oscar64-double-buffer (the recipe's whole-page redraw with its caption, 12,598 PAL and 13,165 NTSC, plus the 31-cycle flip; an item is one 40-byte row copied into the hidden page by a C byte loop at -O2, fitted to -dREDRAW_ROWS builds of 0 to 25 rows on PAL and NTSC; the base is the flip, 31, and the sprite-pointer copy, 26; the wait for the blank is not in it)
 **Claims:** vic_matrix_base (owns)
 **Claims basis:** measured-vice
 
@@ -867,17 +867,29 @@ polled, not written. The recipe's sprite and CIA1 timer B are its
 demonstration and measurement harness, not the technique's
 ([#71](https://github.com/bdgscotland/c64-kb/issues/71)).
 
-The Cost line is the technique's own work, timed by a VICE monitor exec
-trace of the recipe's `-O2` build (x64sc 3.10, PAL and NTSC, the same on
-every frame traced). The flip, from the load of `vm[hidden]` after the
-wait to the store of the toggled index, is 31 cycles. The copy of the
-sprite pointer into the hidden page is 26, a bound: the traced block also
-sets up an argument for the caption. What the program draws into the
-hidden page is not the technique's and is not in the figure; budget it
-with the drawing code. The recipe's full 1 KB redraw takes 12,598 cycles
-on PAL and 13,165 on NTSC. The #22 game test, which copied three rows a
-frame into the hidden page, measured 2,180 and 2,015. Before #96 this
-page had no Cost line, and `c64_plan_budget` reported it as unknown.
+The Cost line counts the redraw of the hidden page as items: a plan that
+names `screen_double_buffer_d018 ×3` is charged 57 + 3 × 814 = 2,499
+cycles, and one with no count is charged the recipe's whole-page redraw,
+13,196. Until #106 the line was `cycles_per_frame=57`, the flip and the
+pointer copy alone, so a plan budget counted none of the redraw and did
+not name it unknown; the #22 game test's second run drew three rows a
+frame at 1,716 to 1,776 cycles that no figure held.
+
+The base is timed by a VICE monitor exec trace of the recipe's `-O2`
+build (x64sc 3.10, PAL and NTSC, the same on every frame traced). The
+flip, from the load of `vm[hidden]` after the wait to the store of the
+toggled index, is 31 cycles. The copy of the sprite pointer into the
+hidden page is 26, a bound: the traced block also sets up an argument
+for the caption. The item is the recipe built with `-dREDRAW_ROWS=n`,
+which copies n rows of a 1,000-byte map with a byte loop and times them
+with CIA1 timer B (the recipe's "Row redraw builds"). 814 cycles a row is
+the steepest step measured, 16,328 NTSC for 20 rows, so 57 + 814 × n is
+at or above every build on both models. Rows drawn in the border cost
+less, 750 to 790 each: 814 holds the badlines and the sprite fetch a draw
+running into the display loses. A faster copy has a smaller item: the
+recipe's own four-way template fill writes the whole 1 KB page in 12,598
+cycles PAL, about 504 per 40 bytes, and the #22 game's three rows took
+1,716 to 1,776 (run 2) and 2,015 to 2,180 (run 1).
 
 ### Why
 
