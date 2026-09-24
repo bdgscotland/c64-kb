@@ -717,7 +717,7 @@ Both devices handle `.D64`, `.D71`, `.D81`, `.T64`, and `.PRG` files from SD car
 
 ### Standard IEC Load Speed (about 400 bytes/sec)
 
-A full 35-track 1541 disk holds 664 blocks × 254 data bytes = 168,656 bytes (about 165 KiB). Measured in VICE x64sc 3.10 (PAL, default 1541-II with true drive emulation), `LOAD"BIG",8,1` of a 50,000-byte file written by `c1541` took 121,174,229 cycles from `JSR $FFD5` at `$E175` to its return, 123 s or about 406 bytes/s including the directory search; at that rate a full disk takes about 7 minutes. (An earlier version said "664 KB usable", over 30 minutes for a full disk and about 2.5 minutes for 50 KB; 664 is the block count.) Nearly every released demo and game therefore uses a custom fastloader. Plan for fastloader integration from the start of any project targeting real hardware.
+A full 35-track 1541 disk holds 664 blocks × 254 data bytes = 168,656 bytes (about 165 KiB). Measured in VICE x64sc 3.10 (PAL, default 1541-II with true drive emulation), `LOAD"BIG",8,1` of a 50,000-byte file written by `c1541` took 121,174,229 cycles from `JSR $FFD5` at `$E175` to its return, 123 s or about 406 bytes/s including the directory search; at that rate a full disk takes about 7 minutes. (An earlier version said "664 KB usable", over 30 minutes for a full disk and about 2.5 minutes for 50 KB; 664 is the block count.) That is why fastloaders exist, and many demos and games ship one; how many do was not counted here. (An earlier version said "nearly every released demo and game", with no source.) Plan for fastloader integration from the start of any project targeting real hardware.
 
 ### VICE Timing Differences with Real Hardware
 

@@ -353,7 +353,9 @@ pixel-level motion.
 ### Cycle budget
 
 A 960-byte row shift at ~10 cycles per byte costs ~9,600 cycles (7,680
-fully unrolled). Between the last display line (250, RSEL=1) and the
+fully unrolled). The ~10 is an estimate, not measured: 8 cycles unrolled
+as LDA abs / STA abs, 14 in an LDA abs,X / STA abs,X / INX / BNE loop
+(instruction-table arithmetic). Between the last display line (250, RSEL=1) and the
 first badline of the next frame (48 + YSCROLL) there are no badlines and
 no character/bitmap fetches: with the default YSCROLL=3 that is lines
 251-311 and 0-50, 112 raster lines = 7,056 cycles on PAL; because this
@@ -551,7 +553,8 @@ continuous motion.
 
 The cost is dominated by the column shift, which fires once every 8
 frames at 1 px/frame and lands in one frame, not eight. At ~10 cycles per
-byte the 1,000-byte screen-RAM shift costs ~10,000 cycles, and the colour
+byte (an estimate between 8 unrolled and 14 in an indexed loop; not
+measured) the 1,000-byte screen-RAM shift costs ~10,000 cycles, and the colour
 RAM shift in step 3d as much again: ~20,000 cycles against a PAL budget of
 ~18,581 per frame (`char_scroll_buffer_h`, Cycle budget). The seven frames
 between carries cost ~10 cycles each for the XSCROLL write. So the carry
@@ -832,7 +835,9 @@ of a cell takes line 7 of the cell in the band above), which is why
 bitmap scrollers carry vertically by whole bands and use YSCROLL for the
 intermediate lines.
 
-Cycle cost: an 8000-byte shift at ~10 cycles per byte = ~80,000 cycles.
+Cycle cost: an 8000-byte shift at ~10 cycles per byte = ~80,000 cycles
+(an estimate between 8 cycles unrolled and 14 in an indexed loop; not
+measured).
 PAL provides ~18,500 CPU cycles per frame (after badlines). An 8000-byte
 shift is approximately 4.3 frames of CPU time at full speed. This approach
 does not run at 50 Hz for a full-screen scrolling bitmap without
@@ -902,7 +907,7 @@ across several frames. (An earlier version said "across multiple cycles".)
 Fine-scroll step (XSCROLL or YSCROLL write only, no carry): ~10 cycles.
 
 Coarse carry, memshift approach (fires once per 8 frames at 1 px/frame):
-8000 bytes × 10 cycles/byte = 80,000 cycles. Spread across 8 frames:
+8000 bytes × 10 cycles/byte = 80,000 cycles (the same ~10 estimate). Spread across 8 frames:
 10,000 cycles/frame average, or ~54% of the PAL per-frame budget.
 The colour carry must move in lockstep with the pixel carry: the
 1000-byte video matrix (each byte holds the cell's foreground and

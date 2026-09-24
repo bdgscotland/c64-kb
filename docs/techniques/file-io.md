@@ -1243,7 +1243,12 @@ through the job queue.
    bytes per command: the 1541 ROM refuses a command line longer than
    41 bytes (`CPY #$2A` at `$C2CE`, then error 32, SYNTAX ERROR; read
    from `dos1541-325302-01+901229-05.bin`), and the six header bytes
-   leave 35. Krill's loader v194 sends 35-byte blocks
+   leave 35. The routine at `$C2B3` sets that length before the check: it
+   drops the last byte if it is `$0D`, or the last two if the second-to-last
+   is `$0D`. So a 36-byte `M-W` (42 bytes) is refused unless one of its
+   last two data bytes is `$0D`, and then it is accepted; `M-W` copies
+   `count` bytes whatever the stored length. Read from the same ROM, not
+   run. Krill's loader v194 sends 35-byte blocks
    (`techniques/loaders-packers.md`). The recipe sends 32, 32 and 4; a
    34-byte `M-W` also uploaded and ran in VICE, measured under
    `pitfalls/loader.md#atn_assert_drives_data_low_via_atna`; 35 was not

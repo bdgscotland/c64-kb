@@ -24,9 +24,9 @@ is ever visible. The redraw is spread over at most four fields per crossing.
 
 Colour RAM is not paged. Both halves are written in `irqColB` at raster 4
 in four calls after each flip: two for the top half (rows 0 to 11) and two
-for the bottom (rows 12 to 24). The first top call uses `BAND_FIRST = 5`
-rows so the colour write finishes before row 6's badline even when
-`irqColB` starts as late as raster 33 on NTSC. The remaining calls use
+for the bottom (rows 12 to 24). The first top call writes `BAND_FIRST = 5`
+rows, rows 0 to 4, each meant to land before its own badline; on both pins
+it did, with 5 cycles to spare on NTSC (see "Colour RAM"). The remaining calls use
 `BAND_MAX = 7`. During the four write fields, rows not yet updated show the
 previous origin's colour: three displayed fields per tile crossing, about
 one in four, measured at 60 ms PAL and 50 ms NTSC.
@@ -53,8 +53,9 @@ stated budget; `$02` and red otherwise. PAL and NTSC.
 //
 // Colour RAM is not paged. Both halves are written in irqColB at raster 4.
 // The top half (rows 0..SPLIT-1) is written in two calls after the flip: the
-// first uses BAND_FIRST rows, which fits safely even when irqColB starts as
-// late as raster 33 on NTSC; the second uses BAND_MAX. The bottom half
+// first uses BAND_FIRST rows and ends before row 6's badline even when
+// irqColB starts late on NTSC (rows 0-4's own badlines are tighter; see the
+// page); the second uses BAND_MAX. The bottom half
 // (rows SPLIT..24) follows in two more calls at BAND_MAX rows each. Four
 // colour calls span the same four fields as the four matrix-redraw preps.
 
@@ -334,9 +335,9 @@ cb_prepok:
 cb_has_pend:
         cmp #1
         bne cb_bottom
-        // Phase 1: top half. BAND_FIRST rows on the first call (colTopCur == 0)
-        // so the colour finishes before the row-6 badline even when irqColB
-        // starts as late as raster 33 on NTSC. Subsequent calls use BAND_MAX.
+        // Phase 1: top half. BAND_FIRST rows on the first call (colTopCur == 0),
+        // meant to reach rows 0-4 before their own badlines; the check below
+        // tests the looser row-6 badline. Subsequent calls use BAND_MAX.
         lda colTopCur
         sta zrow
         lda colTopCur
@@ -1390,10 +1391,32 @@ flipped with the matrix. Both halves are written in `irqColB` at raster 4.
 
 On NTSC, `irqApply` (register writes plus readout stamp) exceeds the
 twelve-raster blank and finishes inside the next field, so `irqColB`
-starts as late as raster 33. The first top call is limited to `BAND_FIRST
-= 5` rows (rows 0 to 4) so it finishes before row 6's badline even at the
-worst-case entry raster. The remaining calls use `BAND_MAX = 7`, which
-always finishes before `irqPrep`'s raster.
+starts late: measured in the VICE monitor over the NTSC pin, its first
+instruction ran on lines 4 to 32. The first top call is limited to
+`BAND_FIRST = 5` rows (rows 0 to 4). Each row must be written before its
+own badline, line 48 + YSCROLL + 8r, for the flip field to show it in the
+new colour. A row takes 10 to 12 lines to write, more than the 8 between
+badlines, so the last row, row 4, is the tightest. Measured with monitor
+tracepoints where each row's copy returns, over every first-band call of
+both pins (67 PAL, 79 NTSC): every row returned before BA fell on its
+badline; the least margin was 5 cycles, row 4 on NTSC returning on cycle 7
+of line 80 with YSCROLL 0, from a call whose row 0 started on line 26.
+`irqColB` entered as late as line 32 in that run, though never on a
+first-band field. A first-band call starting six lines later than the
+tightest one would end row 4 about six lines later, after its badline for
+YSCROLL below 6, and rows 2 and 3 could miss too (arithmetic); a row that
+misses shows the old colour for one field, like rows 5 to 24.
+
+The `b1Dead` counter does not catch that. It checks row 6's badline
+(96 + YSCROLL), which the call always beats. A check at row 4's badline
+line cannot be made from `$D012` after the call returns: the badline's own
+43-cycle stall pushes the check onto the next line. Tried on the NTSC pin,
+it counted 9 calls whose last row had in fact returned on line 79 or by
+cycle 7 of line 80, before BA fell. So the counter is a coarse guard, and
+rows 0 to 4 reaching their badlines is measured for these pins, not
+enforced. (An earlier version said the row-6 limit made the first band
+finish in time at the worst-case entry.) The remaining calls use
+`BAND_MAX = 7`, which always finishes before `irqPrep`'s raster.
 
 The split at row 12 gives the top half twelve rows and the bottom thirteen.
 Rows 0 to 4 see new colour in the flip field if the first call finishes in
@@ -1467,12 +1490,13 @@ two for the bottom). During those fields the rows not yet rewritten show
 the previous origin's colour alongside the new matrix for three displayed
 fields (60 ms PAL, 50 ms NTSC). This is the cost of the band cap. Rows 0 to 4 may show old colour for
 one field on NTSC when `irqColB` starts late enough that the first band
-finishes after row 4's badline. That is a different deadline from the
-row-6 badline the violation counter checks. Measured on NTSC in the VICE
-x64sc monitor (a breakpoint where the first band returns, 25 crossings):
-with YSCROLL 0 the band ended on line 80 or 81, at or after row 4's badline
-(line 80) and well before row 6's (line 96), so the counter stayed at zero
-while row 4 could still be fetched with old colour.
+finishes after row 4's badline; in the pinned runs it never did (see
+"Colour RAM"), and the counter, which checks row 6's badline, would not
+record it if it did. (An earlier version read a breakpoint where the first
+band returns, on line 80 or 81 with YSCROLL 0, as the band ending at or
+after row 4's badline; the return is late because the badline's stall
+falls between the last row's writes and the return. The last row's copy
+returned on line 79, or by cycle 7 of line 80, before BA fell on cycle 12.)
 
 **Camera path coverage.** `MAX_COL` and `MAX_ROW` clamp the visible
 origin so the camera never leaves the world. The path used here stays in
