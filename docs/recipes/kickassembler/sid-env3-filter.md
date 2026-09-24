@@ -1848,8 +1848,8 @@ still moving (peak `$FB` in phase B, `$CE` then zero in phase C, from the
 memory dump). `E3A=B 190`: the harness's ENV3 reads agree between phases
 A and B on 190 frames of 192 on PAL, the chip's own envelope under the
 same gate timing (the build's four-file program, whose read fell a few
-hundred cycles later in the frame, agreed on 187); on NTSC only 83, because 192 play calls are 230.4
-frames there (one call in six is skipped) and the second loop starts at a
+hundred cycles later in the frame, agreed on 187); on NTSC only 83,
+because 192 play calls are 230.4 frames there (one call in six is skipped) and the second loop starts at a
 different point of the skip cycle.
 
 **The shape (rows 2 to 4 and 14).** From the note frame: `01 32 64 96 C8

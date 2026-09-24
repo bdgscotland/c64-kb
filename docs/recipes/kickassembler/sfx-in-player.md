@@ -901,7 +901,8 @@ frequency. Every register is written every frame, in the same order, and
 a voice's seven writes land within 98 cycles (7 × 14, arithmetic) whatever
 path the player took. When they land in the frame still moves with the
 player's length, 774 to 1,200 cycles here; copying first and computing
-second fixes that too (see the technique). The SID's
-registers are write-only (`pitfalls/sid.md`, `sid_write_only_registers`),
+second fixes that too (see the technique).
+
+The SID's registers are write-only (`pitfalls/sid.md`, `sid_write_only_registers`),
 so the shadow is also the only place a program can read what it last
 wrote; the checks read it.

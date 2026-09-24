@@ -15,10 +15,10 @@ uses_kernal: []
 
 ## Synopsis
 
-Demonstrates the canonical Oscar64 idiom for raster-synchronized interrupts using
+The standard Oscar64 idiom for raster-synchronized interrupts, using
 `rasterirq.h`. The program fires a single raster IRQ at line 100, changes the border
-color to white on entry, and holds it white for the rest of the frame. This is the
-foundational pattern that all other raster effects in this KB build on.
+color to white on entry, and holds it white for the rest of the frame. The other
+raster effects in this KB build on this pattern.
 
 ## Source
 
@@ -110,8 +110,7 @@ A white band in the border from raster line 101 to line 200; light blue above
 and below. Both edges are straight across the frame: the dispatcher's polling
 loop (below) puts the write in the horizontal blank.
 
-On both PAL (50 Hz, 312 lines) and NTSC (60 Hz, 263 lines) the effect is
-identical in appearance.
+The effect looks the same on PAL (50 Hz, 312 lines) and NTSC (60 Hz, 263 lines).
 
 Verified with Oscar64 (build 2026-05-19) and VICE 3.10 x64sc, measured
 2026-09-22 on both models: the left and right border columns are white on
@@ -146,7 +145,7 @@ other IRQ reads `$DC0D` to acknowledge the CIA and jumps to `$EA31`, the full
 KERNAL service, so the clock, keyboard scan and STOP key all keep working
 (about 190 cycles per jiffy tick idle). Both sources therefore share the IRQ
 line by design; the dispatcher tells them apart rather than silencing one.
-If you need the CIA quiet, write `$DC0D = 0x7F` yourself before `rirq_start`.
+To quiet the CIA, write `$DC0D = 0x7F` before `rirq_start`.
 
 ### What "stable" means here, and what it does not
 
@@ -167,13 +166,13 @@ KERNAL's 37-43-cycle entry and the dispatcher's own table walk are paid on
 the lines above and the loop is already spinning when the target line
 begins. Its `CMP` reads `$D012` on cycles 1-7 of that line, the branch falls
 through in 2 and the `STY` (slot 0 is a `STY`, not a `STA`; slot 1 is `STX`)
-writes 4 later, so the first write lands by about cycle 13 — arithmetic from
-the loop's 7-cycle period, not a cycle-level measurement — inside the
+writes 4 later, so the first write lands by about cycle 13 (arithmetic from
+the loop's 7-cycle period, not a cycle-level measurement), inside the
 horizontal blank. That is why the band edges are straight: the write is
 early, not exact. The residual jitter is the loop's granularity, up to six
 cycles, which is invisible for a border colour and would not be for a
-$D016 side-border write or an FLI $D018 write. The genuinely cycle-exact
-entry — the double-IRQ method — is in
+$D016 side-border write or an FLI $D018 write. The cycle-exact
+entry (the double-IRQ method) is in
 `docs/recipes/kickassembler/stable-raster-irq.md`; `rasterirq.h` does not
 implement it, and the earlier text of this recipe, which said the offset
 was "fixed" and "jitter-free", overstated the library.
@@ -181,12 +180,12 @@ was "fixed" and "jitter-free", overstated the library.
 ### `rirq_build`, `rirq_write`, `rirq_set`
 
 `rirq_build(&rirq, n)` initializes an `RIRQCode` struct for `n` writes (1-5).
-The struct is 32 bytes — a size byte and `RIRQ_SIZE` = 31 bytes of code (the
+The struct is 32 bytes: a size byte and `RIRQ_SIZE` = 31 bytes of code (the
 earlier text said 31; `sizeof(RIRQCode)` is 32, checked with a compile-time
 assertion against the 2026-05-19 headers); larger variants `RIRQCode10` and
 `RIRQCode20` (62 and 107 bytes) hold 10
 and 20 writes respectively. The writes are stored as immediate operands and
-absolute addresses of real 6502 instructions inside the struct — no heap, no
+absolute addresses of real 6502 instructions inside the struct: no heap, no
 indirection at fire time; the dispatcher `JSR`s into the struct.
 
 `rirq_write(&rirq, slot, addr, data)` patches slot `slot` of the struct with the
@@ -220,8 +219,8 @@ interrupt therefore fires at line 100 whatever the first slot says; the
 dispatcher then runs slot 0's code (which spins until the raster passes its
 own row) and from then on re-arms `$D012` for each following slot itself. A
 first slot far above line 100 pays that difference once, on the first frame.
-After this call the handler runs autonomously — the main loop never needs to
-touch IRQ machinery again unless slots are being moved.
+After this call the handler runs on its own. The main loop does not
+touch the IRQ machinery again unless slots are moved.
 
 ### Oscar64 vs cc65 IRQ style
 
@@ -229,8 +228,8 @@ The cc65 equivalent of this recipe requires writing `$DC0D = 0x7F` to disable
 CIA interrupts, storing a function pointer at `$0314`/`$0315`, writing `$D01A =
 0x01`, and writing `$D012 = 100` manually. The handler stub must acknowledge
 `$D019`, re-arm `$D012` for the next frame, and return via RTI with A/X/Y/SR
-restored. None of that appears in this recipe because `rasterirq.h` encapsulates
-it — with one difference worth knowing: the library never disables the CIA, it
+restored. None of that appears in this recipe because `rasterirq.h` does
+it, with one difference: the library never disables the CIA, it
 forwards CIA interrupts to `$EA31` and keeps the KERNAL clock alive (see "What
 `rirq_init` actually does"). The Oscar64 idiom is three function calls to set up and one `for (;;)`
 to hold: the handler is data, not code, and the dispatcher is a reusable library.

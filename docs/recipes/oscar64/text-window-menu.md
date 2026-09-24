@@ -531,7 +531,7 @@ line 250 removed it.
   down, `$91` cursor up, and RETURN arrives as `$0D` from the KERNAL or
   `$0A` under Oscar64's default character map
   (`pitfalls/kernal-and-io.md`, `getchx_petscii_remaps_return`). The
-  menu code below that line does not know which device spoke.
+  menu code below that line does not know which device the event came from.
 - **The KERNAL IRQ stays on for the keyboard, off for the timer.** The
   keyboard queue needs SCNKEY, so the IRQ runs during the menu. Each
   timed section (the open, every menu step, the close) does `sei`

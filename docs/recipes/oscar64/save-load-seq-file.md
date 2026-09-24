@@ -26,7 +26,7 @@ on the disk and print the drive's `62` reply. `krnio_status()` is
 printed after every call, so the KERNAL's own ST byte can be read next
 to the drive's reply on the same screen. Use it as the skeleton for a
 save slot or a high-score file, and as the thing to run when a disk
-routine misbehaves and you want to know whether the drive or your code
+routine misbehaves, to tell whether the drive or the program
 is at fault.
 
 ## Source
@@ -305,7 +305,7 @@ score:
 00000010: bc02                                     ..
 ```
 
-Note the `,s` in the `-read` argument: c1541 looks for a PRG by
+The `-read` argument needs the `,s`: c1541 looks for a PRG by
 default, and `-read scores` on this disk answered `ERR = 62, FILE NOT
 FOUND, 00, 00`. Python's fold `chk = ((chk ^ b) * 5 + 1) & 0xffff`
 over those 18 bytes gives `0xCD2A`, the value compiled in as

@@ -534,7 +534,7 @@ buffer shift (that lead-in is not measured here), and it ends, by the `$D012` re
 35 on PAL and line 84 on NTSC. The strips' first raster line is 122
 (`50 + 9*8`), so the VIC never fetches a strip byte the copy is still
 writing and a single charset is enough; a second charset and a `$D018`
-flip would buy nothing here. The verdict is that inequality held for
+flip are not needed here. The verdict is that inequality held for
 every one of the first 250 frames.
 
 On NTSC the same 5,305-cycle copy is stretched to 5,433 to 5,556 cycles
@@ -542,8 +542,8 @@ of CIA time: the NTSC frame is 263 lines, so line 250 is only 13 lines
 from the end, and the copy runs over rows 0 to 4 of the next display,
 crossing three to five badlines (lines 51, 59, 67, 75, 83), each of
 which stops the CPU for 40 to 43 cycles (`badline_cycle_loss` in
-`docs/pitfalls/raster-and-badline.md`). The count on the top row is
-the plain way to see that pitfall: the CPU work is identical on both
+`docs/pitfalls/raster-and-badline.md`). The count on the top row
+shows that pitfall: the CPU work is identical on both
 models and the timer says it is not.
 
 ### The verdict line
@@ -564,5 +564,5 @@ is a live frame, not a frozen one.
 the room after line 250: about 7,100 cycles to the first badline on PAL
 and about 4,200 on NTSC, so the NTSC copy runs some 33 lines into the
 display and pays the badlines above. Both finish 38 or more lines before
-the strips. A taller band, more columns or a lower IRQ line eats that
+the strips. A taller band, more columns or a lower IRQ line uses up that
 margin on NTSC first; the top row's `MAX LINE` is the number to watch.

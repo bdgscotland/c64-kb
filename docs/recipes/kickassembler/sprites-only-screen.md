@@ -19,8 +19,7 @@ Turns the frame into a surface that shows sprites and nothing else, and
 gives the CPU every cycle that is not sprite DMA. Three things are done to
 `$D011` from five plain raster interrupts: DEN is clear while line 48
 passes, so the badline condition is never met and the character display
-never fetches a row; DEN is set for the one moment that matters, the top
-comparison at line 51, so the vertical border flip-flop is reset once; and
+never fetches a row; DEN is set for the top comparison at line 51, so the vertical border flip-flop is reset once; and
 RSEL is clear while line 251 passes, so the flip-flop is never set again.
 With `$3FFF` zero the idle graphics sequencer draws plain background, the
 border and background are both black, and eight white ring sprites stand
@@ -30,7 +29,7 @@ would normally be.
 The main loop is a fixed twenty-cycle loop that counts its iterations, and
 the last interrupt of each frame latches the count. Iterations times
 twenty is the CPU time the frame left free, so the same listing measures
-what the mode buys. Three build variants are controls: `NORMAL` keeps
+the cycles the mode saves. Three build variants are controls: `NORMAL` keeps
 `$D011 = $1B` in every slot, `NOBORDER` keeps DEN clear and never sets it,
 `NOSPRITES` leaves `$D015` at zero.
 
@@ -358,13 +357,13 @@ The controls, each one symbol away from the listing:
   lines of the Y 240 sprite (lines 242 to 250), which the border covers
   from line 251. The sprites at Y 8, 30 and 252 have no visible pixel.
   NTSC: 788 white pixels, rows 34 to 52, 74 to 92, 114 to 132, 174 to
-  192 and 214 to 222, the same story 12 rows up.
+  192 and 214 to 222, the same rows 12 higher.
 - **`NOBORDER`, DEN clear in every slot and never set.** One colour in the
   picture, black, on both models: zero white pixels. The vertical border
   flip-flop is reset only while DEN is set, so it stays set from the
   first frame's line 251 onwards and the border colour covers everything,
-  sprites included. This is the picture a reader gets who clears DEN to
-  kill the badlines and forgets the one line where it must be set.
+  sprites included. Clearing DEN to remove the badlines without setting it
+for that one line gives this picture.
 - **`NOSPRITES`.** One colour, black, zero white pixels; this build exists
   for the meter, below.
 
@@ -478,8 +477,8 @@ the flip-flop, which is why they are the only thing left.
 back. This listing writes whole values from a table because every write
 sets DEN and RSEL together and YSCROLL is fixed at 3; the table is also
 what makes the controls one symbol away. Bit 7 is written as zero in
-every slot, which is what a raster compare below 256 needs; a reader who
-moves a slot above line 255 has to set it (`d012_wrap_around`).
+every slot, which is what a raster compare below 256 needs; a slot moved
+above line 255 needs it set (`d012_wrap_around`).
 
 ### The meter
 
@@ -541,7 +540,7 @@ shorter frame and VICE's 247-row window include, as itemised above.
   rules it relies on are Bauer's, measured here only in the emulator.
 - NTSC beyond what the screenshot and the meter show: the 6567R56A with
   its 262-line, 64-cycle frame was not run.
-- Whether the idle byte is read from `$3FFF` of the bank you expect on
+- Whether the idle byte is read from `$3FFF` of the selected bank on
   every VIC revision; this listing runs in bank 0 and writes `$3FFF`
   there, and VICE read it back as zero before the write.
 - What the mode costs with more than two sprites on a line; the eight

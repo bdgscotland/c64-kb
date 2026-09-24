@@ -528,9 +528,9 @@ banking BASIC back in, and whose `JSR $E518` cleared the screen; then
 glyph the decoder did not match on row 2 at the cursor's position (the
 warm start re-enables interrupts, so the cursor flashes), the border
 its default light blue, and `$02FF` still `00`. The program's header
-line, printed before the first call, was wiped by the screen clear. So
-the failure mode with BASIC out is not garbage arithmetic but a `BRK`
-into the KERNAL and a warm start that quietly re-banks the ROM.
+line, printed before the first call, was wiped by the screen clear. With
+BASIC out, the failure is a `BRK` into the KERNAL and a warm start that
+re-banks the ROM, not wrong arithmetic.
 
 ## Why this works
 

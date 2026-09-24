@@ -910,7 +910,7 @@ print("model atan2 on cases:", [atan2_model(dx, dy) for dx, dy in atan_cases])
 print("exact atan2 on cases:", [atan2_exact(dx, dy) for dx, dy in atan_cases])
 ```
 
-Its output, the part that is a claim: `atan2 max error over 65536 pairs:
+Its output: `atan2 max error over 65536 pairs:
 1; 3968 pairs at the max` and `isqrt model mismatches vs math.isqrt over
 65536: 0`. The model is the same integer arithmetic as the listing; the
 program is what shows the listing agrees with the model.

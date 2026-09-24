@@ -26,7 +26,7 @@ figure is printed in decimal. Then the two objects cross the canvas in
 opposite directions, one pixel a frame, drawn after the VIC has passed
 the canvas rows. This is the `software_sprite_preshifted` technique;
 use it when hardware sprites have run out on a row and the objects sit
-on a background you can repaint.
+on a background that can be repainted.
 
 Verified in VICE x64sc 3.10: the blit costs 1,428 cycles at every shift
 on PAL and on NTSC, the canvas checksum returns to the background value

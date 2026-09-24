@@ -25,8 +25,7 @@ text and the bottom multicolour text (`$D016` is switched at raster line
 picture. Each test character's rows cycle through the playfield pixel
 classes and each multicolour test sprite's columns cycle through its own
 classes (bit pairs 01, 10, 11), so every sprite is a grid of sprite class
-against playfield class and the exit screenshot answers the question by
-itself. The program reads both collision registers once, two frames after
+against playfield class, readable from the exit screenshot alone. The program reads both collision registers once, two frames after
 clearing them, and turns the border green with `$02FF` = 1 when they equal
 the compiled-in expectation, red with `$02FF` = 2 otherwise. It is the
 `mob_priority` and `sprite_collision_detect` techniques from

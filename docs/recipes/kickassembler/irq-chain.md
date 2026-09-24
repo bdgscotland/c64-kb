@@ -295,7 +295,7 @@ The table row for line 260 is what the `AND #$7F / ORA line_hi,x` on `$D011`
 is for. `$D012` alone would arm line 4; the ORed bit 7 makes it 260, and the
 seven low bits of `$D011` (the mode, DEN, RSEL and YSCROLL) are kept. The
 same two instructions arm lines 40 and 130 with bit 7 clear, so the
-dispatcher does not care which rows need the ninth bit.
+dispatcher is the same whichever rows need the ninth bit.
 
 The call through the table is a `JSR` whose operand is patched from
 `handler_lo` and `handler_hi`. The 6510 has no `JMP (abs,X)`, and a patched

@@ -598,7 +598,7 @@ next one's.
 So the stall is not a per-sprite price. A line with sprite 1 alone
 costs five, a line with sprite 0 alone three, and the difference is the
 two write cycles the `DEC` spends inside the lead-in when the lead-in
-starts on 55. The count model's failure in the sweep is exactly that
+starts on 55. The count model's failure in the sweep is that
 difference.
 
 ### The table and the loop

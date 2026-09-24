@@ -270,7 +270,7 @@ is evidence bank 1's code ran, not only that its byte was read.
 The container is written by the assembler because every number in it
 is fixed: `$2010` is 16 bytes of packet header plus `$2000` of data, and
 `.segmentout` pastes each bank's padded 8 KB in place. The `fill` and
-`fillByte=$ff` on the bank segments matter: without them a bank would be
-as long as its last byte, the packet length would lie, and the second
+`fillByte=$ff` on the bank segments are required: without them a bank would be
+as long as its last byte, the packet length would be wrong, and the second
 `CHIP` signature would land in the wrong place. `cartconv -c` catches
 exactly that.

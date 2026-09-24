@@ -394,7 +394,7 @@ the no-disk case with the two drive lines changed, `READY.` on row 10.
 The same screen comes from `+drive8truedrive` with no `-8` and the
 drive type left at its default.
 
-Two things about that path are worth knowing, both measured in this
+Two more results on that path, both measured in this
 VICE build with `-drive8type 0`. First, an OPEN of channel 15 with an
 empty name cannot detect an absent drive: the KERNAL sends nothing on
 the bus when the filename length is zero, so that OPEN returned 1 with
@@ -515,7 +515,7 @@ left, the store landing mid-line. These pictures are not pinned; the
 recipe's own run is.
 
 Recommendation: save and load on a static screen. Set the border and
-the screen to what you want held, clear `$D01A`, make the calls, then
+the screen to the colours to hold, clear `$D01A`, make the calls, then
 write 1 to `$D019` and set `$D01A` again; `rasterirq.h` resumes on its
 next row. Do not use `rirq_stop()` for this. If the IRQ must stay armed,
 do not count frames or drive music from it across the calls; the

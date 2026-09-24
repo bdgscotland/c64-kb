@@ -17,8 +17,8 @@ uses_kernal: []
 
 Opens the top and bottom borders for the whole frame with two plain raster
 interrupts and no cycle counting. The VIC-II's vertical border flip-flop is
-set in exactly one place — when the raster reaches the bottom comparison
-line, 251 with RSEL=1 or 247 with RSEL=0 — and reset in exactly one other,
+set in exactly one place (when the raster reaches the bottom comparison
+line, 251 with RSEL=1 or 247 with RSEL=0) and reset in exactly one other,
 the top comparison line (51 or 55) while DEN is set. Clear RSEL after line
 247 has gone by and before line 251 arrives, and neither bottom comparison
 ever matches: the flip-flop is never set, the rest of this frame is drawn as
@@ -170,8 +170,8 @@ table (PAL C64C, VIC-II 8565, 384×272, screenshot row = raster line − 16; see
 geometry note at the end):
 
 - x=192 is the background colour on all 272 rows. The rows that would be
-  border — 0–34 (lines 16–50) and 235–271 (lines 251–287) — are background.
-- x=2 is the border colour on all 272 rows; more strongly, every pixel in
+    border, 0–34 (lines 16–50) and 235–271 (lines 251–287), are background.
+- x=2 is the border colour on all 272 rows, and so is every pixel in
   columns 0–31 and 352–383 is the border colour. RSEL does not touch the
   side border.
 - In rows 0–34 and 235–271, between x=32 and x=351, there is not one pixel
@@ -189,7 +189,7 @@ Two control builds, each one constant away from the listing:
   top border** (RSEL=0 written on line 55, RSEL=1 restored on line 0, before
   line 51). Both borders closed: x=192 is border colour on rows 0–34 and
   231–271, and the sprite has zero visible pixels. The bottom border now
-  starts on line 247 instead of 251 — RSEL was 0 when line 247 came round,
+    starts on line 247 instead of 251: RSEL was 0 when line 247 came round,
   so that was the comparison that matched. The write on line 55 did
   nothing to the border at all.
 - **`OPEN_LINE = 252`, the clear landing one line late.** An ordinary
@@ -211,8 +211,8 @@ zero (see below); this listing writes it.
 Bauer's article (§3.9) describes two flip-flops. The main border flip-flop
 is what draws `$D020`: while it is set, the border colour has priority over
 graphics and sprites alike. It is set when the beam reaches the right
-comparison X and reset at the left one — that is the side-border mechanism
-of `sideborder-open.md`. The vertical border flip-flop sits behind it: while
+comparison X and reset at the left one (the side-border mechanism of
+`sideborder-open.md`). The vertical border flip-flop sits behind it: while
 the vertical one is set, the main one cannot be reset at the left edge, and
 the graphics sequencer puts out background colour instead of data. The
 vertical flip-flop's comparison lines depend on RSEL:
@@ -234,7 +234,7 @@ the value is reached exactly, never over an interval.
 A normal frame therefore goes: reset at line 51 (display starts), set at
 line 251 (border resumes), and nothing in between. The set on line 251
 happens at the left comparison, early in the line, which is why the whole
-visible width of line 251 is border — measured as row 235 in the closed
+visible width of line 251 is border, measured as row 235 in the closed
 control, with the display area beginning on row 35, line 51.
 
 ### One write, both borders
@@ -259,8 +259,8 @@ does exactly that write and both borders stay closed. For the same reason
 there is no "bottom border only" or "top border only": once the set on
 251 has been suppressed, nothing can set the flip-flop again before 247 of
 the next frame, and the two borders come as a pair. A demo that appears to
-open only one of them is painting the other one back — `$D021` set to the
-border colour over those lines from another raster interrupt — not closing
+open only one of them is painting the other one back (`$D021` set to the
+border colour over those lines from another raster interrupt), not closing
 it.
 
 The second interrupt puts RSEL back to 1 so that next frame's line 247 is
@@ -271,8 +271,8 @@ pixel-identical to the listing's. `RESTORE_LINE = 251` closes the frame
 again, with the bottom border beginning one line late, on 252 (row 236):
 the left-edge check on line 251 saw RSEL=0 and did not match, but the
 handler had put RSEL back to 1 before that line's cycle-63 check, which
-then found 251. `RESTORE_LINE = 247` closes it with the 24-row geometry —
-border on rows 0–38 and 231–271, display on lines 55–246 — because RSEL was
+then found 251. `RESTORE_LINE = 247` closes it with the 24-row geometry
+(border on rows 0–38 and 231–271, display on lines 55–246) because RSEL was
 still 0 when line 247's left-edge check ran, so 247 matched, and it had
 been 0 at line 55 as well. The window is exact at both ends.
 
@@ -280,7 +280,7 @@ been 0 at line 55 as well. The window is exact at both ends.
 
 The interrupt handler is entered on cycle 37–43 of its line (7 cycles of
 interrupt sequence, 29 of KERNAL dispatcher, 0–6 of finishing the
-interrupted instruction — `stable-raster-irq.md`), and the `LDA/AND/STA`
+interrupted instruction; `stable-raster-irq.md`), and the `LDA/AND/STA`
 puts the new RSEL on the bus about ten cycles later, in the second half of
 the line. With that latency, `OPEN_LINE` was swept in VICE:
 
@@ -297,9 +297,9 @@ the line. With that latency, `OPEN_LINE` was swept in VICE:
 the check sees RSEL=0 and 247 matches; the border starts one line later
 than in the `OPEN_LINE = 55` control because line 247's earlier check, at
 the left edge, still saw RSEL=1. 251 fails although the write lands before
-that line's cycle 63: the left-edge check at X=24 — roughly cycle 16, by
+that line's cycle 63: the left-edge check at X=24 (roughly cycle 16, by
 arithmetic from the X=344-on-cycle-56 figure in `sideborder-open.md`, not
-measured here — has already set the flip-flop when the handler is entered
+measured here) has already set the flip-flop when the handler is entered
 on cycle 37 or later. So with a plain raster interrupt the window is the
 three whole lines 248–250, not "anything before the end of 251"; only a
 write placed in the first dozen or so cycles of 251 could stretch it, and
@@ -312,33 +312,33 @@ read the register, change bit 3 and write it back. Bit 7 needs care: on a
 read it is bit 8 of the *current raster line*, not the compare value that
 was last written, and writing it back set moves the raster compare above
 line 255. Both handlers mask it off. In this listing every interrupt line
-is below 256, so the bit reads as 0 anyway; the mask is for the reader who
-moves `RESTORE_LINE` to 260. `d012_wrap_around` in
+is below 256, so the bit reads as 0 anyway; the mask covers a
+`RESTORE_LINE` moved to 260. `d012_wrap_around` in
 `pitfalls/raster-and-badline.md` has the general form.
 
 ### The idle display and `$3FFF`
 
 After the last character row the VIC is in its idle state, in which the
-graphics data comes from VIC address `$3FFF` (`$39FF` with ECM) — that is
+graphics data comes from VIC address `$3FFF` (`$39FF` with ECM), that is
 `$3FFF` of the current 16 KB video bank, so `$3FFF` in bank 0, which this
 listing and the BASIC screen use, and `$7FFF`, `$BFFF` or `$FFFF` in the
 others (Bauer §3.7.3.9 and the memory map in §2.4; not measured here). The
 byte is displayed in the current graphics mode with the video-matrix data
 taken as all zero. In a text mode, which is what this listing runs in,
-that means every set bit is drawn in colour 0 — black — over the
-background colour: the opened area shows not "nothing" but eight pixels of
+that means every set bit is drawn in colour 0 (black) over the
+background colour: the opened area shows the eight pixels of
 `$3FFF` repeated across the line. With `$3FFF` zero the area is plain
 background. With `$3FFF` non-zero it carries a black stripe pattern, and
 since this recipe's border is also black, a forgotten `$3FFF` could make
 an open border look closed. (In standard bitmap mode both pixel colours
 come from the zeroed video-matrix nibbles, so the opened area is black
-whatever `$3FFF` holds — from Bauer's colour rules in §3.7.3.3, not
+whatever `$3FFF` holds; from Bauer's colour rules in §3.7.3.3, not
 measured here.) The listing writes zero there. In VICE 3.10 the write made
 no difference: a build without it is pixel-identical, and a probe that
 copies the byte into `$D020` (low nibble) and `$D021` (high nibble) shows
 both black, so `$3FFF` reads back as `$00` in VICE's default configuration.
 Power-on RAM contents on hardware are not something this page measured,
-and the write costs three bytes — one `STA`; the `LDA #0` is needed for
+and the write costs three bytes, one `STA`; the `LDA #0` is needed for
 `$D020` anyway.
 
 ### The sprite
@@ -346,9 +346,9 @@ and the write costs three bytes — one `STA`; the `LDA #0` is needed for
 The sprite's Y register is 4, not 260, because there is no 260: sprite Y is
 eight bits and the VIC compares it against the low eight bits of the raster
 line (Bauer §3.8.1), turning the sprite's DMA on in cycle 55 or 56 of a
-matching line — the article's rule 3 makes the check in the first phase of
-both cycles — and drawing its first row on the following line. Line 260 matches, so
-the sprite is drawn on lines 261–281 — rows 245–265 of the picture — and
+matching line (the article's rule 3 makes the check in the first phase of
+both cycles) and drawing its first row on the following line. Line 260 matches, so
+the sprite is drawn on lines 261–281 (rows 245–265 of the picture), and
 line 4 matches too, giving a second copy on lines 5–25, of which the picture
 (which begins at line 16) shows rows 0–9. Both copies stand in what is
 normally border. In the control builds the sprite has zero visible pixels
@@ -359,13 +359,13 @@ make sprites render in new places; it stops the border covering them.
 ### Region
 
 `region: both`. The comparison lines are the same on the 6567R8, and the
-handler's entry cycle is the same story on a 65-cycle line. Measured with
+handler's entry cycle is the same on a 65-cycle line. Measured with
 `-model ntsc` (VICE 3.10, 6567R8, 384×247 picture, screenshot row = raster
 line − 28): the closed control has border colour at x=192 on rows 0–22 and
 223–246, which puts line 51 on row 23 and line 251 on row 223; the open
 build has background on all 247 rows at x=192 and border on all 247 rows at
 x=2; the sprite occupies x 108–131 on rows 233–246, which is lines 261–262
-and then 0–11 of the next frame, where the picture ends — the sprite's row
+and then 0–11 of the next frame, where the picture ends; the sprite's row
 counter runs straight through the frame wrap. `OPEN_LINE = 251` closes the
 border from row 223 on NTSC exactly as on PAL, and the rest of the sweep is
 the same table: `OPEN_LINE = 247` closes it from row 220 (line 248), and
@@ -390,7 +390,7 @@ NTSC offset of 28 was derived the same way from the same three boundaries
 ## Sources
 
 - Christian Bauer, *The MOS 6567/6569 video controller (VIC-II) and its
-  application in the Commodore 64*, 28 August 1996 — §3.9 (the two border
+    application in the Commodore 64*, 28 August 1996: §3.9 (the two border
   flip-flops, the comparison values and the six switching rules), §3.8.1
   rule 3 (sprite Y compared against the low eight bits of the raster in the
   first phase of cycles 55 and 56, display from the following line),

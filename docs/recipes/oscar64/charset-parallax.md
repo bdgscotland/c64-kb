@@ -379,7 +379,7 @@ brings in the right glyph at the right edge and the pattern stays
 seamless. Foreground bricks are whole cells with their own code, so the
 roll never touches them.
 
-The order in the frame is the budget. `vic_waitFrame()` returns at line
+The frame's work runs in a fixed order. `vic_waitFrame()` returns at line
 256; the roll and the copy go first, under 1,000 cycles, about 16 lines.
 On the carry frame the shift then races the beam, top row first. A
 monitor trace of the last store of each row over all 25 carry frames

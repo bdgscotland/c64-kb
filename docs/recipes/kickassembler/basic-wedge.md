@@ -290,8 +290,8 @@ x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 \
 
 `peek(53280)` is masked with `and15` because the VIC's colour registers
 read back with the upper four bits set (measured here: an unmasked test
-read 242 for border colour 2 and the `THEN` line was skipped without a
-word, which cost one run to find).
+read 242 for border colour 2 and the `THEN` line was skipped with no
+error).
 
 ## Expected output
 

@@ -446,8 +446,8 @@ Produces `nmi-timer-tick.prg`, `$0801` to `$1077`.
 
 ## Expected output
 
-Border green, text area the power-on blue, the whole screen ours (the
-program never returns to BASIC). On PAL, at the pinned 8,000,000 cycles:
+Border green, text area the power-on blue. The program keeps the whole
+screen and never returns to BASIC. On PAL, at the pinned 8,000,000 cycles:
 
 ```
 NMI HANDLER AND RESTORE KEY
@@ -531,7 +531,7 @@ is why one `RTI` is a complete handler and why the counting handler uses
 `BIT $DD0D` rather than `LDA`: `BIT` reads the register and only sets
 flags, and `RTI` restores P. `$0318` is only consulted while the KERNAL
 ROM is mapped in; with HIRAM clear the CPU fetches `$FFFA` from RAM and
-the vector is yours to supply there.
+the program supplies the vector there.
 
 Reading `$DD0D` is the acknowledge. The CIA clears every flag in the ICR
 on a read and drops its interrupt output, which is the 6510's `/NMI`

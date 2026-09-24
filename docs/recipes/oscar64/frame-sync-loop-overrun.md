@@ -17,9 +17,8 @@ uses_kernal: []
 
 The same raster-synced loop as `frame-sync-loop.md`, with the fixed
 workload raised from 8 units to 24 so that it no longer fits in a frame.
-It exists to show what the budget bar, the frame counter and the
-dropped-frame counter look like when a loop is losing frames, so that you
-recognise the picture when your own loop produces it. Only the `WORK_UNITS`
+It shows what the budget bar, the frame counter and the
+dropped-frame counter look like when a loop is losing frames. Only the `WORK_UNITS`
 constant differs; the two PRGs are the same size and differ in two bytes.
 The technique is `frame_sync_loop` in `techniques/raster.md`.
 
@@ -191,7 +190,7 @@ at line 68 (1.11 frames a loop, so it overruns on about one loop in nine);
 ## Why this works
 
 The loop is the one in `frame-sync-loop.md` and the tick counting is
-explained there. What this page adds is the shape of failure. The bar is
+explained there. This page adds the failure case. The bar is
 two stores to `$D020`: one after the wait, one after the work. When the work
 outgrows the frame the band has no end: the wait passes at once because the
 IRQ has already moved `irq_ticks`, and the only black is the handful of
@@ -210,5 +209,4 @@ An overrun in this loop does not halve the frame rate; it runs the game at
 the speed of the work. A loop that instead spun on `vic_waitLine(251)` after
 the same 1.65 frames of work would wait for the next line 251 every time and
 run at exactly two frames a loop (arithmetic; that variant was not run
-here). Which of the two you want is a design choice; what you do not want is
-to find out from the player.
+here). Which of the two to use is a design choice.

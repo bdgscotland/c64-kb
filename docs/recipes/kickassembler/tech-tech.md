@@ -584,7 +584,7 @@ is the measurement).
 
 ### Why the matrix can change per line at all
 
-`hardware/vic-ii-reference.md` states the constraint and the lever: "The
+`hardware/vic-ii-reference.md` states the constraint and the mechanism: "The
 chip fetches one character pointer (c-access) per cell during the badline
 of each text row, caches it in an internal 40x12-bit row buffer, and then
 performs eight g-accesses per cell over the next eight raster lines", and

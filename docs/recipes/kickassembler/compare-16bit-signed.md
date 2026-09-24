@@ -847,7 +847,7 @@ Produces `compare-16bit-signed.prg`, `$0801` to `$1B4B`.
 
 ## Expected output
 
-Border green, text area the power-on blue, the whole screen ours (the
+Border green, text area the power-on blue, nothing else on screen (the
 program ends in a loop, so BASIC never prints `READY.` over the table):
 
 ```
@@ -1003,5 +1003,5 @@ timer B counts A underflows, the count is `$FFFFFF` less the timer
 bytes. The timed calls run under `SEI` with `DEN` clear and after a
 wait for the raster to wrap, so no badline lands inside a measurement
 and the figures are the same on PAL and NTSC. The `SEC` before the
-readout matters, see above; the same macro without it reads one cycle
+readout is needed (see above): the same macro without it reads one cycle
 high for any routine that exits with `C` set.

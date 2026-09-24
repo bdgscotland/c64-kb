@@ -20,7 +20,7 @@ swapped for the ROM under `SEI`, checks every byte of the copy through a
 16-bit sum against the value the host computed from
 `chargen-901225-01.bin`, times the 2 KB and 4 KB copies with the CIA2
 timers (display on and display blanked), points `$D018` at the copy and
-overwrites one glyph in it so the screen proves the VIC is reading RAM.
+overwrites one glyph in it so the screen shows the VIC is reading RAM.
 Then it does the copy once the wrong way: interrupts enabled while the
 KERNAL IRQ is live, under a CIA2 timer NMI that acts as a watchdog. The
 program reports how far that copy got, how many times the interrupt
@@ -568,8 +568,7 @@ at `$FDE2` and `$FDEC` in the 901227-03 image), a period of about
 acknowledge the timer. With the ROM mapped, that read returns a font
 byte, the CIA flag is never cleared, `/IRQ` stays low, and the handler
 is re-entered the moment `RTI` clears the I flag. The main program never
-gets another instruction. The recipe shows this as measured, not as a
-warning: the unprotected copy managed 30 of 256 iterations on PAL
+gets another instruction. Measured here: the unprotected copy managed 30 of 256 iterations on PAL
 (7 on NTSC; the count depends only on where in the timer period the
 copy started), the handler then ran 26 times in the 61,000 cycles that
 remained before the watchdog, and the copy never advanced. Along the
@@ -586,7 +585,7 @@ NMI cannot be masked. The KERNAL NMI entry at `$FE43` jumps through
 reads `$DD0D` to drop the watchdog and `$DC0D` to drop the stuck IRQ,
 reloads the stack pointer saved before the copy, and falls into the
 same recovery code the completed path would take. The completed path
-exists so that the assertion is real: if a future machine or a future
+exists so that the assertion can fail: if a future machine or a future
 KERNAL let the copy finish, the screen would say `COMPLETED` and the
 verdict would be `FAIL`, because the page's claim would then be wrong.
 
@@ -609,8 +608,8 @@ it before the display is turned on.
 `python3 -c "print(hex(sum(open('chargen-901225-01.bin','rb').read()) & 0xffff))"`
 over the VICE image `/opt/homebrew/opt/vice/share/vice/C64/chargen-901225-01.bin`,
 which gives `0xf7f8`; the program sums the 4,096 bytes at `$3000` the
-same way. A 16-bit sum is not a strong hash, but here the alternative
-failure is not a subtle one: a copy made with `$01` = `$37` reads VIC,
+same way. A 16-bit sum is not a strong hash, but the two failures it
+has to catch change many bytes: a copy made with `$01` = `$37` reads VIC,
 SID and CIA registers, and a copy that was cut short leaves whatever was
 in RAM. Either moves the sum.
 

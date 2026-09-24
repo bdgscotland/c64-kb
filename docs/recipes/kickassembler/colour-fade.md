@@ -277,7 +277,7 @@ nothing of it survives into the PRG but the bytes.
 The table sits at $0A00 so that `fade + step * 16` has a constant high
 byte and a low byte of `step * 16`, until step 16, where the four `ASL`s
 shift the 1 out into the carry. `STA ROW` then `BCC` / `INC ROW + 1`
-carries it into the high byte. The natural `CLC` / `ADC #<fade` sequence
+carries it into the high byte. The usual `CLC` / `ADC #<fade` sequence
 discards that carry, which is the bug recorded above.
 
 ### Timing

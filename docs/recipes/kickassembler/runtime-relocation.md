@@ -714,8 +714,8 @@ address table.
 The red case, `.const FORCE_FAULT = 1`, was run once on PAL and not
 pinned. It drops the last table entry, the high byte of `bufptr`, so
 both copies' `SUM` read their buffer at `$30d4`, where nothing was
-loaded. The screen showed `RELOC BYTES 18`, `RELOC CYCLES 811` and `RESULT 02 FAIL` on
-row 13, border (175, 60, 88), index 2.
+loaded. The screen showed `RELOC BYTES 18`, `RELOC CYCLES 811` and
+`RESULT 02 FAIL` on row 13, border (175, 60, 88), index 2.
 
 ## Why this works
 
@@ -723,8 +723,8 @@ Assembling at `$3000` and `$3100` changes exactly the bytes that encode
 the high half of an address inside the overlay, and changes each by one.
 Low bytes do not change, because the two origins are a whole page apart.
 Zero-page operands (`optr`), addresses outside the overlay and
-constants do not change, so the diff leaves them
-alone without being told. The diff also catches what an instruction
+constants do not change, so the diff leaves them alone
+without being told. The diff also catches what an instruction
 walker misses: the immediate `#>buf` and the high byte inside the data
 word `bufptr`.
 
@@ -739,5 +739,5 @@ it, so the vector is never at `$xxFF`.
 
 `mktable` counts a byte that moved by anything other than one in `bad`,
 and a non-zero `bad` fails the run. That is where an expression such as
-`buf / 64` would show up: it moves by some other amount,
-and page relocation cannot fix it.
+`buf / 64` would show up: it moves by some other amount, and page
+relocation cannot fix it.

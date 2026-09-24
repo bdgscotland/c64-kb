@@ -364,10 +364,9 @@ In standard text mode, colour RAM sets the colour of a cell's set
 pixels and `$D021` its clear pixels. The reverse space has every pixel
 set, so with `$D021` black a cell shows its colour-RAM nibble and
 nothing else. `fire_effect` and `plasma` in
-`../../techniques/effects-vector-3d.md` use the same fill. For a shade
-bob this is the whole point: the "bob" is never drawn and never erased,
-it only adds to a number per cell, and the number is shown by one
-store.
+`../../techniques/effects-vector-3d.md` use the same fill. A shade bob is
+therefore never drawn and never erased: it only adds to a number per
+cell, and the number is shown by one store.
 
 ### The saturating add
 
@@ -453,8 +452,8 @@ path, and 35 is their difference). The control build measures the
 same add at 595; the five-cycle difference was not examined.
 
 A PAL frame is 19,656 cycles and an NTSC frame 17,095 (arithmetic).
-The add is about nine raster lines (arithmetic, 63 cycles a line). The decay pass is 1.35 PAL frames
-and 1.58 NTSC frames, and it does not fit the vertical blank or the
+The add is about nine raster lines (arithmetic, 63 cycles a line). The
+decay pass is 1.35 PAL frames and 1.58 NTSC frames, and it does not fit the vertical blank or the
 frame: per cell the zero path is `lda abs,x`, `beq`, `tay`, `lda
 abs,y`, `sta abs,x`, `inx`, `cpx`, `bne`, 25 cycles by the instruction
 table, and the non-zero path 33, so 1,000 cells are at least 25,000

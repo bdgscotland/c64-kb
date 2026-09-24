@@ -16,7 +16,7 @@ uses_kernal: [CHROUT]
 ## Synopsis
 
 A generator that writes an unrolled copy routine into RAM at start-up,
-from two tables of row addresses, and then proves it. The job is a
+from two tables of row addresses, and then checks it. The job is a
 1,000-byte block, 25 rows of 40 bytes: the generator emits one
 `LDA abs / STA abs` pair per byte (6,000 bytes of code) and an `RTS`, the
 program runs it, compares the destination with the source byte for byte,
@@ -543,8 +543,7 @@ E7 43`, and `$6770` is `60`.
 The source and destination addresses come from four tables the
 assembler builds with `.fill`, one low and one high byte per row. The
 generator never computes a row address; it reads two and then
-increments them 40 times. That is what makes it more than a `memcpy`:
-the same generator, given a source table with a stride of 64 and a
+increments them 40 times. Unlike a `memcpy`, the same generator, given a source table with a stride of 64 and a
 destination table with a stride of 40, emits code that copies a 40-wide
 window out of a wider map buffer with no per-row arithmetic at run
 time. The block here has both strides at 40 so that the four-stride

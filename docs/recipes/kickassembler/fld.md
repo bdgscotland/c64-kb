@@ -396,8 +396,7 @@ With no row fetched the VIC is in idle state and every g-access reads
 the 320-pixel window on every gap line. `%10101010` gives alternating
 black and background columns, which the measurement above counts. A stock
 machine has zero there, and the gap would be plain blue and indistinguishable
-from a blank row; the stripes are the visible proof that the lines were
-badline-free. Clear the byte, or set it on purpose, in anything that opens
+from a blank row; the stripes show that the lines were badline-free. Clear the byte, or set it on purpose, in anything that opens
 a gap or a border (`pitfalls/raster-and-badline.md`,
 `idle_fetch_byte_shows_in_gaps`).
 

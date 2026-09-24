@@ -448,8 +448,8 @@ requirement; the DOS keeps the code until it is read.
 Two of the replies carry a number in the track field. 66 echoes the
 track the block command asked for (40 on a 35-track disk), and 01 gives
 the count of files removed. The leading space in some message fields
-(`62, FILE NOT FOUND` against `31,SYNTAX ERROR`) is not a printing
-choice: the ROM stores common words once and prefixes each with a space
+(`62, FILE NOT FOUND` against `31,SYNTAX ERROR`) comes from the
+ROM, which stores common words once and prefixes each with a space
 when it expands them, so any message that begins with one of those
 words begins with a space. The reference page has the table and the
 expansion routine's addresses.
@@ -461,6 +461,6 @@ logical-file slots, so it is the drive and not the KERNAL that refuses.
 The helper `open_2_status_close` parks its three SETNAM arguments before
 calling SETLFS, because SETLFS also takes X and Y. The first version of
 this listing did not, called SETNAM with X=8 and Y=2, and sent the drive
-five bytes from `$0208` as the file name; every open then came back 62,
-and for an hour that looked like a rule about CLOSE overwriting the
-status. It was a clobbered register.
+five bytes from `$0208` as the file name; every open then came back 62.
+That looked like CLOSE overwriting the status; the cause was the
+clobbered register.

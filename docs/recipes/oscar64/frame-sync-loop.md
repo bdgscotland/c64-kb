@@ -16,14 +16,13 @@ uses_kernal: []
 ## Synopsis
 
 A main loop that runs once per frame, locked to the raster by one interrupt
-at the bottom of the display window, with the three instruments every C64
-game loop should carry: a border-colour budget bar (white while the loop is
+at the bottom of the display window, with three C64 game-loop instruments: a border-colour budget bar (white while the loop is
 working, black while it waits), a frame counter and a dropped-frame counter.
 The workload is fixed at 8 units, which fits in a frame;
 `frame-sync-loop-overrun.md` is the same listing at 24 units, which does
 not, and shows what the three instruments look like while frames are being
-lost. Use this one as the skeleton of a game loop, or as the instrument you
-drop a suspect routine into to see how much of the frame it eats. The
+lost. Use this one as the skeleton of a game loop, or to measure how much
+of the frame a suspect routine takes. The
 technique is `frame_sync_loop` in `techniques/raster.md`.
 
 ## Source
@@ -235,7 +234,7 @@ vertical blank and the top border, 112 lines on PAL and 63 on the 6567R8
 line 51 of the next frame; anything that writes the screen, the sprite
 registers or `$D016`/`$D011` in that window lands before the VIC reads them,
 so a loop that does its display writes first never tears. The workload here
-is deliberately dumb and runs on past line 51 into the display so the bar
+is a plain busy loop that runs on past line 51 into the display so the bar
 has something to show; the badlines it crosses there are why the same
 cycles cover more lines on NTSC than the per-line figures alone predict.
 
@@ -250,5 +249,5 @@ overrun in this loop does not halve the frame rate, it runs the game at the
 speed of the work (1.65 frames a loop on that page); a loop that instead
 spins on `vic_waitLine(251)` after the same 1.65 frames of work would wait
 for the next line 251 every time and run at exactly two frames a loop
-(arithmetic; that variant was not run here). Which of the two you want is a
-design choice; what you do not want is to find out from the player.
+(arithmetic; that variant was not run here). Which of the two to use is a
+design choice.

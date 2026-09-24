@@ -19,10 +19,10 @@ Drives a precompiled SID tune's init and play subroutines from Oscar64 C using
 `rasterirq.h`. The SID binary is embedded into the PRG at compile time with
 `#embed`, placed at a fixed address, and called through two extern function
 pointers. A raster IRQ fires at line 0 every frame and calls the play routine,
-guaranteeing stable 50/60 Hz audio regardless of main-loop duration. A second
-voice demonstrates `sid_voice_setup` and `sid_filter_routing` techniques to add
-a live sound effect that coexists with the tune. This is the canonical Oscar64
-pattern for integrating SID files from HVSC or GoatTracker.
+so the play rate stays at 50/60 Hz whatever the main loop costs. A second
+voice uses the `sid_voice_setup` and `sid_filter_routing` techniques for a
+sound effect beside the tune. This is the Oscar64 pattern for playing SID
+files from HVSC or GoatTracker.
 
 ## Source
 
@@ -315,10 +315,10 @@ Verified with Oscar64 (build 2026-05-19) and VICE x64sc. Two things kept the
 earlier version of this recipe from getting that far: the compiler crashed
 on its function-pointer calls (see below), and once that was worked around
 the linker had discarded the unreferenced stub array, so `JSR $1000`
-executed zeros — a `BRK` — and the machine dropped to BASIC's warm start
+executed zeros (a `BRK`) and the machine dropped to BASIC's warm start
 with a cleared screen. `__export` on the array is the fix; the `.map` file
 shows the `sidtune` section at five bytes instead of zero. With a real PSID tune embedded at `$1000`, the tune plays
-continuously at 50 Hz (PAL) or 60 Hz (NTSC). Every three seconds voice 2
+at 50 Hz (PAL) or 60 Hz (NTSC). Every three seconds voice 2
 triggers a sawtooth tone on A5 that sweeps through a low-pass filter from fully
 open to closed over 40 frames, then releases. The filter sweep does not interrupt
 the tune because the play routine only writes voices 1 and 3 in a typical
@@ -338,16 +338,16 @@ envelope, and filter register values to `$D400-$D418`. The contract is documente
 in the PSID v2 specification: the big-endian words at `$0A-$0B` of the header
 hold the init address and `$0C-$0D` the play address (`$08-$09` is the load
 address; this paragraph used to place init and play one word earlier). Most
-well-written players save and restore all CPU registers on entry and exit so
+players save and restore all CPU registers on entry and exit so
 that `play` is safe to call from any context.
 
-The recipe strips the PSID header (124 bytes for v2, 118 for v1 — the data
+The recipe strips the PSID header (124 bytes for v2, 118 for v1; the data
 offset word at `$06-$07` says which) and embeds only the raw 6502 binary
 body, which starts at the tune's load address. By placing the `sidtune` section
-at `$1000` via the linker region pragma, the embedded bytes land at exactly
+at `$1000` via the linker region pragma, the embedded bytes land at
 `$1000`, so `TUNE_INIT` is `$1000` and `TUNE_PLAY` is `$1003`. This is the
 conventional distance between init and play for single-subtune PSID files;
-multi-subtune or non-standard tunes may have different offsets — always read
+multi-subtune or non-standard tunes may have different offsets, so read
 the header.
 
 The calls are by literal address: `rirq_call` takes a `void *` and gets
@@ -363,18 +363,18 @@ was never the problem.
 
 `rirq_call(&play_rirq, 0, addr)` encodes a JSR to `addr` inside an `RIRQCode`
 slot. When the raster beam crosses line 0, the raster engine executes the JSR,
-the play routine runs, and execution returns to the engine's exit path. This is
-the cleanest way to call any subroutine from the raster system without writing a
+the play routine runs, and execution returns to the engine's exit path. It calls
+a subroutine from the raster system without a
 custom `__hwinterrupt` handler. The stable-raster guarantee in `rasterirq.h`
 means the play call happens at a fixed cycle offset from the top of each frame.
 Music tempo is therefore independent of main-loop duration: even if the main loop
-takes 30,000 cycles one frame and 2,000 the next, the play routine fires within
-the same narrow window at the top of each frame.
+takes 30,000 cycles one frame and 2,000 the next, the play routine fires in
+the same window at the top of each frame.
 
-The reason for calling `play` at line 0 rather than at the bottom of the visible
-area is that most play routines touch `$D418` (the master volume register), which
+`play` is called at line 0, not at the bottom of the visible
+area, because most play routines touch `$D418` (the master volume register), which
 must not change during active rendering if other SID voices or digi playback are
-coexisting. Line 0 is in the top border, well before the display window, which
+coexisting. Line 0 is in the top border, before the display window, which
 opens at line 51 on PAL and NTSC alike (see `hardware/pal-ntsc-reference`; an
 earlier version of this sentence put the NTSC figure "around line 41", which
 is where NTSC's vertical blank ends and the border becomes visible, not where
@@ -383,14 +383,14 @@ the display window opens).
 ### PAL vs NTSC frame-rate difference
 
 The play routine is designed to be called at a fixed rate; 50 Hz on PAL, 60 Hz
-on NTSC. SID tunes authored for 50 Hz tempo play approximately 20 percent faster
+on NTSC. SID tunes authored for 50 Hz tempo play about 20 percent faster
 on NTSC because the frame arrives 10 Hz more often. The PSID header's speed
 flags, four bytes at `$12-$15` with one bit per song (an earlier version said
 "byte `$12`"), record whether a tune is CIA-timer-driven (its own timer, immune
 to this) or VBI-driven (frame-rate-dependent). Most GoatTracker tunes are
-VBI-driven and therefore play faster on NTSC. The idiomatic solution for a
-cross-region product is to detect the machine at startup (read `$D011` across
-two known raster lines to check frame rate) and install a CIA timer IRQ for the
+VBI-driven and therefore play faster on NTSC. A
+cross-region product should detect the machine at startup (read `$D011` across
+two known raster lines to check frame rate) and use a CIA timer IRQ for the
 play call on NTSC at the PAL equivalent period. For a demo or game that targets
 one region, accept the tempo difference or compose for NTSC.
 
@@ -402,8 +402,8 @@ Oscar64's `#embed` directive includes a raw binary file as an array initializer:
 const char sid_binary[] = { #embed "mytune.bin" };
 ```
 
-Combined with the section and region pragmas, this is the idiomatic way to
-bundle binary data at a fixed address in a PRG without a separate assembler stub
+With the section and region pragmas, this puts
+binary data at a fixed address in a PRG without a separate assembler stub
 or a runtime file-load. The full workflow: strip the PSID header with any hex
 editor or the `sidstripe` utility, confirm the stripped file starts at the
 correct load address, embed it, rebuild. No makefile changes; no extra linker
@@ -411,8 +411,8 @@ scripts.
 
 ### `sid_filter_routing` — voice 2 SID effect
 
-The filter effect demonstrates `sid_filter_routing` on top of an active tune.
-The key to coexisting with a play routine is understanding which registers the
+The filter effect runs `sid_filter_routing` on top of an active tune.
+An effect beside a play routine has to know which registers the
 play routine owns. A standard three-voice tune occupies voices 1, 2, and 3
 (`$D400-$D414`) and the master volume nibble of `$D418`. If the play routine
 is GoatTracker-generated and uses all three voices, adding a fourth sound
@@ -422,7 +422,7 @@ filter-routing register is written by both the tune and the effect. As
 listed, the effect writes `$D417` once at trigger and once at release (an
 earlier version of this paragraph said "every frame while active", which the
 code never did), so a tune that writes `$D417` during the 40-frame window
-wins until the next trigger. In practice, most play routines only write
+wins until the next trigger. Most play routines only write
 `$D417` on note-change frames, not on every frame, so the filter effect is
 stable for the duration of a held note (not measured here).
 
@@ -433,9 +433,9 @@ byte): `(cutoff & 7) | ((cutoff >> 3) << 8)`. Oscar64's SID struct declares
 assignment compiles to two 8-bit stores, and with build 2026-05-19 at `-O2`
 the low byte goes to `$D415` first, then the high byte to `$D416` (read from
 the generated `.asm`). An earlier version of this recipe had the bytes the
-other way round in both the listing and this paragraph — the expression was
+other way round in both the listing and this paragraph: the expression was
 `(cutoff >> 3) | ((cutoff & 7) << 13)`, which compiled to `STA $D415` of the
 eight high cutoff bits (where bits 7-3 are ignored) and `STA $D416` of the
-low three bits shifted up, so the "open" cutoff of 2000 actually set the
+low three bits shifted up, so the "open" cutoff of 2000 set the
 filter to 2 and the sweep never moved it. `techniques/music-sid` records the
 same correction for its own example.

@@ -15,15 +15,15 @@ uses_kernal: []
 
 ## Synopsis
 
-Demonstrates pure hardware horizontal soft-scrolling using the VIC-II's
+Hardware horizontal soft-scrolling with the VIC-II's
 `$D016` XSCROLL field (bits 2-0). Each frame the XSCROLL offset is decremented
 by one, shifting the displayed character grid one pixel to the left. When the
 offset reaches zero it resets to 7 and the screen RAM is shifted one column to
 the left to carry new content onto the right edge (an earlier version of this
-sentence said "right ... left edge", the opposite of what the code does). The
-technique requires no raster IRQ — the VIC-II does the pixel-level work, and on
+sentence said "right ... left edge", the opposite of what the code does). No
+raster IRQ is needed. The VIC-II does the pixel-level work, and on
 seven frames out of eight a single register write is the only CPU cost; the
-eighth frame pays for the column shift, which is far from free (measured below).
+eighth frame pays for the column shift, which is expensive (measured below).
 This is the `soft_scroll_h` technique from `docs/techniques/scroll.md`.
 
 ## Source
@@ -156,7 +156,7 @@ int main(void)
 oscar64 -O2 -o=soft-scroll-h.prg -tf=prg soft-scroll-h.c
 ```
 
-The `-O2` flag is recommended: it enables auto-inlining of small functions and
+Use `-O2`: it enables auto-inlining of small functions and
 lets Oscar64 use 8-bit loop counters in `shift_screen_left`. It does not bring
 the carry inside the vertical blank window (an earlier version of this sentence
 said it did); see the measured figures under "The carry" below.
@@ -171,8 +171,8 @@ characters on a blue background inside a blue border. For seven frames the
 display steps one pixel per frame (nominally 50 px/sec on PAL, 60 px/sec on
 NTSC); on the eighth the screen RAM carry fires.
 
-That carry is not hidden. Measured in VICE 3.10 (PAL, `-O2`, CIA cycle
-counter), `shift_screen_left` costs about 74,000 cycles — 3.8 frames — so the
+The carry is visible. Measured in VICE 3.10 (PAL, `-O2`, CIA cycle
+counter), `shift_screen_left` costs about 74,000 cycles (3.8 frames), so the
 scroll pauses on every carry, and a screenshot taken at an arbitrary instant
 (as the verifier's is) can catch the shift half done: the upper rows already
 moved one column left, the lower rows not yet, with one torn row between
@@ -197,7 +197,7 @@ The VIC-II's `$D016` register carries three independent bit groups:
 Only bits 2-0 are used here. The read-modify-write `(vic.ctrl2 & 0xF8) | xscroll`
 clears the XSCROLL field and OR's in the new value, leaving CSEL and MCM
 untouched. Clobbering CSEL would toggle between 38- and 40-column modes each
-frame, collapsing the left and right borders inward and outward visibly.
+frame, moving the left and right borders in and out.
 
 XSCROLL = 0 means no pixel shift relative to the character grid. XSCROLL = 7
 shifts the display seven pixels to the right (the content appears shifted seven
@@ -210,9 +210,9 @@ means decrementing XSCROLL each frame.
 XSCROLL only covers 0-7. After 8 frames of decrementing, the value wraps from
 0 back to 7. At that instant, without a corresponding change to screen RAM, the
 display would snap 8 pixels to the right (resetting from 0 back to 7). To
-cancel this snap, the screen RAM is shifted one column to the left simultaneously.
-The viewer sees continuous 1-pixel steps because the hardware shift and the
-software carry cancel each other's visible effect at the boundary.
+cancel this snap, the screen RAM is shifted one column to the left at the same time.
+The hardware shift and the software carry cancel at the boundary, so the
+display moves in continuous 1-pixel steps.
 
 The `memmove` in `shift_screen_left` copies 39 bytes per row using the C
 library's implementation, which is a general 16-bit-length routine. Measured
@@ -228,8 +228,8 @@ and said the copy "occasionally runs slightly into the top border"; both
 figures were wrong and the copy overruns by more than three frames.
 
 Replacing the two `memmove` calls with a plain `for (char x ...)` byte loop
-over each row was measured at 40,043 cycles — better, still two frames. A
-production scroller therefore does not copy the whole screen inside the blank
+over each row was measured at 40,043 cycles: better, still two frames. A
+production scroller does not copy the whole screen inside the blank
 at all: it scrolls fewer rows, double-buffers screen RAM and flips the
 `$D018` pointer, or spreads an unrolled copy across the idle lines of the
 preceding frames from a raster IRQ.
@@ -241,21 +241,21 @@ display area (lines 51-250 on PAL), or character data currently being fetched
 will render with the old scroll value for part of the line. `vic_waitBottom()`
 from `vic.h` busy-polls the RST8 bit (bit 7 of `$D011`) until it is set, i.e.
 until the raster line is 256 or higher (the earlier text said it polled `$D012`
-for "below line 255"), guaranteeing the display is fully rendered before the
-write happens. The write then takes effect for the top of the next frame.
+for "below line 255"), so the display is fully rendered before the
+write. The write then takes effect for the top of the next frame.
 
 `vic_waitBottom` is appropriate here because there is no other raster IRQ
 machinery. In a more complex program that already uses `rasterirq.h`, the
-scroll update belongs in the main-loop body after `rirq_wait()` — the IRQ
-system provides the frame sync, and `vic_waitBottom` would be redundant.
+scroll update belongs in the main-loop body after `rirq_wait()`; the IRQ
+system provides the frame sync, and `vic_waitBottom` is redundant.
 
 ### Oscar64 vs cc65 style
 
 The cc65 antipattern is `POKE(0xD016, (PEEK(0xD016) & 0xF8) | xscroll)`. In
 Oscar64 the struct field access `vic.ctrl2` compiles to the same `LDA $D016 /
-AND #$F8 / ORA xscroll / STA $D016` sequence, but the intent is type-checked:
+AND #$F8 / ORA xscroll / STA $D016` sequence, but the access is type-checked:
 `vic.ctrl2` is declared `volatile byte` in `vic.h`, preventing the compiler from
 caching the register value across frames. The `& 0xF8` mask pattern is identical
 in both toolchains; what Oscar64 provides is the named struct field, the
-`VICColors` enum for colors, and the `vic_waitBottom` helper — no raw hex
-addresses scattered through the source.
+`VICColors` enum for colors, and the `vic_waitBottom` helper, so the source
+carries no raw hex addresses.

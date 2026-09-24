@@ -22,8 +22,8 @@ error channel again, and put everything on screen: both status lines,
 the byte count and final ST, MATCH or MISMATCH, a 16-bit checksum of
 the bytes read back against a compiled-in expectation, and the time the
 whole exchange took. Use it as the skeleton for a save slot or a
-high-score file, and as the thing to run when a disk routine misbehaves
-and you want to know whether the drive or your code is at fault.
+high-score file, and run it when a disk routine misbehaves to tell a
+drive fault from a code fault.
 
 ## Source
 
@@ -491,7 +491,7 @@ and `c1541 -attach test.d64 -read "scores,s" scores.bin` followed by
 00000010: 595a 0001 0203 0405 0607 0809 0a0b 0c0d  YZ..............
 ```
 
-Note the `,s` in the `-read` argument: c1541 looks for a PRG by default,
+The `,s` in the `-read` argument is needed: c1541 looks for a PRG by default,
 and `-read scores` on this disk answered `ERR = 62, FILE NOT FOUND`
 (measured). The 32 bytes compared identical to the payload in Python,
 and Python's fold `chk = ((chk ^ b) * 5 + 1) & 0xffff` over them gives
@@ -517,8 +517,8 @@ long file reads MISMATCH rather than a lucky prefix match.
 
 Every filename and message is emitted under `.encoding "petscii_upper"`.
 A drive parses PETSCII; KickAssembler's default is screen codes, which
-for upper-case letters happen to coincide, so the line is there to keep
-the habit rather than because these particular strings need it.
+for upper-case letters coincide, so the line is there to keep the habit
+rather than because these strings need it.
 
 The cycle count comes from CIA2. Both timers are started at `$FFFF`,
 timer A counting cycles and timer B counting timer A's underflows, so

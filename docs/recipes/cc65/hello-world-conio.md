@@ -55,22 +55,22 @@ only "at the top-left" and did not mention the character-set switch.
 
 ## Why this works
 
-`conio.h` is cc65's hardware-aware text-mode library. `clrscr()` and
+`conio.h` is cc65's text-mode library. `clrscr()` and
 `cputs()` compile down to KERNAL/direct-screen-RAM writes with no stdio
 buffering: the built PRG calls the ROM clear-screen body at `$E544`
 (`JSR $E544`, not a jump-table entry), the PLOT vector `$FFF0` to read
 and set the cursor, and CHROUT `$FFD2` once, in the initialiser, for the
 character-set switch described above; the characters themselves are
 stored straight into screen RAM. The `-O` flag enables the optimizer.
-For this listing it barely matters — 478 bytes with `-O` against 482
-without, measured with cc65 V2.18 — because almost all of the PRG is
+For this listing it barely matters (478 bytes with `-O` against 482
+without, measured with cc65 V2.18), because almost all of the PRG is
 library and startup code; the earlier version of this page said the
 unoptimised output is "markedly larger and slower", which is not true
 of this program and was not measured for any other.
 
 cc65's `printf` would also work here but pulls in the full format-string
-interpreter and is significantly heavier than `cputs`: the same program
+interpreter, which `cputs` does not: the same program
 with `printf("HELLO, WORLD!")` in place of `cputs` builds to 2,663 bytes
 against 478 (cc65 V2.18, `-O`, measured). For text-mode
-utilities, `conio` is the cc65 idiom; for anything more complex,
-consider whether Oscar64 is the better choice.
+utilities `conio` is the cc65 idiom; for larger programs, compare
+Oscar64.

@@ -303,8 +303,8 @@ int main(void)
 oscar64 -tm=c64 -O2 -o=sfx-engine.prg sfx-engine.c
 ```
 
-Oscar64 build 2026-05-19. One warning from an earlier draft is worth
-knowing: `sfx_cur = 0;` produces `warning 2014: Numeric 0 used for nullptr`;
+Oscar64 build 2026-05-19. An earlier draft drew one warning:
+`sfx_cur = 0;` produces `warning 2014: Numeric 0 used for nullptr`;
 the listing uses `nullptr`.
 
 ## Expected output
@@ -486,7 +486,7 @@ AD/SR re-poke and write them once; see the technique entry.
 The priority rule is two comparisons: a request is refused only if an
 effect is running and the request's priority is lower. Equal priority
 restarts, which is what a repeated gun shot wants. The effect's first row
-sets TEST+GATE (`$09`): the TEST+GATE frame of the classic hard restart in
+sets TEST+GATE (`$09`): the TEST+GATE frame of the hard restart in
 `hardware/sid-reference.md`, followed a frame later by the real waveform
 with GATE, which are that sequence's last two frames without the AD=0/SR=$F0
 frame before them. (The SID page's own "test-bit restart" variant is a
@@ -499,7 +499,7 @@ can listen. What is established is that the bytes reach the registers in
 the order the table says, and that the tune's bytes return the frame after
 the terminator.
 
-The tune stub is deliberately dull: a triangle wave on each voice, pitch
+The tune stub is a triangle wave on each voice, pitch
 stepping through 32 values, gate toggling every eight frames, fixed pulse
 width and ADSR, volume 15. It exists to write all 22 registers each frame
 so the engine's re-poke is tested against the same load a real player

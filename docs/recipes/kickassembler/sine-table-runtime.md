@@ -775,8 +775,7 @@ the square of the step count: with 16 fraction bits the bound over one
 turn is about a unit (arithmetic, `2.5 / 65536` a step over 256 steps),
 with 8 it would be hundreds. Measured, the table is within one unit of
 the reference everywhere and off by one in 21 places after one turn, and
-in 48 places after a second turn, still no worse than one unit.
-The same integer algorithm run on the host for eight turns reaches a
+in 48 places after a second turn, still no worse than one unit. The same integer algorithm run on the host for eight turns reaches a
 worst error of 2 units on the fifth turn (Python, not run on the
 machine). A generator that runs once and stops has no drift problem; a
 generator that keeps stepping frame after frame, as an oscillator rather
@@ -800,8 +799,7 @@ cycles from the count, and DEN is dropped a frame early because the VIC
 samples it once, on line $30. The read of the count sets the carry
 before its first `SBC`, because the timed routine returns with the carry
 in either state and a borrow there reads one cycle high or low. The
-check subtracts the reference from each
-entry, negates a negative difference, and keeps the largest and a 16-bit
+check subtracts the reference from each entry, negates a negative difference, and keeps the largest and a 16-bit
 sum. The sprites read the QUART table shifted right once and add 100, so
 the wave spans Y 100 to 227 and stays inside the display.
 

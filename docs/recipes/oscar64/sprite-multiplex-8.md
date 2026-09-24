@@ -15,8 +15,8 @@ uses_kernal: []
 
 ## Synopsis
 
-Displays 12 independently moving logical sprites using only the VIC-II's 8
-hardware sprite slots, via `sprites.h` virtual sprite (`vspr_*`) functions.
+Displays 12 independently moving logical sprites on the VIC-II's 8
+hardware sprite slots with `sprites.h` virtual sprite (`vspr_*`) functions.
 The `vspr_*` layer sorts logical sprites by Y position each frame and uses
 `rasterirq.h` slots to reposition hardware sprites mid-screen. Each logical
 sprite beyond the eighth gets its own raster IRQ slot that re-arms one
@@ -244,7 +244,7 @@ passed), it renders for 21 lines even if the Y register changes. This gives the
 CPU a 21-line safe window per sprite to reprogram Y and the image pointer before
 the chip needs those values for the next activation.
 
-The multiplexer exploits this window. After sorting the logical sprites by Y,
+The multiplexer uses this window. After sorting the logical sprites by Y,
 the top 8 are written to hardware at frame start. For each sorted sprite `8+n`
 a raster IRQ slot `n` is moved to `Y(sorted sprite n) + 23`, the line after
 hardware sprite `n & 7` has finished its first 21-row draw; that handler writes
@@ -258,7 +258,7 @@ there is one per reused sprite, keyed to the finished sprite, not the next one.
 `vspr_init(Screen)` does **not** call `rirq_init()`; the program must, before
 `vspr_init`, as Oscar64's own `samples/sprites/multiplexer.c` does. It sets
 `$D015 = $FF`, clears both expand registers, and reserves `VSPRITES_MAX - 8`
-rirq slots for reuse IRQs plus one empty sync slot at line 250 — slots 0–8
+rirq slots for reuse IRQs plus one empty sync slot at line 250: slots 0–8
 with the default `VSPRITES_MAX = 16` (read from `sprites.c`; the header
 comment says the same). With 12 logical sprites, `vspr_update` arms slots 0–3
 and clears 4–7 every frame. An earlier version of this page said `vspr_init`
@@ -274,7 +274,7 @@ sprite whose hardware slot it reuses.
 
 ### `vspr_sort`, `vspr_update`, `rirq_sort` — the per-frame triple
 
-These three calls form the per-frame multiplexer ritual:
+These calls run every frame, in this order:
 
 1. **`vspr_sort()`** — insertion sort on the logical sprite array by ascending Y.
    It always walks all `VSPRITES_MAX` entries (the four unused ones sit at

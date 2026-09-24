@@ -521,8 +521,7 @@ NTSC, whose frame wraps at 263, about line 37 of the next frame, still
 in the upper border above the display's line 51 on both. The blank they
 have to fit is about 7,000 cycles on PAL and about 4,100 on NTSC
 (arithmetic), which is why the technique entry's scaling limit differs
-by model. The frame is paced by the two-loop wait on line
-251 that the screen-wipe recipe describes: leave the line, then reach it.
+by model. The frame is paced by the two-loop wait on line 251 that the screen-wipe recipe describes: leave the line, then reach it.
 
 ### The stopwatch and the verdict
 

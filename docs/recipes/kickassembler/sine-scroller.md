@@ -257,7 +257,7 @@ column 38 is hidden at XSCROLL=7 and shows 7 pixels at XSCROLL=0; column 0
 is fully visible at XSCROLL=7 and down to its last pixel at XSCROLL=0. So
 as XSCROLL counts down the newest character (written to column 39, moved
 to 38 by the shift) emerges from under the right border a pixel at a time,
-and the oldest slides out under the left one — no character pops in whole
+and the oldest slides out under the left one. No character pops in whole
 at XSCROLL=7. An earlier version of this paragraph said columns 0 and 39
 both "fall under the border"; column 0 does not.
 
@@ -279,9 +279,8 @@ about 2,000 cycles.
 
 ### Where the work runs
 
-The interrupt is at line 250, the last visible line on PAL. Everything —
-the shift, the clear and the forty placements — happens between there and
-the next frame's first badline at line 51: 113 lines × 63 = about 7,100
+The interrupt is at line 250, the last visible line on PAL. The shift,
+the clear and the forty placements all happen between there and the next frame's first badline at line 51: 113 lines × 63 = about 7,100
 cycles on PAL, but only 64 lines × 65 = about 4,200 on NTSC (263 lines).
 Measured with a CIA timer in VICE x64sc, the handler body takes 4,648
 cycles in an ordinary frame and 5,312 in a frame that also shifts the
@@ -315,7 +314,7 @@ is masked so that routine's `$DC0D` read is harmless.
 
 `region: both`. The mechanism is the same on NTSC; the animation runs 20 %
 faster and the blank between line 250 and line 51 is about 2,900 cycles
-shorter (about 4,200 against PAL's 7,100 — an earlier version said "about
+shorter (about 4,200 against PAL's 7,100; an earlier version said "about
 1,000 cycles shorter, still ample"). The handler overruns line 51 on NTSC
 but finishes well before the band's first badline at line 115; run on the
 6567R8 model in VICE x64sc, the wave draws correctly.

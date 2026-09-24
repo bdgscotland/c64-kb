@@ -22,8 +22,7 @@ $D019 and returns. The last handler rotates the palette by one entry and
 wraps to handler 0, so the colour pattern moves up the screen by one bar per
 frame: each bar takes the pair the bar below it showed (an earlier version
 of this page said the bars cascade downward; two VICE frames one frame apart
-show the opposite). Each
-IRQ is armed one line early and spins on $D012 until its bar's first line
+show the opposite). Each IRQ is armed one line early and spins on $D012 until its bar's first line
 begins, which puts the colour write in the horizontal blank rather than in
 the middle of the line. This is the plain chained-IRQ pattern; it does not
 need the stable entry of `stable-raster-irq` and the text says what that
@@ -224,7 +223,7 @@ cycles later and the border store is held too: it lands in the right border
 of the bar's first line and the left border only changes on the next line.
 `BAR_START = 56` with `BAR_H = 16`
 puts every bar's first line on `line & 7 == 0`; badlines with the default
-YSCROLL are `line & 7 == 3`. If you change either constant, keep
+YSCROLL are `line & 7 == 3`. A change to either constant must keep
 `(BAR_START + n * BAR_H) & 7 != 3` for every bar, or move YSCROLL.
 
 ### $EA31 versus $EA81
@@ -241,12 +240,11 @@ crosses adds about 40). With a key held the keyboard scan stops taking its
 early exit on the first `$DC01` read and walks all 64 matrix positions, and
 the same path is about 1,600 cycles. An earlier version of this page said
 "about a thousand cycles"; that figure was not measured and matches neither
-case. $EA31 reads
-$DC0D near its end; with CIA1 masked that read returns nothing pending and
+case. $EA31 reads $DC0D near its end; with CIA1 masked that read returns nothing pending and
 is harmless. Calling $EA31 from every bar handler, as the earlier version
 did, would have cost about a fifth of each bar's 1,008 cycles (16 × 63)
 while idle, for no benefit, and more than a bar and a half whenever a key
-was held — the earlier version said it was more than a bar on every bar,
+was held. The earlier version said it was more than a bar on every bar,
 which is true only with a key down.
 
 ### Acknowledge before you leave

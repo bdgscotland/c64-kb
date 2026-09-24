@@ -540,11 +540,11 @@ level is adding a row and raising `LEVELS`. The index is clamped to
 `LEVELS - 1` before the read, so level 7 and level 200 play row 6 rather
 than the bytes after it.
 
-**Level 3 adds a problem, not just speed.** Levels 1 and 2 differ in
+**Level 3 adds a hazard.** Levels 1 and 2 differ in
 speed and interval. Level 3 is the first row with `FLAG_SPIKE`, and the
 spawner then makes every fourth spawn a spike at one and a half times
-the row's speed. The autopilot cannot tell them apart; a player can, and
-has a new thing to learn. That is the pattern page's rule of a type or
+the row's speed. The autopilot cannot tell them apart; a player can.
+That is the pattern page's rule of a type or
 hazard column, not only a speed column.
 
 **Coins, not seconds.** The level advances when `coins >= cur_quota`,
@@ -600,9 +600,9 @@ right registers.
 to 28, past the 1,000 cells of the screen. The screen writes landed in
 the program at `$0800` and the colour writes, at `$D800 + 1120` and up,
 landed in the CIA1 register mirror at `$DC60`, where they stopped and
-reloaded the timers. The cycle figures were nonsense and the frame
-counts were fine, which is the symptom to remember: a colour RAM index
-past 1,000 reaches the I/O area. The playfield now ends at row 24 and
+reloaded the timers. The cycle figures were wrong and the frame
+counts right: the symptom of a colour RAM index past 1,000 reaching
+the I/O area. The playfield now ends at row 24 and
 the draw clamps `y` before it indexes.
 
 ## Verification

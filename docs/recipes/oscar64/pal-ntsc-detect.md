@@ -15,8 +15,8 @@ uses_kernal: []
 
 ## Synopsis
 
-Decide at start-up which VIC-II the program is running on — a 6569 (PAL),
-a 6567R8 (NTSC) or a 6567R56A (old NTSC) — by watching one frame's RST8
+Decide at start-up which VIC-II the program is running on, a 6569 (PAL),
+a 6567R8 (NTSC) or a 6567R56A (old NTSC), by watching one frame's RST8
 band and keeping the highest `$D012` value seen inside it. The answer is
 shown two ways: as a border colour (green 5 = PAL, red 2 = NTSC R8, yellow
 7 = NTSC R56A, orange 8 = a chip this page does not know) and as the raw
@@ -140,7 +140,7 @@ listing the same way.
 ## Expected output
 
 A black screen. Row 0 holds three solid cells at columns 0–2 (green, red,
-yellow — the palette reference), then two white hex digits at columns 5–6.
+yellow: the palette reference), then two white hex digits at columns 5–6.
 The border is the verdict:
 
 | VICE model | Chip | Border | Digits on row 0 |
@@ -158,7 +158,7 @@ green; on `newntsc` (8562), `06` and (174, 71, 93), red (VICE x64sc 3.10,
 2026-09-23, digits matched against the char ROM).
 
 The digits are the low byte of the last raster line of the frame, and they
-agree with the settled line counts — 312 lines end at 311 = `$137`, 263 at
+agree with the settled line counts: 312 lines end at 311 = `$137`, 263 at
 262 = `$106`, 262 at 261 = `$105`.
 
 Measured in VICE x64sc 3.10 (rung 1) with Oscar64 build 2026-05-19:
@@ -170,10 +170,10 @@ border and the same digits both times. The check was a script, not an eye:
 the border pixel at (2,100) was compared with the three reference cells in
 the same picture (each cell 64 of 64 pixels one colour), and the two digit
 cells were matched, bit for bit, against the uppercase set of
-`chargen-901225-01.bin`. Do this the same way if you re-measure: the NTSC
-pictures are 384×247 rather than 384×272, and the same colour index has
-different RGB values in them — colour 2 is (175,60,88) in the PAL picture,
-(169,71,100) in the `ntsc` one and (146,49,78) in the `oldntsc` one — so a
+`chargen-901225-01.bin`. A re-measurement needs the same method: the NTSC
+pictures are 384×247, not 384×272, and the same colour index has
+different RGB values in them (colour 2 is (175,60,88) in the PAL picture,
+(169,71,100) in the `ntsc` one and (146,49,78) in the `oldntsc` one), so a
 PAL RGB constant compared against an NTSC picture fails on a correct render.
 
 ## Why this works
@@ -183,8 +183,8 @@ PAL RGB constant compared against an NTSC picture fails on a correct render.
 The VIC-II's raster position is a nine-bit counter: `$D012` is its low
 eight bits and RST8, bit 7 of `$D011`, is the ninth (Bauer, §3.2). RST8 is
 therefore set for exactly the lines from 256 upward, whatever the chip. The
-three chips differ only in how many such lines they have — PAL runs to 311,
-the 6567R8 to 262, the 6567R56A to 261 (settled) — and the low byte of that
+three chips differ only in how many such lines they have (PAL runs to 311,
+the 6567R8 to 262, the 6567R56A to 261; settled), and the low byte of that
 last line is `$37`, `$06` or `$05`. The routine waits for RST8 to be clear
 and then set, so that its sampling can only begin at line 256, and keeps the
 highest `$D012` it reads until RST8 clears again. Because the counter climbs
@@ -200,12 +200,12 @@ in VICE x64sc 3.10 (`techniques/raster.md`, How, step 2): without the first
 wait, entered on PAL line 311 with the result preloaded to `$EE`, two of
 sixteen entry phases returned `$EE`; with the wait restored, both of those
 phases returned `$37`. It is not there for
-calls that land mid-band — the same wait-less loop entered on lines 256 and
-300 still returned `$37` — and this page gave that reason until 2026-09-22.
+calls that land mid-band (the same wait-less loop entered on lines 256 and
+300 still returned `$37`); this page gave that reason until 2026-09-22.
 A single read taken right after RST8
-rises is worth nothing: it lands on line 256 and returns `$00` on every
-chip. That was measured too — a KickAssembler control doing exactly that
-read showed `00` on all three models — and it is why the earlier detection
+rises tells nothing: it lands on line 256 and returns `$00` on every
+chip. That was measured too (a KickAssembler control doing that
+read showed `00` on all three models), and it is why the earlier detection
 listings in this knowledge base misfired (their pages carry the correction).
 
 ### What Oscar64 does with the loop
@@ -213,7 +213,7 @@ listings in this knowledge base misfired (their pages carry the correction).
 `vic.ctrl1` and `vic.raster` are `volatile` fields of `struct VIC` in
 `<c64/vic.h>`, so `-O2` keeps every read. The compiled sampling loop, read
 from the generated `.asm`, is 21 cycles when a new maximum is stored and 22
-when it is not — under a third of a raster line on any chip, so every line
+when it is not, under a third of a raster line on any chip, so every line
 of the band is read at least twice and the last line cannot slip through.
 `__asm { sei }` and `__asm { cli }` bracket the measurement so the KERNAL's
 60 Hz interrupt cannot hold the loop away from the registers across a line
@@ -222,8 +222,8 @@ not used. It runs once, and how long it holds the CPU depends on where in
 the frame it is entered: from 57 raster lines (about 3.6 ms) when called
 just before the band to 368 lines (about 23.5 ms, 1.2 frames) when called
 as RST8 rises on PAL, and from 8 to 270 lines (about 0.5 to 17 ms) on the
-6567R8 — line counts measured with a CIA timer on the KickAssembler form of
-the same loop (`techniques/raster.md`, Why it works); the compiled loop is
+6567R8 (line counts measured with a CIA timer on the KickAssembler form of
+the same loop, `techniques/raster.md`, Why it works); the compiled loop is
 longer per pass but is bounded by the same lines. It never takes two frames.
 **Correction (2026-09-22):** this page said "between one and two frames"
 until this date; that figure was not measured, and it was wrong.
@@ -234,9 +234,9 @@ The verdict goes to `$D020` because the border is the largest uniform area
 in a screenshot. The three reference cells are reversed spaces (screen code
 `$A0`, every pixel in the foreground colour) with colours 5, 2 and 7 written
 to colour RAM, so any script can read the palette from the picture it is
-measuring. The hex digits are screen codes — `$30`–`$39` for `0`–`9`, `$01`–
-`$06` for `A`–`F` — poked straight into the screen, with the background set
-to black and colour RAM to white so the glyph decodes cleanly against the
+measuring. The hex digits are screen codes (`$30`–`$39` for `0`–`9`, `$01`–
+`$06` for `A`–`F`), poked straight into the screen, with the background set
+to black and colour RAM to white so the glyph decodes against the
 character ROM. Any chip whose last line is none of the three known values
 paints orange; the page does not claim what such a chip reads.
 

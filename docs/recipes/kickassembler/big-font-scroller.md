@@ -22,8 +22,8 @@ quadrant scaled by two, so a 2 KB charset at $3000 holds a 2x2 version of
 every screen code from 0 to 63. Every frame a raster interrupt steps
 $D016 XSCROLL down one pixel; every eighth frame it rotates both scroller
 rows one cell left, appends the next half-letter and resets XSCROLL to 7.
-The whole screen, the readout included, is drawn in the big font, so the
-picture is its own proof that the charset was built correctly.
+The whole screen, the readout included, is drawn in the big font, so a
+wrong charset build shows in the picture.
 
 The program grades itself. CIA1 timer A times the rotate and append, the
 raster is read straight after it, and after 200 frames `$02FF` is `$01`
@@ -595,7 +595,7 @@ The interrupt is at line 240, inside the display but below any row that
 holds anything after row 21. The rows the copy writes were fetched at
 lines 139 and 147 and are next fetched at those lines of the following
 frame, so the
-real budget is wide; the test uses a tighter and simpler one: after the
+real budget is wide; the test uses a tighter one: after the
 copy, `$D011` bit 7 is clear and `$D012` is at least 240, that is the
 raster is still on lines 240 to 255 of this frame. Sixteen lines from 240
 end at 255 on both models, so no line in the window needs the ninth bit

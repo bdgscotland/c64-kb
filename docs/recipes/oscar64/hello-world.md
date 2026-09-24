@@ -69,7 +69,7 @@ warm-start routine"; it does not call anything, it returns.
 
 ## Why this works
 
-Oscar64's `printf` is a real `printf` — it links a format-string
+Oscar64's `printf` is a real `printf`: it links a format-string
 interpreter that emits via the KERNAL CHROUT routine at `$FFD2` (three
 `JSR $FFD2` sites in the generated `hello.asm`). Do not assume it is
 smaller than cc65's: an earlier version of this page said "unlike cc65,

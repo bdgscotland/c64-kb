@@ -748,4 +748,4 @@ of a conversion; the runs here saw both. Bracketing the select, the
 wait and the read with `SEI` and `CLI` removes every miss, at the cost
 of holding the interrupt off for the wait. A game that already owns the
 IRQ, or that reads on a raster line it chooses, has the same guarantee
-for free.
+without the bracket.

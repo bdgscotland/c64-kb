@@ -20,8 +20,8 @@ copies the three memory regions to their correct VIC-II addresses, and
 enables multicolor bitmap mode. The result is a full-screen 160x200
 multicolor image displayed on a stock C64 using only the standard 16 KB VIC
 bank 0 layout: bitmap at `$2000`, screen RAM at `$0400`, Color RAM at `$D800`.
-This is the canonical Oscar64 starting point for any program that needs to
-show precomputed C64 artwork as a background layer. It implements the
+It is an Oscar64 starting point for a program that shows precomputed
+C64 artwork as a background layer. It implements the
 `koala_format` and `multicolor_bitmap` techniques from
 `docs/techniques/bitmap-modes.md`.
 
@@ -236,7 +236,7 @@ background byte two bytes late).
 
 and rebuild. No other changes are needed provided the file is a standard 10003-byte
 Koala `.kla` with a 2-byte load address prefix. Check the `.map` after any layout
-change: the line `2000 - 3f40 : bitmap_dest, DATA:bitmap` is what proves the
+change: the line `2000 - 3f40 : bitmap_dest, DATA:bitmap` shows the
 bitmap is where `$D018` says it is.
 
 Outputs: `bitmap-koala-viewer.prg`, `.map`, `.asm`, `.lbl`.
@@ -299,7 +299,7 @@ interprets each pair of adjacent bits in a bitmap byte as a 2-bit pixel index:
 | %11 | Color RAM nibble (per-cell, `$D800+cell`) |
 
 The %00 color is global: changing `$D021` shifts the background tone of the
-entire image simultaneously — the cheapest form of palette animation. The %01
+entire image at once, the cheapest form of palette animation. The %01
 and %10 colors are stored in the high and low nibbles of the screen RAM byte at
 the cell's position. The %11 color comes from Color RAM, which is a fixed 1 KB
 at `$D800` not subject to VIC banking. All three per-cell color sources allow
@@ -308,12 +308,10 @@ use all sixteen colors, but each 8x8 cell is limited to four simultaneously:
 the global background plus three from the cell's specific nibbles.
 
 The effective resolution is 160x200 pixels (each displayed "pixel" is two
-color-clock cycles wide), making Koala images noticeably coarser than hires
-bitmap but far richer in per-cell color. This is the dominant tradeoff that
-drove the Koala Painter design: the original 320x200 hires mode allowed only two
-colors per cell, which is insufficient for painted artwork; the multicolor tradeoff
-of halved horizontal resolution for four-per-cell colors was the right choice for
-illustrative content.
+color-clock cycles wide), so Koala images are coarser than hires bitmap
+but have more colors per cell. The 320x200 hires mode allows only two
+colors per cell; Koala Painter trades half the horizontal resolution for
+four colors per cell.
 
 ### `$D018` and VIC bank layout
 
@@ -327,13 +325,13 @@ illustrative content.
 With the stock C64 VIC bank 0 (`$0000-$3FFF`, CIA2 `$DD00` bits `%11`), the
 recipe writes `$D018 = $18` (`0001_1000`): VM=1 selects screen RAM at bank
 `$0000 + 1*1024 = $0400`, CB2=1 selects bitmap at bank `$0000 + $2000 = $2000`.
-Screen RAM at `$0400` and bitmap at `$2000` is the cleanest layout for Oscar64
-programs because it matches the default Oscar64 stack and code layout (`$0A00`
+Screen RAM at `$0400` and bitmap at `$2000` suits Oscar64
+programs because it fits the default Oscar64 stack and code layout (`$0A00`
 onward) without overlapping any of the three data areas.
 
 Color RAM at `$D800` is not configured through `$D018`. The VIC-II always reads
 Color RAM from `$D800-$DBFF` regardless of bank selection; it is mapped to the
-chip via a separate internal bus not subject to CIA2 banking. This is why the
+chip via a separate internal bus not subject to CIA2 banking, so the
 recipe copies Color RAM with a direct `memcpy` to `$D800` rather than to a
 bank-relative address.
 
@@ -344,8 +342,7 @@ The cc65 idiom for shipping artwork is either a disk load at runtime or an
 is imported directly into the C array at compile time, the linker places the
 array at the specified address, and the result is a single self-contained `.prg`
 that works without a disk or a custom loader. For a 10003-byte Koala image, the
-resulting PRG adds about 10 KB to the program size — negligible for a C64
-program. The compile-time cost is one file-read and a copy into the object file;
+resulting PRG adds about 10 KB to the C64 program. The compile-time cost is one file-read and a copy into the object file;
 there is no runtime overhead beyond the three `memcpy` calls that would be
 needed regardless of how the data arrived.
 

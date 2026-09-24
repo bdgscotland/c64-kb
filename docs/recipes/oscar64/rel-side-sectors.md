@@ -311,8 +311,8 @@ Read the lines in order:
   second block's 508) and 8 (byte 700, past 762). A `50` is where any
   byte of the record would lie beyond the last allocated data block; a
   record that fits whole inside the allocated blocks answers `00`
-  whether or not it was ever written, as 2, 4, 5 and 7 show. Note
-  that record 3's first byte, 200, is inside the first block; it is
+  whether or not it was ever written, as 2, 4, 5 and 7 show.
+  Record 3's first byte, 200, is inside the first block; it is
   the tail that does not fit.
 - `P3 00 R3 N=10 ST=40 B0=52 A 00`: record 3 was written as ten bytes
   and comes back as ten, with EOF on the last. The other ninety bytes

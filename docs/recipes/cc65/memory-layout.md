@@ -293,7 +293,7 @@ fixed; the `CODE`, `RODATA`, `DATA`, `INIT` and `ONCE` segments move to
 `MAIN` at `$3000`. The `code-name`, `data-name`, `bss-name` and
 `rodata-name` pragmas name the segment the next definitions go into;
 `push`/`pop` restores the default afterwards. The compiler orders objects
-within a segment as it pleases, which is why the counter precedes the
+within a segment in its own order, which is why the counter precedes the
 stub.
 
 `$01` = `$33` keeps BASIC and the KERNAL mapped but replaces I/O with the
