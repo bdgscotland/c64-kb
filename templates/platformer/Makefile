@@ -23,6 +23,12 @@ SHOT_CYCLES_PAL  := 26000000
 SHOT_CYCLES_NTSC := 24000000
 
 # What the program may write, for make claims (claims-watch's own grammar).
+# These are this starter's claims, matched to what its own run writes (make
+# claims: 0 violations). A project built from it rewrites them: an IRQ
+# chained through the KERNAL writes $0314 (irq_vector_0314), not $FFFE and
+# $FFFA; a split that changes the character base writes vic_char_base every
+# frame; the zero-page top moves with the code (make zp, then make claims);
+# and --cycles must cover the whole run to its verdict.
 # - Oscar64's registers start at $02 (BC_REG_WORK_Y). main's temporaries
 #   reach $54: T1 is the word at $53-$54 (BC_REG_TMP_SAVED in its
 #   MachineTypes.cpp), and main+250 stores the frame count's high byte in
