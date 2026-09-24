@@ -282,3 +282,67 @@ and the code was found by reading the source against the page.
   own measurement refutes.
 - **Recipe:** `recipes/oscar64/joystick-input.md` sets both DDRs to the
   IOINIT values before its first read.
+
+---
+
+## stale_column_select_reads_as_joystick2 — A keyboard scan that ends on columns 0 to 4 leaves that bit low on `$DC00`, and a joystick-2 read sees it as a direction or fire
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** control_config_screen, keyboard_matrix_scan
+
+### Symptom
+
+With keys redefined, or with a keyboard scan added for a pause key, the
+player on joystick 2 drifts in one direction or fires constantly with
+the stick untouched. Changing which key is scanned last changes the
+direction, or makes the drift go away.
+
+### Mechanism
+
+Port A of CIA1 drives the keyboard columns and is also control port 2.
+The scan selects a column by writing its bit low to `$DC00`; the pins
+are outputs, and a read of `$DC00` returns the level on each pin, so the
+selected column's bit reads low whatever the joystick does. Bits 0 to 4
+are the joystick's up, down, left, right and fire. A scan that ends with
+column 0 to 4 selected leaves one of them low, and the next joystick-2
+read reports it. The KERNAL's scan ends on `$7F`, column 7, which is not
+a joystick bit, so the fault appears only when a program's own scan
+ends elsewhere.
+
+Measured in VICE x64sc 3.10 on both models with the recipe below: its
+five-key scan ended on RETURN, column 0, and left `$DC00` = `$FE`; a
+joystick-2 read straight after gave `$01` (UP, after inverting and
+masking to five bits) with no stick input; after writing `$FF` to
+`$DC00` the same read gave `$00`.
+
+### Fix
+
+Write `$FF` to `$DC00` at the end of every keyboard scan, or before
+every joystick-2 read. `keyboard_matrix_scan` already ends its loop that
+way; a partial scan of a few chosen keys has to do the same.
+
+### Worked example
+
+```c
+// BAD: joystick 2 read after a scan that ended on column 0
+act = read_actions();                   // last write: $DC00 = $FE
+joy = ~cia1.pra & 0x1f;                 // $01: UP, from the column select
+
+// GOOD: deselect the columns first
+act = read_actions();
+cia1.pra = 0xff;
+joy = ~cia1.pra & 0x1f;                 // $00 with the stick at rest
+```
+
+```text
+after scan   $DC00 = $FE   joystick 2 = $01 (up)
+after $FF    $DC00 = $FF   joystick 2 = $00
+```
+
+### Cross-references
+
+- Technique `control_config_screen` (`docs/techniques/input.md`): the partial scan that ended on RETURN
+- Recipe `docs/recipes/oscar64/control-config.md`: the two reads above
+- Technique `keyboard_matrix_scan` (`docs/techniques/input.md`): the full scan, which writes `$FF` at the end
+- Pitfall `joystick2_scan_phantom_press` (this page): the KERNAL scan's own intermediate `$DC00` values

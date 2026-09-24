@@ -2152,3 +2152,68 @@ vic.spr_enable = saved_enable;
 - Issue #69: the NTSC hang, the monitor stop at `$EE30`-`$EE3A`, the
   timer B state (`$01FF`, `$DC0F` = `$08`) and the drive's return
   address `$E943`. Reported there, not repeated here.
+
+---
+
+## page_table_assumes_consecutive_sectors — A program that computes a file block's position as first sector plus n reads sectors that are not in the file
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** story_file_virtual_memory_paging, drive_code_upload_and_job_queue
+
+### Symptom
+
+Random access to a file by track and sector returns garbage for every
+block but the first. The first block is right, so the directory lookup
+looks correct.
+
+### Mechanism
+
+The 1541's DOS does not put a file's blocks on consecutive sectors. It
+leaves a gap between one block and the next; the usual account is that
+this gives the drive time to hand a block over before the next one
+passes under the head (not measured here). In the measurement below the
+file started on track 17, beside the directory on track 18. The only
+record of where block `n` is lies in block `n - 1`'s first two bytes. Computing `(t0,
+s0 + n)` reads whatever that sector holds: another file, or a sector
+the disk has never written.
+
+Measured in VICE x64sc 3.10 with 1541 emulation, both models, with the
+recipe below: a 24-block SEQ file written to a freshly formatted disk
+started at 17/00 and went on 17/10, 17/20, 17/08, 17/18. The guess
+`17/01` for block 1 read a sector whose 254 data bytes all differed from
+block 1's, and the guess was wrong for all 23 blocks after the first.
+
+### Fix
+
+Build the table from the chain: read each block once, in order, and
+record where the next one is. A program that owns its disk layout can
+instead write its data with its own sector order (drive code, or `U2`
+block writes of sectors it has allocated) and then compute positions,
+because it chose them.
+
+### Worked example
+
+```c
+// BAD: block n assumed to follow block 0 on the same track
+t = t0;
+s = s0 + n;
+
+// GOOD: the chain, walked once when the file is opened
+for (n = 0, t = t0, s = s0; t != 0; n++) {
+    pt_t[n] = t; pt_s[n] = s;
+    read_block(t, s, blk);          // U1 5 0 t s, 256 bytes
+    t = blk[0]; s = blk[1];
+}
+```
+
+```text
+chain on a fresh disk   17/00 17/10 17/20 17/08 17/18 ...
+guess for block 1       17/01: 254 of 254 data bytes wrong
+```
+
+### Cross-references
+
+- Technique `story_file_virtual_memory_paging` (`docs/techniques/file-io.md`): the page table and the cache
+- Recipe `docs/recipes/oscar64/story-paging.md`: the chain and the refuted guess
+- Technique `drive_code_upload_and_job_queue` (`docs/techniques/file-io.md`): reading sectors by track and sector from drive code, where the same table is needed

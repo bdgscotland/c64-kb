@@ -2185,5 +2185,95 @@
       "pal": "screenshots/agsp.png",
       "ntsc": "screenshots/agsp-ntsc.png"
     }
+  },
+  "oscar64/trainer-hooks": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/trainer-hooks.png",
+      "ntsc": "screenshots/trainer-hooks-ntsc.png"
+    }
+  },
+  "oscar64/pinball-ball": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/pinball-ball.png",
+      "ntsc": "screenshots/pinball-ball-ntsc.png"
+    }
+  },
+  "oscar64/gap-buffer-editor": {
+    "cycles": 16000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/gap-buffer-editor.png",
+      "ntsc": "screenshots/gap-buffer-editor-ntsc.png"
+    }
+  },
+  "oscar64/monitor-core": {
+    "cycles": 16000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/monitor-core.png",
+      "ntsc": "screenshots/monitor-core-ntsc.png"
+    }
+  },
+  "oscar64/paint-fill": {
+    "cycles": 40000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/paint-fill.png",
+      "ntsc": "screenshots/paint-fill-ntsc.png"
+    }
+  },
+  "oscar64/story-paging": {
+    "cycles": 80000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "disk": {
+      "name": "TEST,01"
+    },
+    "shots": {
+      "pal": "screenshots/story-paging.png",
+      "ntsc": "screenshots/story-paging-ntsc.png"
+    }
+  },
+  "oscar64/control-config": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-keybuf",
+      "qaqop\\x0d"
+    ],
+    "shots": {
+      "pal": "screenshots/control-config.png",
+      "ntsc": "screenshots/control-config-ntsc.png"
+    }
   }
 }

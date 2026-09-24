@@ -11,9 +11,11 @@ that leans on it: code that is correct in isolation and fails in context,
 such as a branch cycle count that changes with binary placement, illegal
 opcodes that disappear on CMOS silicon, an indirect-jump address fetch that
 wraps at page boundaries, a signed compare that turns over, an LFSR that
-never leaves zero, and an assembler optimiser that separates a patch from
-the instruction it patches. Each has broken cycle-tight or portable C64
-code. (An earlier version of this paragraph counted
+never leaves zero, an assembler optimiser that separates a patch from
+the instruction it patches, a NOP patch that leaves a branch testing old
+flags, an upward copy that overwrites its own source, and a breakpoint
+that resumes past the instruction it replaced. Each has broken
+cycle-tight or portable C64 code. (An earlier version of this paragraph counted
 three.)
 
 ---
@@ -878,3 +880,217 @@ one place it was written and caught.
   `docs/pitfalls/kernal-and-io.md`: the other Oscar64-specific pitfall,
   for the same "the source is right, the toolchain did something else"
   reading habit
+
+---
+
+## nop_patch_leaves_stale_flags — Three NOPs over a DEC keep the lives but leave the next branch testing an older instruction's flags
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** trainer_and_cheat_hooks, self_modifying_code
+
+### Symptom
+
+An infinite-lives patch replaces `DEC lives` with three NOPs. The lives
+counter stays at 3 as intended, but the game now ends on the first
+death, or never ends a level, or ends at random, depending on what ran
+before the patched line.
+
+### Mechanism
+
+`DEC` writes the byte and also sets Z and N from the result, and the
+game's next instruction is usually a branch on that result: `BEQ
+game_over`. NOP changes no flag, so the branch tests whatever the last
+flag-setting instruction before the patch left. In the recipe's death
+routine that is `LDA #0` two instructions earlier, so Z is set and the
+branch to game over is taken on the first death, with 3 lives still on
+the counter. The same patch in a routine that happened to leave Z clear
+would appear to work, which is why this is found late.
+
+Measured in VICE x64sc 3.10 on both models with the recipe below: the
+unpatched game ends on death 3; with three NOPs it ends on death 1 with
+the counter at 3; with `LDA lives` in the same three bytes it survives
+all eight deaths played, counter at 3.
+
+### Fix
+
+Replace the instruction with one of the same length that sets the flags
+the following code expects. `LDA` of the same address loads the
+unchanged, non-zero count and clears Z; use it when A is reloaded before
+it is read again, as it is in the recipe. Otherwise patch the branch as
+well: two NOPs over the `BEQ`, or its offset byte set to 0. Read the
+instructions after the patch site before choosing.
+
+### Worked example
+
+```asm
+// The game's code:
+            lda #0
+            sta player_state
+            dec lives           // CE lo hi
+            beq game_over       // F0 xx
+
+// BAD: EA EA EA over the DEC; BEQ now tests the Z from LDA #0
+            lda #0
+            sta player_state
+            nop
+            nop
+            nop
+            beq game_over       // taken: Z = 1
+
+// GOOD: AD lo hi, same length; Z comes from the lives byte (3)
+            lda #0
+            sta player_state
+            lda lives
+            beq game_over       // not taken
+```
+
+### Cross-references
+
+- Technique `trainer_and_cheat_hooks` (`docs/techniques/cpu-cycle-tricks.md`): the search, the scan and the patch forms
+- Recipe `docs/recipes/oscar64/trainer-hooks.md`: the three runs above
+- Technique `self_modifying_code` (`docs/techniques/cpu-cycle-tricks.md`): a code patch is a store into an instruction, with the same care about what the following instructions assume
+
+---
+
+## overlapping_copy_wrong_direction — An upward block copy onto a higher, overlapping address repeats its first bytes through the rest
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** text_editor_gap_buffer_and_refresh, memory_fill_copy
+
+### Symptom
+
+A move that works in every test starts to scramble text or data once the
+block is large. In an editor with a gap buffer: jumping the cursor from
+the end of a long document to its start turns most of the document into
+a repeating run of the first few hundred characters, but only when the
+document is nearly as large as the buffer. Short jumps and a large
+free space never show it.
+
+### Mechanism
+
+An ascending copy reads byte `i` of the source and writes byte `i` of the
+destination, lowest first. When the destination starts `d` bytes above
+the source and the two overlap, byte `d` of the source has already been
+overwritten by byte 0 by the time it is read. From there the copy reads
+its own output: the first `d` bytes repeat, period `d`, through the rest
+of the destination.
+
+A gap buffer's left move is that copy. The bytes `buf[gs-k .. gs-1]` go
+to `buf[ge-k .. ge-1]`, `d = ge - gs` above them: the gap. The regions
+overlap exactly when the move `k` is longer than the gap. A buffer with a
+lot of free space hides the fault; the gap shrinks as the document grows,
+and a jump that was safe yesterday is not today.
+
+Measured in the recipe (VICE x64sc 3.10, PAL and NTSC): 1,725 bytes of
+text in a 2,048-byte buffer, gap 323. An ascending block copy of a
+320-byte move gave text equal to the reference. The ascending copy of the
+full 1,725-byte jump left 1,239 bytes different from the reference. The
+byte-at-a-time move, highest address first, left 0.
+
+### Fix
+
+Choose the direction from the addresses: when the destination is above
+the source, copy from the top down; when it is below, from the bottom
+up. For a gap buffer that is fixed per direction: moving left copies
+downward from the top (`buf[--ge] = buf[--gs]`), moving right copies
+upward (`buf[gs++] = buf[ge++]`). In C, `memmove` must handle overlap and
+`memcpy` need not; check what the library's routine does before using
+it for a gap move. In assembler, the descending loop is on
+`memory_fill_copy`.
+
+### Worked example
+
+```c
+// BAD: one ascending copy for a left move of k bytes
+s = buf + gs - k;  d = buf + ge - k;
+while (k--) *d++ = *s++;        // wrong when k > ge - gs
+
+// GOOD: highest byte first
+s = buf + gs;  e = buf + ge;
+while (k--) *--e = *--s;
+```
+
+```text
+text 1,725 bytes, buffer 2,048, gap 323
+ascending copy, move 320     bytes differing: 0
+ascending copy, move 1,725   bytes differing: 1,239
+descending move, 1,725       bytes differing: 0
+```
+
+### Cross-references
+
+- Technique `text_editor_gap_buffer_and_refresh` (`docs/techniques/text.md`): the gap buffer and its two move loops
+- Recipe `docs/recipes/oscar64/gap-buffer-editor.md`: the three moves above
+- Technique `memory_fill_copy` (`docs/techniques/cpu-cycle-tricks.md`): the overlapping move both ways in assembler, measured on a page
+
+---
+
+## brk_resume_at_stacked_pc_skips_instruction — A breakpoint handler that returns to the stacked PC skips the instruction the BRK replaced and the byte after it
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** machine_language_monitor_core
+**Mitigated by techniques:** machine_language_monitor_core
+
+### Symptom
+
+A breakpoint stops where it should and shows sensible registers. After
+"go", the program misbehaves: a register holds a value it should have
+lost, a store is missing, or, when the replaced instruction was one
+byte long, the CPU runs from the middle of the next instruction and
+crashes a few instructions later.
+
+### Mechanism
+
+`BRK` is a two-byte instruction. It pushes the address of the BRK plus
+2, then the status with the B bit set. The byte after the BRK is never
+executed; it is often called the signature byte. A handler that puts the
+original opcode back and returns with `RTI` resumes at BRK + 2: the
+instruction at the breakpoint never runs, and if it was shorter than two
+bytes the CPU lands inside the next one. The pitfall is in the naive
+form of a monitor's breakpoint; the technique's resume rule cures it.
+
+Measured in VICE x64sc 3.10 on both models with the recipe below. The
+test routine is `LDX #$99`, `LDA #$11`, `LDX #$22` (the breakpoint),
+`LDY #$33`, then stores X and Y. The BRK at `$0E66` stacked PC `$0E68`.
+Resumed at `$0E68`, the routine stored X = `$99`: the `LDX #$22` was
+skipped. Resumed at `$0E66` after the stacked PC was lowered by 2, it
+stored X = `$22`. Y was `$33` both times.
+
+### Fix
+
+In the handler, subtract 2 from the stacked PC before `RTI`, after
+writing the original opcode back. To keep the breakpoint armed for the
+next pass, execute the one instruction with a temporary BRK after it,
+then put the breakpoint back. A BRK used as a system call with its
+signature byte as an argument is the case where resuming at the stacked
+PC is right.
+
+### Worked example
+
+```asm
+// Entered through $0316; stack from SP+1: Y, X, A, P, PCL, PCH.
+brk_handler:
+            tsx
+            // ... record registers, write the saved opcode back ...
+// BAD: RTI now resumes at BRK + 2
+//          jmp $ea81
+
+// GOOD: stacked PC - 2 is the breakpoint address
+            sec
+            lda $0105,x
+            sbc #2
+            sta $0105,x
+            lda $0106,x
+            sbc #0
+            sta $0106,x
+            jmp $ea81           // PLA TAY PLA TAX PLA RTI
+```
+
+### Cross-references
+
+- Technique `machine_language_monitor_core` (`docs/techniques/cpu-cycle-tricks.md`): the breakpoint cycle and the stack layout
+- Recipe `docs/recipes/oscar64/monitor-core.md`: the two resumes above
+- `docs/hardware/kernal-routines-reference.md`: the IRQ entry at `$FF48` and the exits at `$EA31` and `$EA81`

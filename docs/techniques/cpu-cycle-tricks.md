@@ -1850,3 +1850,136 @@ this page stated the recipe's 130 as the `Cost` and put the fragment at
 ### Recipes
 
 - `recipes/kickassembler/tod-alarm.md` (clock set, alarm three seconds on, the alarm taken as a CIA1 IRQ under the KERNAL's jiffy, frames counted against the model, the drift with TODIN wrong)
+
+## trainer_and_cheat_hooks — Finding a game's lives byte by value search, and patching the code that changes it
+
+**Complexity:** low
+**Region:** both
+
+### Why
+
+A cheat is a change to one instruction: the one that takes a life, spends
+ammunition or runs down a timer. Nobody hands the patcher a symbol table,
+so the work is finding that instruction in a program already in memory.
+The same method serves a developer: an infinite-lives switch for testing
+a late level, found in the build the tester has rather than in the
+source.
+
+### How
+
+**Find the byte.** Note the value on screen (3 lives), search RAM for
+every address holding it, and keep one candidate bit per address. Lose a
+life and keep only the candidates that now hold 2; lose another and keep
+those holding 1. Each pass discards most of the rest. When the counter's
+value is not shown (an energy bar), search for "changed" and "unchanged"
+between two snapshots instead; that is a byte of snapshot per address,
+not a bit, and is not built here. Leave the search tool's own workspace
+out of the range, or its stack changes under it and the count varies
+from run to run.
+
+**Find the code.** Scan memory for the instructions that write the byte:
+`DEC abs` (`$CE lo hi`), `DEC zp` (`$C6 lo`), and where there are none,
+`STA`/`STX`/`STY` and `SBC` sequences that store to it. A three-byte
+pattern can also occur in data; patch each hit in turn and watch the
+byte to tell them apart.
+
+**Patch it.** Replace the instruction with one of the same length that
+leaves the flags as the next instruction expects. A `DEC` is almost
+always followed by a branch on its result, so three NOPs are wrong
+(`nop_patch_leaves_stale_flags`, `pitfalls/cpu.md`); `LDA` of the same
+address is right when A is dead after it, and `BIT` or `ORA #0` shapes
+suit other cases. Changing the branch itself (`BEQ` to two NOPs, or its
+offset to 0) is the other safe form.
+
+**Apply it.** A trainer is a small program that runs before the game,
+asks which cheats to turn on, writes their patches and then starts the
+game. A game that is packed or loaded in parts overwrites a patch made
+too early, so the trainer takes control after the last part is in place:
+it changes the depacker's final jump to point at itself, or hooks the
+loader's return. That hook depends on the game's loader and is described
+here, not built.
+
+### Why it works
+
+The value search needs no knowledge of the program. In the recipe the
+value 3 sat in 18 of 34,816 bytes; after one death one of them held 2,
+and it held 1 after the next. The `DEC` scan then found one site, and
+the `LDA` patch kept the game running for eight deaths with the counter
+at 3 (measured in VICE x64sc 3.10, both models). The first search pass
+is the costly one: 1,483,115 cycles on PAL and 1,495,095 on NTSC for
+34,816 bytes in Oscar64 C, about 43 cycles a byte with the screen on
+(CIA1 timers A and B chained); the later passes visit only candidates.
+An assembler loop would be several times faster (not measured here).
+
+### Recipes
+
+- `recipes/oscar64/trainer-hooks.md` (value search over `$0800-$8FFF` with a candidate bitmap, `DEC` scan, the NOP and LDA patches played for eight deaths each, the first pass timed with CIA1)
+
+## machine_language_monitor_core — A monitor's dump, table-driven disassembler, mini-assembler and BRK breakpoints
+
+**Complexity:** medium
+**Region:** both
+
+### Why
+
+A monitor is how a program is inspected and patched on the machine
+itself: show memory, show it as code, type an instruction in, stop at an
+address and look at the registers. Cartridge and disk monitors all have
+these four parts. Built into a game or a tool, the same core gives a
+debug screen; built alone, it is a development tool that needs nothing
+but the machine.
+
+### How
+
+**Dump.** Print an address and eight bytes a line as hex; the ASCII or
+screen-code column beside them is optional. Reading `$D000-$DFFF` shows
+I/O, not RAM, unless the bank is switched first, and reading some I/O
+registers changes them (`$DC0D` clears the CIA's interrupt flags), so a
+dump of the I/O area is not harmless.
+
+**Disassembler.** Two 256-entry tables indexed by opcode: the mnemonic
+number and the addressing mode. The mode gives the length (1 to 3) and
+the operand format. Thirteen modes cover the legal set: implied,
+accumulator, immediate, zero page, zero page X and Y, absolute, absolute
+X and Y, indirect, (zp,X), (zp),Y and relative. Print a branch's target,
+not its offset. The 105 opcodes outside the legal set print as data
+(`???` in the recipe); a monitor that names them uses a third table
+(`docs/hardware/6502-illegal-opcodes.md`).
+
+**Mini-assembler.** Read the disassembler's own format back: the
+mnemonic, then the operand's shape and its digit count (two hex digits
+for zero page, four for absolute), then look up the opcode for that
+mnemonic and mode in a reverse table built once from the forward tables.
+A branch mnemonic takes a target address and stores the offset, refused
+outside -128 to +127. Test the pair by round trip: disassemble,
+reassemble, compare bytes.
+
+**Breakpoints.** Save the opcode at the address, write `BRK` (`$00`)
+there and run. With the KERNAL in, a BRK arrives through `$FFFE` at
+`$FF48`, which pushes A, X and Y, sees the B bit in the stacked status
+and jumps through `$0316`; point that vector at the handler. The stack
+then holds, from SP+1: Y, X, A, P, PC low, PC high. The stacked PC is the
+BRK's address plus 2. The handler records the registers, writes the
+saved opcode back, and to continue with the instruction that was
+replaced it must first subtract 2 from the stacked PC
+(`brk_resume_at_stacked_pc_skips_instruction`, `pitfalls/cpu.md`). It
+leaves through `$EA81` (`PLA TAY PLA TAX PLA RTI`). Single-stepping is
+the same trick: a temporary BRK after the current instruction, and at
+both targets of a branch. The default `$0316` is `$FE66`, the KERNAL's
+BRK warm start (ROM table at `$FD30`).
+
+### Why it works
+
+The recipe's tables agree with VICE's monitor on all 151 legal opcodes
+(mnemonic, mode and length) and give no legal name to the other 105; its
+disassembler and assembler round-trip every legal opcode and all 3,850
+instructions of the KERNAL ROM decoded in sequence from `$E000`, with no
+byte wrong (measured in VICE x64sc 3.10, both models). The round trip
+costs 2,451 cycles an instruction on PAL in Oscar64 C, 9.4 million for
+the ROM, most of it the text formatting and parsing. A first version
+that searched the 256-entry table for each assembled line had not
+finished at 30 million.
+
+### Recipes
+
+- `recipes/oscar64/monitor-core.md` (a dump line, the disassembler and assembler round-tripped over all legal opcodes and the KERNAL ROM, a BRK breakpoint through `$0316` resumed at PC - 2 and at PC, the round trip timed with CIA1, PAL and NTSC)

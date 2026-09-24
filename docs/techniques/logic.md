@@ -3109,3 +3109,88 @@ are scaled (arithmetic from 59.826 / 50.125 Hz).
 - Original rules and code, written for this page; no game's code was
   read. The state names follow the brief in issue #38
   (https://github.com/bdgscotland/c64-kb/issues/38).
+
+---
+
+## pinball_ball_physics — A pinball ball on a collision map: gravity, reflection about a cell normal, and substeps so it cannot pass through a wall
+
+**Complexity:** medium
+**Region:** both
+**Cost:** cycles_per_frame=4650
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-pinball-ball (worst frame of one ball, Oscar64 C, screen on)
+
+### Why
+
+A pinball table is curved walls, slopes, posts and flippers, and the ball
+has to roll along them, bounce off them and never pass through one. A
+tile collision that stops a sprite at a wall is not enough: the ball
+needs the direction of the surface it hit, and a fast ball off a flipper
+moves further in a frame than a thin wall is thick.
+
+### How
+
+**The map.** Keep a collision map beside the picture: one kind byte per
+cell (a text cell here; a finer grid for a bitmap table). Each solid kind
+has a unit normal, the direction the surface faces, stored as two signed
+bytes scaled so that 64 means 1.0: a floor (0, -64), a left wall
+(64, 0), a 45-degree slope (45, -45). A curved wall is a run of cells
+whose normals turn a little from cell to cell. The map is data the
+table designer draws; the physics never looks at the picture.
+
+**The state.** Position and velocity in fixed point, fine enough that
+gravity is a whole number per frame: the recipe uses 1/16 pixel
+(12.4 in a 16-bit word) and 0.25 px per frame per frame of gravity.
+
+**A frame.** Add gravity to the vertical velocity. Pick a number of
+substeps, a power of two, so that each substep moves no more than the
+thinnest wall on the table; the recipe allows 4 pixels against 8-pixel
+walls, so 1 to 8 substeps. For each substep, look up the cell the ball
+would enter. If it is empty, move. If it is solid, do not move, and
+reflect the velocity about that cell's normal:
+
+```text
+vn = v.n                     (only when vn < 0: the ball moves into the surface)
+v  = v - (1 + e) * vn * n    (e = restitution, 0.75 in the recipe)
+```
+
+The part of the velocity along the surface is untouched, so a slope turns
+a fall into a roll. Use the new velocity for the rest of the substeps.
+
+**Faces.** One normal per kind means a wall faces one way. A ball that
+reaches a wall from behind has `vn` positive, gets no reflection and is
+refused the move, so it stops dead. Give a wall that can be hit from
+both sides a kind per face, or choose the normal from the side the ball
+entered.
+
+**Flippers and bumpers** are the same rule with a moving surface: add
+the surface's own velocity at the contact point to the reflected
+velocity, and a bumper adds a fixed kick along its normal. Neither is
+built here.
+
+### Why it works
+
+The reflection only reverses the normal part of the velocity and scales
+it by `e`, which is the whole model of a bounce without spin. In the
+recipe a fall at 6 px per frame onto a 45-degree slope leaves at 84/16
+px per frame sideways and 13/16 down, which is the formula's value with
+the rounded normal (measured in VICE x64sc 3.10, both models). Bounce
+apexes of 79, 48 and 28 pixels from a drop of 136 fall by close to
+`e*e` each time. A shot at 12 px per frame in one step per frame
+crossed an 8-pixel wall; the same shot in four substeps of 3 pixels hit
+it (`ball_tunnels_thin_wall`, `pitfalls/logic.md`).
+
+### Cycle budget
+
+The Cost line is the worst frame of the recipe's drop test, one ball,
+in Oscar64 C with 32-bit products in the reflection: 4,650 cycles on PAL
+(4,563 on NTSC). A frame with no contact is 1,131 cycles at one substep
+and 1,553 to 1,682 at four. The first build divided the products by 64
+instead of shifting and its worst frame was 10,856 cycles. A ball per
+frame is affordable; several balls, or an assembler version with a
+multiply table (`table_multiply_8x8`), is the next step (not measured
+here).
+
+### Recipes
+
+- `recipes/oscar64/pinball-ball.md` — collision map of kinds with unit normals, gravity, reflection with e = 0.75, adaptive substeps; a floor drop, a slope and a thin-wall shot with and without substeps, trails on screen, every frame timed with CIA1, PAL and NTSC
