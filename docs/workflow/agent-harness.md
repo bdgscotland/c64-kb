@@ -647,6 +647,51 @@ pixel for pixel, because nothing on screen changes after the grade.
 8. `make shot check selftest disk`, then `npm run verify:templates --
    --only <name> --selftest`.
 
+## Other agent-facing C64 tools
+
+This knowledge base tells an agent what is true about the machine, with
+the evidence, and this harness checks a program against a screenshot. It
+does not drive a live machine for an agent to poke at. Other projects do.
+The table is a survey of GitHub, 2026-09-24 (repository searches such as
+"c64 mcp", "vice mcp", "commodore mcp", "6502 mcp"; each README and the
+repository's licence and last push read through the GitHub API). What
+each row says a tool does is its README's claim, not run here, except
+where a page of this knowledge base is linked.
+
+| Tool | Drives | What an agent gets (README) | Licence (GitHub) |
+|---|---|---|---|
+| [Retro Debugger](../runtime/retrodebugger-reference.md) | its own embedded VICE 3.10 | MCP over stdio: load, pause, step, breakpoints, memory, snapshots, screenshots (run here; see its page) | none in repository |
+| [vice-mcp (simen)](../runtime/vice-mcp-reference.md) | VICE, binary monitor | MCP debugging tools (see its page) | none |
+| [barryw/vice-mcp](https://github.com/barryw/vice-mcp) | a VICE build with the MCP server inside it | HTTP MCP at `127.0.0.1:6510/mcp`: breakpoints, watchpoints, stepping, screenshots, snapshots, symbol files | none |
+| [axewater/mcp-vice-emu](https://github.com/axewater/mcp-vice-emu) | VICE, binary monitor (port 6502) | Start VICE, breakpoints, stepping, screenshots | none |
+| [henols/c64-debug-mcp](https://github.com/henols/c64-debug-mcp) | VICE | Memory read/write/search, breakpoints, watchpoints; npm package | MIT |
+| [chrisgleissner/c64bridge](https://github.com/chrisgleissner/c64bridge) | C64 Ultimate, Ultimate 64, Ultimate II, or VICE | MCP control and programming of either backend; in the official MCP registry | GPL-2.0 |
+| [mbosschaart/Ultimate64MCP](https://github.com/mbosschaart/Ultimate64MCP) | Ultimate devices' REST API | Device control, configuration, audio/video streaming (Ultimate 64) | MIT |
+| [xphileby/c64u-mcp-server](https://github.com/xphileby/c64u-mcp-server) | C64 Ultimate REST API | Run PRG/CRT, play SID and MOD, screenshots, configuration | none |
+| [carledwards/u64ctl](https://github.com/carledwards/u64ctl) | Ultimate 64 REST API | CLI and MCP: memory read/write, disassembly, assemble-upload-run | none |
+| [cliffhall/mcp-c64](https://github.com/cliffhall/mcp-c64) | VICE, 64tass, petcat | Assemble and tokenise BASIC for VICE | none |
+| [nschneir/Project64](https://github.com/nschneir/Project64) | VICE, cc65 | Tools, skills and an MCP for coding and debugging; `c64` CLI | NOASSERTION |
+| [JC-000/c64-test-harness](https://github.com/JC-000/c64-test-harness) | VICE binary monitor, or Ultimate 64 | Python test harness: screen matching, disk images, parallel VICE instances, SID playback and WAV capture | MIT |
+| [Jondalar/C64ReverseEngineeringMCP](https://github.com/Jondalar/C64ReverseEngineeringMCP) | its own headless runtime | Reverse-engineering workbench: disassembly with undocumented opcodes, rebuild verified with KickAssembler or 64tass | GPL-3.0 |
+| [64kramsystem/c64-mcp](https://github.com/64kramsystem/c64-mcp) | Ghidra and its VICE connector | C64 tools over GhidraMCP: display capture, verified memory copy into Ghidra, joystick input | Apache-2.0 |
+| [ricardoquesada/regenerator2000](https://github.com/ricardoquesada/regenerator2000) | files, and VICE for live debugging | Interactive 6502 disassembler (TUI); export to ACME and other assemblers | Apache-2.0 |
+| [GrantMeStrength/6502MCP](https://github.com/GrantMeStrength/6502MCP) | its own 6502 emulator (KIM-1, Apple 1 ROMs) | Assemble, run, debug 6502 over MCP; not C64 hardware | none |
+| [flemming-n-larsen/c64-ctx](https://github.com/flemming-n-larsen/c64-ctx) | none (documents) | C64 reference pages indexed for agents, drawn partly from codebase64 (CC BY-NC-SA 4.0) | NOASSERTION |
+| [MichaelTroelsen/tdz-c64-knowledge](https://github.com/MichaelTroelsen/tdz-c64-knowledge) | none (documents) | MCP search over documents the user ingests (full-text, semantic, fuzzy) | none |
+
+"none" means GitHub detected no licence file on 2026-09-24; read the
+repository for a licence statement before reusing its code. The 6502
+simulator and test runners already described here are in
+[sim6502](../runtime/sim6502-reference.md) and
+[unit-testing-6502](../toolchains/unit-testing-6502.md).
+
+Where the line sits: a debugger or hardware bridge answers "what is this
+machine doing now"; this knowledge base answers "what should it do, and
+how do I know", with each number's rung stated and each listing built and
+run before it lands. The two combine: an agent can read a register's
+behaviour here, then watch it on a live machine through one of the tools
+above.
+
 ## Not measured here
 
 - The settings.json hook wrapper string was not executed by Claude Code in
