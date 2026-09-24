@@ -5,7 +5,23 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 823, schema 39, tools 2.14.0, package 0.27.0.
+Data 824, schema 39, tools 2.14.0, package 0.27.0.
+
+**Paint formats, three more toolchains, and tool references (data 824;
+#19 group F).** Art Studio, Advanced Art Studio, Doodle (plain and
+packed) and Amica layouts, checked on 47 sample files decoded in VICE
+against a Python render (Codebase64's list puts Doodle's bitmap at
+`$7000` and Amica at `$4400`; the files say `$6000` and `$4000`). New
+toolchain pages, each with a hello world run on PAL and NTSC and real
+error messages: ACME 0.97 (`-o` overrides `!to … cbm` and drops the load
+address, warning only), 64tass 1.60 (without `-a` text is not
+converted, silently), llvm-mos SDK 23.2.0 (returning from `main` loops
+for ever; `$01` left at `$3F`). Retro Debugger's MCP server driven
+headless (it embeds VICE 3.10, not 3.1; `retro_load` reports success for
+a missing file). SID-Wizard `.swm` and exports; HVSC Songlengths and
+STIL formats (the MD5 key is the whole-file MD5 for all 60,572 entries;
+STIL.txt is Windows-1252). vice-reference documents this repo's CI VICE
+job; agent-harness gains a map of 18 agent-facing C64 tools.
 
 **Kefrens bars, linecrunch and AGSP reproduced (data 823; #16 DEMO-10,
 #19, #5).** Three new techniques with KickAssembler recipes pinned on
