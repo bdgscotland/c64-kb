@@ -47,8 +47,8 @@ Once per frame:
    `getchx()` is that call: `conio.c` defines `bsin` as `$FFE4` and
    `getchx()` returns `0` with no key waiting; `getch()` is the blocking
    form and stalls the frame loop, so use it only where nothing else
-   moves. `kbhit()` reads the queue count at `$C6` if you want to know
-   before fetching.
+   moves. `kbhit()` reads the queue count at `$C6`, to check before
+   fetching.
 2. Test for RETURN first. GETIN delivers `$0D`; Oscar64's `getchx()`
    delivers `$0A` under the default character map
    (`pitfalls/kernal-and-io.md`, `getchx_petscii_remaps_return`), so
@@ -95,7 +95,7 @@ the ten-byte queue at `$0277` to `$0280`, with the count at `$C6`
 `$C6`). GETIN takes the head of that queue, or returns `0` when the
 count is zero, which is why the poll costs almost nothing in an idle
 frame. Nothing in that path touches the screen, so echoing is the
-program's job and it can put the character anywhere it likes by writing
+program's job and it can put the character anywhere by writing
 screen RAM directly, at `$0400` plus `40 * row + column` on the default
 screen. The KERNAL's own screen editor is never called, so the cursor
 the editor draws does not appear; the program's frame counter reverses
@@ -121,7 +121,7 @@ records the same limit).
 
 - **Games that own the IRQ.** If the KERNAL's IRQ is replaced, nothing
   fills the queue and GETIN returns `0` forever. Read the matrix
-  yourself with `keyboard_matrix_scan` (`techniques/input.md`): its
+  directly with `keyboard_matrix_scan` (`techniques/input.md`): its
   scan returns a key's column and row, not a PETSCII byte. INST/DEL is
   column 0, row 0 and RETURN is column 0, row 1
   (`hardware/cia-reference.md`, the full-matrix table). Oscar64's
@@ -382,7 +382,7 @@ pictures do.
 
 ### When to use CHROUT and when to write screen RAM
 
-CHROUT (`$FFD2`) takes PETSCII, does this conversion for you, handles
+CHROUT (`$FFD2`) takes PETSCII, does this conversion, handles
 control codes, scrolls, wraps, writes the colour, and moves the cursor.
 Use it for a title screen, a text adventure, a debug print, anything
 that is happy at the editor's cursor and does not run inside a tight
@@ -397,7 +397,7 @@ Write screen RAM directly for a HUD, a score, a name field, a tile map,
 anything placed by coordinate or drawn every frame: `$0400 + 40 * row +
 column` on the default screen, one store per cell, with the conversion
 above applied to any PETSCII source. Two consequences follow. Colour is
-now yours: CHROUT writes the current colour from `$0286` into `$D800` for
+the program's job: CHROUT writes the current colour from `$0286` into `$D800` for
 every cell it prints (measured: with `$0286` set to 7 the colour RAM cell
 reads 7 afterwards), and a direct write leaves colour RAM as it was, so
 a cell that was never printed on keeps the colour the last clear left
@@ -424,7 +424,7 @@ letter typed in the lower case set is a shifted letter in PETSCII terms.
 
 - **Two-range echo.** A field that admits only unshifted letters,
   digits and punctuation needs the first two rows of the table and
-  rejects everything else; `text_input_line` does exactly that.
+  rejects everything else; `text_input_line` does that.
 - **ASCII source.** A C string in ASCII has lower case at `$61-$7A`,
   which in PETSCII is the unshifted letters. Subtract `$60` for lower
   case ASCII and `$40` for upper case to reach screen codes `$01-$1A`,
@@ -514,7 +514,7 @@ the scroll value to the scroller's lines.
 The character generator reads 8 bytes per screen code from charset base
 plus code times 8, one byte per pixel row of the cell, and every bit set
 draws one pixel. A quadrant of a doubled glyph is 8 rows of a 4-pixel
-pattern with each pixel two wide and two high, which is exactly 8 bytes
+pattern with each pixel two wide and two high, which is 8 bytes
 in which row `2k` equals row `2k+1` and every bit is paired. Nothing about
 the enlargement is done per frame: the cost is 2 KB of charset and a
 one-off build, and the display afterwards is ordinary text mode, with
@@ -536,8 +536,7 @@ boundary the VIC can see; the recipe uses $3000 in bank 0.
   RAM, so a letter can be two-tone with no charset change; the recipe
   draws the scroller white over cyan.
 - **A 1x2 or 2x2 HUD.** A score in doubled digits is the same `put`
-  routine driven by `decimal_print`; the recipe's readout is exactly
-  that.
+  routine driven by `decimal_print`; the recipe's readout is that.
 
 ### Cycle budget
 

@@ -399,7 +399,7 @@ about 4 per cent of a PAL frame in its slowest form (791 of 19,656).
 
 ### Recipes
 
-- `recipes/oscar64/divide-check.md` — the three loops, the shift-add
+- `recipes/oscar64/divide-check.md`: the three loops, the shift-add
   and table divide by ten, checked over every 8-bit pair and a 16-bit
   sweep against Oscar64's `/` and `%` and against Python, with the
   cycle harness on screen.
@@ -430,7 +430,7 @@ by the recipe, which runs the same update on the 6510 every frame and
 turns the border red if the live value ever differs from the table (it
 stayed green through 252 PAL and 283 NTSC frames in the pinned runs).
 
-Update order matters. Gravity-then-position (semi-implicit Euler)
+Gravity-then-position (semi-implicit Euler)
 lands exactly at update 63 with these constants. Position-then-gravity
 moves the full launch speed on the first step, lands after 65 updates
 and differs from jump frame 4 onward (rung 3, from the same Python
@@ -860,9 +860,9 @@ instruction table, not measured).
 
 ### Recipes
 
-- `recipes/oscar64/lfsr-random.md` — seed from `$D41B`, mosaic, period,
+- `recipes/oscar64/lfsr-random.md`: seed from `$D41B`, mosaic, period,
   checksum and histogram self-check, timing.
-- `recipes/oscar64/lfsr-random-seed2.md` — the same listing with a
+- `recipes/oscar64/lfsr-random-seed2.md`: the same listing with a
   fixed seed, to show a different seed gives a different picture.
 
 The checksum fold in those pages is `chk = ((chk ^ value) * 5 + 1) &
@@ -1058,7 +1058,7 @@ the worst of the five, as one call per frame.
 
 ### Recipes
 
-- `recipes/kickassembler/compare-16bit-signed.md` — every idiom over
+- `recipes/kickassembler/compare-16bit-signed.md`: every idiom over
   the boundary pairs with flags on screen, full sweeps against a
   Python checksum, the bare `BMI` miss count, and the timings.
 
@@ -1104,7 +1104,7 @@ for the exact root on 35 cases against `math.isqrt` and for
 `rem <= 2 * root`, which is `n < (root + 1)^2`, on all 65,536 inputs
 on the machine.
 
-A table-assisted form was considered and not used. A 256-entry table
+A table-assisted form was not used. A 256-entry table
 gives the root of an 8-bit value directly, but a 16-bit input needs
 either a 64 KB table or a two-stage estimate and a correction step
 with a multiply, and the loop is simpler, needs no memory and is fast
@@ -1150,7 +1150,7 @@ one page: a layout with its branch across a page boundary measured
 
 ### Recipes
 
-- `recipes/kickassembler/sqrt-atan2.md` — the root and the atan2
+- `recipes/kickassembler/sqrt-atan2.md`: the root and the atan2
   below, 35 root cases against a Python model, the remainder
   invariant on every input, and the worst-case timing sweep on
   screen.
@@ -1254,7 +1254,7 @@ routines in one page with an `.assert`.
 
 ### Recipes
 
-- `recipes/kickassembler/sqrt-atan2.md` — the fold, divide and table
+- `recipes/kickassembler/sqrt-atan2.md`: the fold, divide and table
   as listed, 36 angle cases over the axes and every octant against a
   Python model, and the worst-case timing sweep over all 65,536 pairs.
 
@@ -1378,13 +1378,12 @@ its x and y are cached in 512 bytes.
 
 ### Why
 
-A 40-bit float library for free: five-byte add, subtract, multiply,
+The BASIC ROM holds a 40-bit float library: five-byte add, subtract, multiply,
 divide, square root, powers, logs, trig, integer conversion in both
-directions and a decimal printer, all in the BASIC ROM that a `SYS`
-leaves banked in. When speed does not matter, a level editor's
-statistics, a high-score table's percentage, a one-off table built at
-start-up, a trainer's or a tool's arithmetic, it is not worth writing.
-It is worth nothing in a frame loop: the multiply alone is a twentieth
+directions and a decimal printer, banked in when a `SYS` runs. When speed does
+not matter (a level editor's statistics, a high-score table's
+percentage, a one-off table built at start-up, a trainer's or a tool's
+arithmetic) it saves writing one. It does not belong in a frame loop: the multiply alone is a twentieth
 of a PAL frame and the root is more than two frames (measured, below).
 The figures on this technique were measured with CIA1 timer A in
 `recipes/kickassembler/basic-float-calls.md` (rung 1, VICE x64sc 3.10,

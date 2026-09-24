@@ -854,8 +854,8 @@ A password holds far less: 6 letters carry 20 bits once a 10-bit
 checksum is paid (`password_encoding` below), so a password game keeps a
 few global flags, not per-level bits.
 
-**Why it works.** The bits are a projection of the level table onto the
-one fact that must outlive it. Clearing the level's bytes before setting
+**Why it works.** The bits keep the one fact from the level table that
+must outlive it. Clearing the level's bytes before setting
 bits makes the save idempotent, so leaving a level twice writes the same
 bytes. The polarity is a choice: the recipe sets a bit for done and
 starts a new game from all zeros. Hessian sets a bit for an actor that
@@ -1141,8 +1141,8 @@ game when the other dies, or both play at once on one screen. Both
 shapes break the same way when they are bolted on: alternating play
 that keeps one set of score, lives and level variables hands player 2
 player 1's game; simultaneous play that reads port 1 the way it reads
-port 2 picks up the keyboard. The pattern that avoids both is one
-per-player block and one careful port read.
+port 2 picks up the keyboard. One per-player block and one ordered port
+read avoid both.
 
 ### How
 
@@ -1294,8 +1294,8 @@ the per-frame path to a compare and a countdown.
 describes from the Gradius account: a few additive counters the player
 never sees (frames survived, stages cleared, power-ups held), summed,
 shifted down and capped at a small number, then used as a second index
-that picks a harder row or adds to a column. It rises with success, and
-the cap is the whole point. Rubber banding by outcome rather than by
+that picks a harder row or adds to a column. It rises with success, up
+to the cap. Rubber banding by outcome rather than by
 time: scale the damage a hit does, or the drop rate of health, by how
 far the player is ahead of or behind the row's expectation, and never
 below a floor. Two whole tables, one per region, selected once by
@@ -1341,7 +1341,7 @@ dither, and fit in a frame together. A path search from each ghost to
 the player every time it reaches a junction does not fit: even the
 twelve-node run-time search of `nav_area_pathfinding` costs about 16,000
 cycles, and a tile maze has hundreds of tiles and dozens of junctions (the recipe's: 245 and 34). Pac-Man (Namco, 1980)
-does no search at all. Each ghost has a target tile and, at each
+does no search. Each ghost has a target tile and, at each
 junction, takes the exit whose next tile is nearest that target. The
 target rule gives each ghost its character. This page describes that
 rule as Jamey Pittman's Pac-Man Dossier documents it, adapted to a C64
@@ -1425,9 +1425,8 @@ A decision looks at no more than three tiles and needs no memory
 between frames beyond each ghost's tile, heading and planned turn. The
 no-reverse rule keeps a ghost from oscillating between two tiles when
 its target moves, and it commits the ghost to a corridor once chosen.
-The four target rules are the whole of the ghosts' personalities: the
-same choice code serves all four modes, and only the target tile
-differs. Pinky aims ahead and so tends to arrive from the front; Inky's
+The ghosts differ only in their target rules: the same choice code
+serves all four modes, and only the target tile differs. Pinky aims ahead and so tends to arrive from the front; Inky's
 target depends on Blinky and swings widely; Clyde's switch at eight
 tiles makes him approach and retreat.
 
@@ -1528,7 +1527,7 @@ the rules the recipe implements named and their sources cited.
 | Randomiser | 7-bag: a shuffled set of all seven, dealt out, then reshuffled | NES instead rolls 0-7 and rerolls once, 0-6, on a repeat or 7 (tetris.wiki) |
 | Game over | the new piece does not fit where it spawns | NES the same |
 
-The collision test is the whole engine. `fits(piece, rot, x, y)` adds
+Every rule is built on one collision test. `fits(piece, rot, x, y)` adds
 each of the four cell offsets to (x, y), refuses a cell outside the well
 and refuses a cell whose board byte is non-zero. Everything else calls
 it: a move tries x ± 1, a gravity step tries y + 1, a rotation tries the
@@ -1713,7 +1712,7 @@ only when a slot expires. Putting the trapped guard into the standing
 test gives walk-over for free, with no special case in the player code.
 The chase rule is greedy: it never plans past the next vertical move,
 which is why guards walk into holes the player digs in their way. That
-is the game, not a defect. A route search (`nav_area_pathfinding`)
+behaviour is intended. A route search (`nav_area_pathfinding`)
 would walk round the hole.
 
 ### Variations
@@ -1819,8 +1818,7 @@ each cell:
   A round object below (boulder, diamond or brick in the recipe): roll,
   left if the left cell and the cell below it are empty, else right
   under the same test. The recipe's round set and left-first order are
-  its own choice; Boulder Dash's exact rules are not established here. A tick counted in display frames runs 20 % fast
-on NTSC (`pal_ntsc_tempo_mismatch`).
+  its own choice; Boulder Dash's exact rules are not established here.
 - Falling boulder or diamond: space below, move down. The player below:
   kill him. A falling object below: wait. A round object below: try to
   roll, else land (the resting code). Anything else: land.
@@ -1873,7 +1871,8 @@ The recipe runs one cave frame per four display frames, counted by a
 raster IRQ (`frame_sync_loop`), and redraws only the cells the scan
 changed. The logic-at-a-lower-rate pattern is `logic_rate_decoupling`
 above. Boulder Dash's own tick, and how its cave-delay byte maps to it,
-are not established here.
+are not established here. A tick counted in display frames runs 20 % fast
+on NTSC (`pal_ntsc_tempo_mismatch`).
 
 **Cycle budget.** Measured in the recipe with CIA1 timer A cascaded into
 timer B, display on, VICE x64sc 3.10, Oscar64 -O2. The game cave's
@@ -2259,8 +2258,7 @@ Hand-written assembly would also be cheaper; not measured here.
 after a run-length pass; sixteen of them are a large share of the
 memory a game has left. A level made from a seed is two bytes plus a
 row of thresholds and a handful of placed objects, and a game can have
-as many levels as it has table rows. Determinism is the design value
-that makes this safe: the same seed gives the same field on every
+as many levels as it has table rows. Determinism makes this safe: the same seed gives the same field on every
 machine and every run, so the level a designer tuned is the level the
 player gets, and a recorded input script replays true. The game-design
 page `../game-design/game-structure.md` gives that property as the one
@@ -2466,7 +2464,7 @@ screen must not connect with an actor who is standing a lane away: the
 two sprites overlap in X and nearly in Y, and only the plane Y says
 they are not on the same ground. `per_frame_hitbox` answers which pair
 touched; it does not answer whether the pair shares a lane, and a box
-test alone lands hits across lanes all game long.
+test alone lands hits across lanes.
 
 ### How
 
@@ -2581,8 +2579,8 @@ without jerks. Steering has to feel like a car, not a cursor: the car
 keeps sliding after the stick is centred, less on grass, much more on
 water. And the ground under the wheels decides what happens next: road,
 a verge that slows the car, water for a boat, or rock that ends the run.
-None of this touches the VIC-II; it is rules over numbers, and the
-picture follows from them.
+None of this touches the VIC-II; the picture is drawn from these
+numbers.
 
 ### How
 
@@ -2934,7 +2932,7 @@ map ahead that overrides the target when the road runs out.
    | BACK | player x ± 40 px | 40 px behind | after 50 frames: APPROACH |
    | LEAVE | its own x | 200 px behind, higher speed cap | 150 px behind: slot freed |
 
-   A hit sends a car in any state to LEAVE; that is the "give up".
+   A hit sends a car in any state to LEAVE.
 3. **One car per side.** A car in APPROACH claims the side of the player
    it is on, or the other side if that is taken. With both taken it
    queues 40 px behind at its own x. The claim is released on BACK and

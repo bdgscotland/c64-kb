@@ -7,9 +7,9 @@ chip: VIC-II
 
 # Raster Techniques
 
-The VIC-II's raster counter is not merely a diagnostic readout — it is the primary synchronization primitive for every visual effect on the C64. The chip advances through 312 scanlines per frame on PAL (263 on NTSC), and the CPU can receive an interrupt the moment that counter matches a programmed compare value. That single mechanism, when exploited precisely, allows software to reconfigure VIC-II registers mid-frame: changing colors, switching display modes, adjusting scrolling offsets, repositioning sprites, or opening the hardware borders. Without raster control, the C64 renders one static screen per frame like any unadorned character terminal. With it, the same 1 MHz CPU can drive a completely different visual setup on every single scanline if the coder is willing to account for every cycle.
+The VIC-II's raster counter is the synchronization point for every visual effect on the C64. The chip advances through 312 scanlines per frame on PAL (263 on NTSC), and the CPU can receive an interrupt when that counter matches a programmed compare value. With that interrupt, software can reconfigure VIC-II registers mid-frame: change colors, switch display modes, adjust scrolling offsets, reposition sprites or open the borders. Without raster control the C64 shows one static screen per frame. With it, the 1 MHz CPU can set up a different display on every scanline, provided every cycle is accounted for.
 
-The discipline required is severe. The VIC-II reads its registers continuously and asynchronously — writes take effect on the current dot clock cycle, not at a "safe" point in the frame. Raster compare IRQs fire with 0–6 cycles of jitter due to the variable instruction-completion behavior of the 6510 (an earlier version of this sentence said 1-2). Badlines steal 40-43 cycles per line from the CPU (plan on 43) without warning unless the coder explicitly tracks them. Opening the side borders requires a write whose write cycle is one specific cycle of the 63. Every technique in this document exists because the raw mechanism is too imprecise or too resource-hungry on its own, and the C64 demo tradition has refined ways to work around each limitation. Stable raster IRQ is the foundation on which all others rest.
+The VIC-II reads its registers continuously and asynchronously. A write takes effect on the current dot clock cycle, not at a safe point in the frame. Raster compare IRQs fire with 0–6 cycles of jitter, because the 6510 first finishes the current instruction, whose length varies (an earlier version of this sentence said 1-2). Badlines steal 40-43 cycles per line from the CPU (plan on 43) unless the code tracks them. Opening the side borders requires a write whose write cycle is one specific cycle of the 63. Each technique below is the C64 demo scene's way round a mechanism that is too imprecise or too costly on its own. Stable raster IRQ is the base the others build on.
 
 ---
 
@@ -26,13 +26,13 @@ The discipline required is severe. The VIC-II reads its registers continuously a
 
 ### Why
 
-An ordinary raster IRQ is generated when the VIC-II's internal raster counter matches the 9-bit compare value built from $D012 (low 8 bits) and bit 7 of $D011 (RST8, the 9th bit). The IRQ line goes low, the CPU finishes its current instruction, and then begins the interrupt service sequence (7 cycles: two dummy-read cycles, push PC high, push PC low, push P, fetch vector low, fetch vector high; the handler's first opcode fetch follows — an earlier version listed "fetch PC high, fetch PC low" as steps, which they are not: the PC is pushed, not fetched). The problem is "finishes its current instruction." The 6510 instruction set has variable-length execution: a simple `LDA #imm` completes in 2 cycles while a `STA ($zp,X)` takes 6. When an IRQ fires mid-instruction the CPU waits out the remainder of that instruction before responding. This means the gap between the VIC raising its IRQ line and the first instruction of the handler executing is not fixed — it varies by however many cycles were left in the interrupted instruction, anywhere from 0 to 6 cycles in practice (most instructions are 2-6 cycles; the 7-cycle BRK is a pathological case).
+An ordinary raster IRQ is generated when the VIC-II's internal raster counter matches the 9-bit compare value built from $D012 (low 8 bits) and bit 7 of $D011 (RST8, the 9th bit). The IRQ line goes low, the CPU finishes its current instruction, and then begins the interrupt service sequence (7 cycles: two dummy-read cycles, push PC high, push PC low, push P, fetch vector low, fetch vector high; the handler's first opcode fetch follows; an earlier version listed "fetch PC high, fetch PC low" as steps, which they are not: the PC is pushed, not fetched). The jitter comes from finishing the current instruction. 6510 instructions take different numbers of cycles: `LDA #imm` completes in 2 cycles, `STA ($zp,X)` takes 6. When an IRQ fires mid-instruction the CPU waits out the rest of that instruction. The gap between the VIC raising its IRQ line and the handler's first instruction therefore varies by the cycles left in the interrupted instruction: 0 to 6 cycles in practice (most instructions are 2-6 cycles; the 7-cycle BRK is an edge case).
 
-Up to six cycles of jitter sounds trivial. It is not. A write to $D020 (border color) that lands one cycle early produces a visible vertical stripe at the left edge of the border. A sprite multiplex update that arrives one cycle late collides with the previous sprite's DMA window. A mode-switch that jitters by a cycle can corrupt the first row of the display. Stable raster IRQ eliminates this jitter entirely. It is the prerequisite for every technique in this document that requires cycle-exact register writes.
+Up to six cycles of jitter is visible. A write to $D020 (border color) that lands one cycle early produces a vertical stripe at the left edge of the border. A sprite multiplex update that arrives one cycle late collides with the previous sprite's DMA window. A mode-switch that jitters by a cycle can corrupt the first row of the display. Stable raster IRQ removes this jitter. Every technique on this page that needs cycle-exact register writes depends on it.
 
 ### How
 
-The standard stable raster IRQ technique uses an initial IRQ set one line before the target line. This first IRQ fires, re-acknowledges the VIC interrupt flag, programs $D012 to the actual target line, and then executes a tight busy-wait loop that reads $D012 continuously until the counter advances. When the counter matches, the handler is already spinning at a known point in the loop — the jitter has been consumed waiting. The writes that follow land at a predictable cycle offset from the line boundary.
+The standard stable raster IRQ sets an initial IRQ one line before the target line. This first IRQ fires, re-acknowledges the VIC interrupt flag, programs $D012 to the target line, and then runs a tight busy-wait loop that reads $D012 until the counter advances. When the counter matches, the handler is spinning at a known point in the loop; the jitter was used up waiting. The writes that follow land at a predictable cycle offset from the line boundary.
 
 The sequence is:
 
@@ -48,21 +48,21 @@ The cycle-exact busy-wait variation uses two NOP instructions of known cycle cou
 
 ### Why it works
 
-The VIC-II maintains an internal 9-bit raster counter. At the start of each new raster line, the hardware increments this counter and compares it against the 9-bit compare value. If they match AND the raster IRQ mask bit in $D01A bit 0 is set, the chip asserts the IRQ line on the CPU's /IRQ input. The assertion happens on a fixed dot-clock cycle within the line — specifically at the start of the line's first half-cycle, which on PAL corresponds to cycle 1 of the 63-cycle line.
+The VIC-II maintains an internal 9-bit raster counter. At the start of each new raster line, the hardware increments this counter and compares it against the 9-bit compare value. If they match AND the raster IRQ mask bit in $D01A bit 0 is set, the chip asserts the IRQ line on the CPU's /IRQ input. The assertion happens on a fixed dot-clock cycle within the line: the start of the line's first half-cycle, which on PAL is cycle 1 of the 63-cycle line.
 
-The CPU sees the /IRQ pin go low and responds after completing its current instruction. This variable completion time is the source of jitter. The stable-IRQ technique removes jitter by using the raster counter itself as the synchronization point: after the jitter-introducing interrupt fires and the CPU is in the handler, the handler then polls $D012 in a tight loop. Because the raster line has not yet incremented to the next value, the loop spins for whatever fraction of a cycle budget remains. When $D012 finally increments, every subsequent instruction in the handler runs at a fixed cycle offset from that increment — jitter eliminated.
+The CPU sees the /IRQ pin go low and responds after completing its current instruction. That variable completion time is the jitter. The stable-IRQ technique uses the raster counter itself as the synchronization point: once the CPU is in the handler, the handler polls $D012 in a tight loop. The raster line has not yet incremented, so the loop spins for whatever remains of the line. When $D012 increments, every later instruction in the handler runs at a fixed cycle offset from that increment.
 
-The re-acknowledge step (write $01 to $D019) is critical. $D019 bit 0 is the raster interrupt flag. It is set by the VIC when the interrupt fires and cleared by writing a 1 to that bit (the register uses write-1-to-clear semantics, similar to CIA interrupt clearing). If the flag is not cleared, the VIC continues asserting /IRQ and the CPU re-enters the handler immediately after RTI. A common defensive pattern also reads $D019 before writing it, to check which interrupt source fired, though in a single-source setup the read is skippable.
+The re-acknowledge step (write $01 to $D019) must not be skipped. $D019 bit 0 is the raster interrupt flag. It is set by the VIC when the interrupt fires and cleared by writing a 1 to that bit (the register uses write-1-to-clear semantics, similar to CIA interrupt clearing). If the flag is not cleared, the VIC keeps asserting /IRQ and the CPU re-enters the handler immediately after RTI. Handlers often read $D019 before writing it, to check which interrupt source fired; with a single source the read can be skipped.
 
 ### Variations
 
-**Single IRQ with NOP pad.** For effects that only need 0-1 cycle precision, the simplest approach is: fire the IRQ, acknowledge, write a few NOPs of known total cycle count, then perform the register writes. The NOP padding absorbs worst-case jitter without a polling loop. This works when the desired action can tolerate 1-cycle imprecision.
+**Single IRQ with NOP pad.** For effects that need only 0-1 cycle precision: fire the IRQ, acknowledge, run a few NOPs of known total cycle count, then do the register writes. The NOP padding absorbs worst-case jitter without a polling loop. This works when the action tolerates 1-cycle imprecision.
 
-**Double IRQ.** When zero jitter is required, use two IRQs on adjacent lines. The first IRQ sets up the second; the second uses a tightly-counted busy-wait-then-NOP sequence to land on cycle 1 of the target line. See the `double_irq` technique for the full protocol.
+**Double IRQ.** When zero jitter is required, use two IRQs on adjacent lines. The first IRQ sets up the second; the second uses a counted busy-wait-then-NOP sequence to land on cycle 1 of the target line. See the `double_irq` technique for the full protocol.
 
-**Interrupt vector placement.** With the KERNAL ROM in, the hardware vector at $FFFE/$FFFF points at the KERNAL dispatcher at $FF48, which pushes A, X and Y, checks for BRK and jumps through $0314/$0315: 29 cycles before the first instruction of whatever $0314 points at. Patching $0314 is the normal way in and pays all 29. Banking the KERNAL out and pointing $FFFE/$FFFF at the handler removes the dispatcher, leaving the 7-cycle interrupt sequence plus whatever registers the handler saves itself, at the cost of servicing CIA interrupts and the keyboard yourself.
+**Interrupt vector placement.** With the KERNAL ROM in, the hardware vector at $FFFE/$FFFF points at the KERNAL dispatcher at $FF48, which pushes A, X and Y, checks for BRK and jumps through $0314/$0315: 29 cycles before the first instruction of whatever $0314 points at. Patching $0314 is the normal way in and pays all 29. Banking the KERNAL out and pointing $FFFE/$FFFF at the handler removes the dispatcher, leaving the 7-cycle interrupt sequence plus whatever registers the handler saves itself, at the cost of servicing CIA interrupts and the keyboard in the program.
 
-**NMI-based raster timing.** Some advanced techniques use the CIA2 timer firing an NMI for raster work to avoid contention with the IRQ chain. Outside scope of this document — see CIA2 reference.
+**NMI-based raster timing.** Some techniques use a CIA2 timer NMI for raster work, to avoid contention with the IRQ chain. Not covered here; see the CIA2 reference.
 
 ### Cycle budget
 
@@ -75,7 +75,7 @@ On PAL (63 cycles/line), the accounting is:
 - Handler entry overhead (LDA/STA for acknowledgment): 6-8 cycles.
 - Total from IRQ assertion to first usable write: approximately 13-21 cycles with the KERNAL out, 42-50 through $0314 (handler entered on cycle 37-43; measured in VICE, `recipes/kickassembler/stable-raster-irq.md`). An earlier version gave only 13-21 and did not name the entry path.
 
-Once the busy-wait has synced to the next line boundary the budget on that line is ~55 cycles whichever way the interrupt was entered — the entry cost is paid on the arming line, which is why the IRQ is set one line early. Without a sync, on the arming line itself, about 50 cycles remain with $FFFE pointing at the handler (KERNAL out) and about 20 through $0314 (handler entered on cycle 37-43; see Interrupt vector placement). An earlier version gave 40-50 without saying which entry path. On NTSC (65 cycles/line), the budget is 2 cycles wider per line.
+Once the busy-wait has synced to the next line boundary the budget on that line is ~55 cycles whichever way the interrupt was entered. The entry cost is paid on the arming line, which is why the IRQ is set one line early. Without a sync, on the arming line itself, about 50 cycles remain with $FFFE pointing at the handler (KERNAL out) and about 20 through $0314 (handler entered on cycle 37-43; see Interrupt vector placement). An earlier version gave 40-50 without saying which entry path. On NTSC (65 cycles/line), the budget is 2 cycles wider per line.
 
 Badlines cost 40-43 cycles of CPU stall within the line (plan on 43; see `badline_synchronization`). A handler that fires on a badline loses those cycles before any stores execute. The standard defense is to target the IRQ one line before the badline, perform the writes during that non-bad line, and let the badline pass without stores.
 
@@ -99,9 +99,9 @@ Badlines cost 40-43 cycles of CPU stall within the line (plan on 43; see `badlin
 
 ### Why
 
-The raster color bar effect — horizontal bands of color cycling down the screen — is the "hello world" of raster programming. It demonstrates that the VIC-II reads $D020 (border color) and $D021 (background color 0) continuously and reflects any change immediately on the current raster line. A palette of 16 colors times up to 200+ raster lines per frame means a wide design space with minimal hardware cost: the CPU is simply writing two bytes per line.
+Raster color bars (horizontal bands of color down the screen) are the first raster effect most coders write. They show that the VIC-II reads $D020 (border color) and $D021 (background color 0) continuously and shows any change immediately on the current raster line. 16 colors times up to 200+ raster lines per frame costs the CPU two byte writes per line.
 
-Beyond its introductory status, raster bars are a practical building block. Status bars in games typically change the background color at the display mode boundary. Gradient fills simulate additional colors. Parallax bars suggest depth. The technique also serves as a timing diagnostic: if a bar bleeds across lines, a cycle-exact write is arriving late.
+Raster bars are also a building block. Status bars in games change the background color at the display mode boundary. Gradient fills simulate additional colors. Parallax bars suggest depth. The technique is also a timing diagnostic: if a bar bleeds across lines, a cycle-exact write is arriving late.
 
 ### How
 
@@ -112,15 +112,15 @@ The basic sequence in an IRQ handler is:
 3. Advance $D012 to the next target line (the next bar boundary) and acknowledge $D019.
 4. Return from interrupt (RTI).
 
-For a smooth color gradient covering many lines, a more efficient approach is to chain multiple IRQs in a ring: each handler writes the current line's colors, advances $D012 by N lines, and exits. The IRQ fires again N lines later for the next color in the palette. This chaining pattern is the foundation for all multi-split raster effects.
+For a color gradient covering many lines, chain IRQs in a ring: each handler writes the current line's colors, advances $D012 by N lines, and exits. The IRQ fires again N lines later for the next color in the palette. Every multi-split raster effect uses this chaining pattern.
 
-For an effect that changes color on every single line (a "rainbow" effect), the handler must write $D020/$D021 in fewer than 63 cycles total — feasible without badline interference, but the 40-43-cycle badline stall (plan on 43) makes single-line changes on badline rows require special handling (typically by writing the badline's color in the preceding line's IRQ, since the CPU is stalled on the badline itself).
+For a color change on every line (a rainbow), the handler must write $D020/$D021 in fewer than 63 cycles total. That fits on ordinary lines, but the 40-43-cycle badline stall (plan on 43) means badline rows need separate handling: the badline's color is written in the preceding line's IRQ, since the CPU is stalled on the badline itself.
 
 ### Why it works
 
-The VIC-II reads $D020 and $D021 once per dot-clock cycle during horizontal raster generation. The color value fetched at any given dot position determines the color of that dot. Because the 6510 and VIC-II share the bus via the phi1/phi2 clock scheme, a CPU write to $D020 takes effect at the phi2 edge of the write cycle — which corresponds to the dot position being generated approximately 2 clock cycles after the write. This 2-cycle offset is the same on both PAL and NTSC and is constant, making it predictable for cycle-exact color placement. Note that this latency is measured in cycles, each of which is eight pixels wide (not measured here; the pixels-per-cycle figure below is).
+The VIC-II reads $D020 and $D021 once per dot-clock cycle during horizontal raster generation. The color value fetched at a dot position is the color of that dot. The 6510 and VIC-II share the bus via the phi1/phi2 clock scheme, so a CPU write to $D020 takes effect at the phi2 edge of the write cycle, which corresponds to the dot position being generated about 2 clock cycles after the write. This 2-cycle offset is constant and the same on PAL and NTSC, so cycle-exact color placement is predictable. The latency is in cycles, each eight pixels wide (not measured here; the pixels-per-cycle figure below is).
 
-The key architectural fact: there is no buffering. Unlike systems with scanline-latched registers, the VIC-II's color registers are transparent — they reflect writes immediately. This means writing too late by one cycle shifts the colour change right by 8 pixels — one CPU cycle is eight dots on both PAL and NTSC (dot clock / CPU clock = 8.000; measured in VICE x64sc: a colour toggled every 4 cycles gave a 64-pixel period) — not onto the next line. The visible effect of a 1-cycle timing error is an 8-pixel step in the seam, not a full-line displacement. An earlier version of this paragraph said "2 dots", probably by confusing the 2-cycle latency above with a pixel count.
+The VIC-II's color registers have no buffering. Unlike systems with scanline-latched registers, they reflect writes immediately. Writing one cycle late shifts the colour change right by 8 pixels, not onto the next line: one CPU cycle is eight dots on both PAL and NTSC (dot clock / CPU clock = 8.000; measured in VICE x64sc: a colour toggled every 4 cycles gave a 64-pixel period). The visible effect of a 1-cycle timing error is an 8-pixel step in the seam, not a full-line displacement. An earlier version of this paragraph said "2 dots", probably by confusing the 2-cycle latency above with a pixel count.
 
 ### Variations
 
@@ -128,15 +128,15 @@ The key architectural fact: there is no buffering. Unlike systems with scanline-
 
 **Border only.** Write $D020 only. Useful for status bars and frame decorations that must not disturb the display area.
 
-**Gradient via lookup table.** A 16-byte (or 32-byte cycled) table of color values in zero page, indexed by a counter incremented in each IRQ entry, produces a smooth color gradient that can be shifted by adjusting the starting index — a "rotating rainbow" without any compute per frame.
+**Gradient via lookup table.** A 16-byte (or 32-byte cycled) table of color values in zero page, indexed by a counter incremented in each IRQ entry, produces a color gradient that shifts when the starting index changes: a rotating rainbow with no computation per frame.
 
-**Parallax bars.** Two separate bar sequences at different speeds — one for background, one for border — shifted by different amounts each frame. Gives a depth illusion cheaply.
+**Parallax bars.** Two bar sequences at different speeds, one for background and one for border, shifted by different amounts each frame. A cheap depth illusion.
 
-**Wide bars with single IRQ per bar.** Program $D012 to the start of each bar region. Within the bar, use NOP padding or a per-line loop to maintain the color for the bar's height. More efficient for tall bars than firing one IRQ per line.
+**Wide bars with single IRQ per bar.** Program $D012 to the start of each bar region. Within the bar, use NOP padding or a per-line loop to hold the color for the bar's height. Cheaper for tall bars than one IRQ per line.
 
 ### Cycle budget
 
-Through $0314 the handler is entered on cycle 37-43 (`recipes/kickassembler/raster-bars.md`, measured in VICE), leaving about 20 cycles on the line — enough for the two colour stores (8 cycles, two `STA abs` at 4 each) and the $D012/$D019 bookkeeping (10) and little else; with the KERNAL out and $FFFE pointing at the handler about 50 remain. An earlier version said 50-55 usable and did not name the entry path. On a badline, the 40-43-cycle stall removes almost all work budget; designs that change color on badline rows typically write the color value one line early.
+Through $0314 the handler is entered on cycle 37-43 (`recipes/kickassembler/raster-bars.md`, measured in VICE), leaving about 20 cycles on the line: enough for the two colour stores (8 cycles, two `STA abs` at 4 each) and the $D012/$D019 bookkeeping (10) and little else; with the KERNAL out and $FFFE pointing at the handler about 50 remain. An earlier version said 50-55 usable and did not name the entry path. On a badline, the 40-43-cycle stall removes almost all work budget; designs that change color on badline rows write the color value one line early.
 
 ### Recipes
 
@@ -155,37 +155,37 @@ Through $0314 the handler is entered on cycle 37-43 (`recipes/kickassembler/rast
 
 ### Why
 
-The badline is not optional — it is the price the VIC-II extracts from the CPU eight times per character row. During a badline, the VIC-II needs to fetch the full 40-character screen codes for the current text row. It does this by pulling BA (Bus Available) low on cycle 12 and taking the phi2 bus for the 40 c-accesses on cycles 15-54. The CPU may only complete write cycles on 12-14 and cannot read again until cycle 55, so the stall it sees is 40-43 cycles — 43 for any ordinary instruction stream (measured 43 for a NOP stream, 42-43 for STA zp in VICE), 40 only when three consecutive write cycles happen to fall on 12-14. Plan on 43 lost and 20 left (63 - 43) on PAL, 22 on NTSC. An earlier version of this paragraph said BA was low "for 40 cycles" and called the stall 40; that counts only the c-access cycles.
+The VIC-II takes the badline's cycles from the CPU eight times per character row, and the program cannot opt out. During a badline, the VIC-II fetches the 40 screen codes for the current text row. It does this by pulling BA (Bus Available) low on cycle 12 and taking the phi2 bus for the 40 c-accesses on cycles 15-54. The CPU may only complete write cycles on 12-14 and cannot read again until cycle 55, so the stall it sees is 40-43 cycles: 43 for any ordinary instruction stream (measured 43 for a NOP stream, 42-43 for STA zp in VICE), 40 only when three consecutive write cycles happen to fall on 12-14. Plan on 43 lost and 20 left (63 - 43) on PAL, 22 on NTSC. An earlier version of this paragraph said BA was low "for 40 cycles" and called the stall 40; that counts only the c-access cycles.
 
-The cycle loss is large enough to invalidate any timing assumption made without accounting for it. A raster effect that writes 8 registers per line works on non-bad lines but silently slips by 40-43 cycles on badlines, producing visible glitches. Badline synchronization is the practice of knowing exactly which lines are bad (and therefore where the stalls fall), structuring IRQ handlers to either avoid critical writes on bad lines or explicitly account for the 40-43-cycle deduction (plan on 43) when they must happen on one.
+Any timing plan that ignores this loss is wrong. A raster effect that writes 8 registers per line works on non-bad lines but slips by 40-43 cycles on badlines, producing visible glitches. Badline synchronization means knowing which lines are bad (and so where the stalls fall), and writing IRQ handlers that either avoid critical writes on bad lines or account for the 40-43-cycle deduction (plan on 43) when a write must happen on one.
 
 ### How
 
-The first step is understanding when badlines occur. A badline fires when two conditions are simultaneously true: the display is enabled (DEN, $D011 bit 4, was set at some point during raster line $30 — any cycle of that line arms badlines for the frame; an earlier version said cycle 14 specifically), and the low three bits of the current raster line number equal the YSCROLL value in $D011 bits 2-0. With the default YSCROLL of 3, badlines occur at raster lines 51, 59, 67, ... 243 — every 8th line starting at $33, for a total of 25 badlines per frame on PAL.
+A badline occurs when two conditions are true at once: the display is enabled (DEN, $D011 bit 4, was set at some point during raster line $30; any cycle of that line arms badlines for the frame; an earlier version said cycle 14 specifically), and the low three bits of the current raster line number equal the YSCROLL value in $D011 bits 2-0. With the default YSCROLL of 3, badlines occur at raster lines 51, 59, 67, ... 243: every 8th line starting at $33, 25 badlines per frame on PAL.
 
-Because badlines are deterministic given a fixed YSCROLL, the coder can build a lookup table of "line type" (bad vs non-bad) and schedule IRQ handlers to fire only on non-bad lines when cycle budgets are tight. Alternatively, a handler that fires on every line can subtract 43, not 40, from its available cycle count on badlines (63 - 43 = 20) and ensure only that many cycles of work are attempted.
+With a fixed YSCROLL the badlines are deterministic, so a program can build a lookup table of line type (bad vs non-bad) and schedule IRQ handlers only on non-bad lines when cycle budgets are tight. Or a handler that fires on every line can subtract 43, not 40, from its available cycle count on badlines (63 - 43 = 20) and attempt no more work than that.
 
-The second control lever is YSCROLL itself. Writing a new YSCROLL value to $D011 bits 2-0 changes which lines are bad. This is dangerous to do mid-frame without care — see the `raster_split_modes` technique — but it can be used deliberately to move the badline cluster away from a critical raster window.
+YSCROLL itself is the second lever. Writing a new YSCROLL value to $D011 bits 2-0 changes which lines are bad. Doing this mid-frame can go wrong (see the `raster_split_modes` technique), but it can move the badline cluster away from a critical raster window.
 
-A third approach used in scene-quality code is to account for badlines at assembly time by building the raster handler as a sequence of cycle-counted instruction blocks, with alternate blocks for bad and non-bad variants selected by a look-up at handler entry.
+A third approach, used in demo code, accounts for badlines at assembly time: the raster handler is a sequence of cycle-counted instruction blocks, with bad and non-bad variants selected by a look-up at handler entry.
 
 ### Why it works
 
-The VIC-II needs character codes to generate text-mode output. The chip cannot display any character without knowing which character is in each of the 40 cells of the current row. It fetches these from screen RAM (video matrix), which lives in the VIC bank and is not accessible during the CPU's phi2 cycles — the VIC needs the bus to itself. The chip raises BA (bus available) signal three cycles before it actually needs the bus. The CPU, seeing BA low, knows it cannot issue further memory accesses but completes any instruction that has no remaining memory cycles. After 3 cycles, the VIC takes the phi2 bus for 40 cycles of screen RAM fetch, then releases it. The CPU resumes.
+The VIC-II needs character codes to generate text-mode output: which character is in each of the 40 cells of the current row. It fetches these from screen RAM (video matrix), which lives in the VIC bank and is not accessible during the CPU's phi2 cycles; the VIC needs the bus to itself. The chip raises BA (bus available) signal three cycles before it actually needs the bus. The CPU, seeing BA low, knows it cannot issue further memory accesses but completes any instruction that has no remaining memory cycles. After 3 cycles, the VIC takes the phi2 bus for 40 cycles of screen RAM fetch, then releases it. The CPU resumes.
 
-The timing is locked to the YSCROLL field because the VIC increments its internal row counter on each badline. The row counter increments when `(current_raster_line & 7) == YSCROLL`. The first badline of a frame must occur while DEN is set, or badlines are suppressed for the entire frame — a technique called "blinking DEN" that blanks the display and gives the CPU all cycles back.
+The timing is locked to the YSCROLL field because the VIC increments its internal row counter on each badline. The row counter increments when `(current_raster_line & 7) == YSCROLL`. The first badline of a frame must occur while DEN is set, or badlines are suppressed for the entire frame. Clearing DEN this way ("blinking DEN") blanks the display and gives the CPU all cycles back.
 
-NTSC behaves identically in terms of which lines are bad (same YSCROLL logic), but the cycle loss (40-43 cycles) and the available cycles per line (65 on NTSC vs 63 on PAL, so 65 - 43 = 22 left on NTSC) mean the badline penalty as a fraction of a line's budget is slightly lower on NTSC. NTSC has fewer lines per frame, but the badline window ($30–$F7) and the 25 character rows inside it do not depend on the frame length, so an NTSC frame has the same 25 badlines as PAL — 51, 59, …, 243 (measured in VICE x64sc: 2,500 stalls in 100 frames on both the PAL default, a C64C with the 8565, and the 6567R8, and none with DEN clear; an earlier version said the PAL run was a 6569). The shorter NTSC frame loses lines from the vertical blank, not from the display; per frame the CPU has fewer non-bad lines than on PAL (238 against 287), and the 40-cycle stall is a slightly smaller fraction of each 65-cycle bad line. (An earlier version of this paragraph said 24.) An earlier revision of this entry also carried a PAL-only Region tag; the technique applies to both regions, as the figures above show.
+NTSC behaves identically in terms of which lines are bad (same YSCROLL logic), but the cycle loss (40-43 cycles) and the available cycles per line (65 on NTSC vs 63 on PAL, so 65 - 43 = 22 left on NTSC) mean the badline penalty as a fraction of a line's budget is slightly lower on NTSC. NTSC has fewer lines per frame, but the badline window ($30–$F7) and the 25 character rows inside it do not depend on the frame length, so an NTSC frame has the same 25 badlines as PAL: 51, 59, …, 243 (measured in VICE x64sc: 2,500 stalls in 100 frames on both the PAL default, a C64C with the 8565, and the 6567R8, and none with DEN clear; an earlier version said the PAL run was a 6569). The shorter NTSC frame loses lines from the vertical blank, not from the display; per frame the CPU has fewer non-bad lines than on PAL (238 against 287), and the 40-cycle stall is a slightly smaller fraction of each 65-cycle bad line. (An earlier version of this paragraph said 24.) An earlier revision of this entry also carried a PAL-only Region tag; the technique applies to both regions, as the figures above show.
 
 ### Variations
 
-**Badline avoidance.** Schedule IRQs to fire on non-bad lines only. Works when the effect can tolerate one line of imprecision in its split position. Most game status bars use this — nobody notices a 1-pixel vertical shift in the status bar boundary.
+**Badline avoidance.** Schedule IRQs on non-bad lines only. Works when the effect tolerates one line of imprecision in its split position. Most game status bars do this; a 1-pixel vertical shift in the status bar boundary is not noticed.
 
-**Badline accounting.** Explicitly include the 40-43-cycle stall (plan on 43) in the cycle budget for every handler that can fire on a bad line. The handler can poll $D012 at entry to determine if it is on a bad line and take one of two code paths.
+**Badline accounting.** Include the 40-43-cycle stall (plan on 43) in the cycle budget of every handler that can fire on a bad line. The handler can poll $D012 at entry to tell whether it is on a bad line and take one of two code paths.
 
-**YSCROLL manipulation.** Write $D011 bits 2-0 to shift the YSCROLL value, moving badlines to a range that doesn't interfere with a critical effect window. Must be done carefully — changing YSCROLL mid-frame can cause FLD (Flexible Line Distance) effects if not done at the precise right cycle. See also `raster_split_modes`.
+**YSCROLL manipulation.** Write $D011 bits 2-0 to shift the YSCROLL value, moving badlines out of a critical effect window. Changing YSCROLL mid-frame at the wrong cycle can cause FLD (Flexible Line Distance) effects. See also `raster_split_modes`.
 
-**DEN suppression.** Clear bit 4 of $D011 (DEN). The display blanks entirely and badlines stop firing — the CPU gets all 63/65 cycles per line. Used in raster bars that cover the entire screen or in effects where the display is generated entirely by sprites or is intentionally blanked.
+**DEN suppression.** Clear bit 4 of $D011 (DEN). The display blanks and badlines stop; the CPU gets all 63/65 cycles per line. Used in raster bars that cover the whole screen, and in effects where the display is drawn only by sprites or is deliberately blanked.
 
 ### Cycle budget
 
@@ -194,11 +194,11 @@ PAL, badline: 20 cycles guaranteed (cycles 1-11 and 55-63). The VIC pulls BA low
 NTSC, non-badline: 65 cycles total.
 NTSC, badline: 22 cycles guaranteed, 25 with three write cycles.
 
-For cycle-tight code running on every line, the badline constraint means the worst case is 20 cycles per line on PAL. Any per-line loop must complete in 20 cycles or less to be badline-safe, or must handle the bad-line case separately. Note also that a badline moves every later instruction on that line by 43 cycles (an earlier version said 40): a write planned for cycle 56 cannot be placed there at all, because no read can happen between cycles 12 and 54 and every store's write follows a read.
+For cycle-tight code running on every line, the badline constraint means the worst case is 20 cycles per line on PAL. Any per-line loop must complete in 20 cycles or less to be badline-safe, or must handle the bad-line case separately. A badline also moves every later instruction on that line by 43 cycles (an earlier version said 40): a write planned for cycle 56 cannot be placed there at all, because no read can happen between cycles 12 and 54 and every store's write follows a read.
 
 ### Recipes
 
-(No standalone recipe yet — badline synchronization is a prerequisite skill embedded in stable-raster-irq and other recipes.)
+(No standalone recipe yet. Badline synchronization is built into stable-raster-irq and other recipes.)
 
 ---
 
@@ -216,13 +216,13 @@ For cycle-tight code running on every line, the badline constraint means the wor
 
 ### Why
 
-The stable_raster_irq technique reduces jitter to a fraction of a cycle by using a polling loop. However, the polling loop itself has a granularity of one complete loop iteration — typically 5-7 cycles. This means the "stable" IRQ synchronizes to within one loop iteration, not to within one cycle. For the most demanding scene-quality raster work — side-border opening, VSP glitch timing, hardware-sprite multiplexing at exact cycle offsets — even one or two cycles of residual jitter is unacceptable.
+The stable_raster_irq technique reduces jitter to a fraction of a cycle by using a polling loop. The polling loop itself has a granularity of one loop iteration, 5-7 cycles. So the stable IRQ synchronizes to within one loop iteration, not one cycle. For side-border opening, VSP glitch timing and hardware-sprite multiplexing at exact cycle offsets, one or two cycles of residual jitter is too much.
 
-The double IRQ technique achieves true zero-jitter synchronization. The CPU's position on the target raster line is known to within one cycle.
+The double IRQ gives zero-jitter synchronization: the CPU's position on the target raster line is known to within one cycle.
 
 ### How
 
-The double IRQ uses two raster IRQ handlers, set on two consecutive raster lines. The first IRQ (line N) does minimal work: it re-acknowledges $D019, sets $D012 to line N+1, and exits with RTI. Because this IRQ does almost nothing, its execution is fast and repeatable. The second IRQ (line N+1) uses a precise sequence of instructions chosen to consume exactly the right number of cycles to land at a specific cycle position within line N+1, regardless of the jitter that affected the first IRQ.
+The double IRQ uses two raster IRQ handlers on two consecutive raster lines. The first IRQ (line N) does minimal work: it re-acknowledges $D019, sets $D012 to line N+1, and exits with RTI. Because this IRQ does almost nothing, its execution is fast and repeatable. The second IRQ (line N+1) uses a sequence of instructions chosen to consume exactly the right number of cycles to land at a specific cycle position within line N+1, regardless of the jitter that affected the first IRQ.
 
 The classic implementation of the second handler uses a sequence like:
 
@@ -232,34 +232,34 @@ The classic implementation of the second handler uses a sequence like:
 
 Like `stable_raster_irq`, of which it is the zero-jitter form, this is a way into a handler: the effect the second handler runs owns the raster compare, and the Claims line says `shares`. In `recipes/kickassembler/fli-image.md` and `recipes/kickassembler/sideborder-open.md` the double IRQ is the entry of the FLI and open-border code.
 
-The reason two IRQs work better than one: the first IRQ absorbs all the jitter from the unknown instruction-completion state at IRQ entry. By the time the first IRQ completes and the second fires, the processor is executing a known, counted instruction stream from the end of the first RTI. The second IRQ fires at a fully predictable time relative to the raster line.
+Two IRQs work better than one because the first IRQ absorbs the jitter from the unknown instruction-completion state at IRQ entry. By the time the first IRQ completes and the second fires, the processor is executing a known, counted instruction stream from the end of the first RTI, so the second IRQ lands at a predictable time relative to the raster line.
 
 ### Why it works
 
-The 6510's interrupt response adds a 7-cycle fixed overhead once jitter is absorbed. After the first IRQ's RTI executes, the processor returns to whatever was running between IRQs (usually a tight NOP loop or a `JMP *` halt). The second IRQ fires at line N+1's line 0 cycle, the CPU finishes the current instruction (in the loop body, this is a known NOP or similar), and enters the second handler with precisely known timing.
+The 6510's interrupt response adds a fixed 7-cycle overhead once jitter is absorbed. After the first IRQ's RTI, the processor returns to whatever was running between IRQs (usually a tight NOP loop or a `JMP *` halt). The second IRQ fires at line N+1's line 0 cycle; the CPU finishes the current instruction (a known NOP or similar in the loop body) and enters the second handler with known timing.
 
-The mathematical foundation: let `J1` be the jitter in the first IRQ (0-6 cycles). The first handler executes `K1` cycles of work. At RTI, the processor has consumed `J1 + 7 + K1` cycles since the first IRQ fired. Because the first IRQ fired near line N's boundary, RTI returns somewhere within line N or just into line N+1. The second IRQ fires at the same cycle within line N+1 — but now the CPU was executing a known instruction (NOP) between the handlers. The jitter on the second IRQ entry is determined by how far into the NOP the second IRQ arrived, which is known.
+The arithmetic: let `J1` be the jitter in the first IRQ (0-6 cycles). The first handler executes `K1` cycles of work. At RTI, the processor has consumed `J1 + 7 + K1` cycles since the first IRQ fired. Because the first IRQ fired near line N's boundary, RTI returns somewhere within line N or just into line N+1. The second IRQ fires at the same cycle within line N+1, but now the CPU was executing a known instruction (NOP) between the handlers. The jitter on the second IRQ entry is set by how far into the NOP the second IRQ arrived, which is known.
 
-The combination of knowing the instruction between IRQs (always a NOP in the loop) and knowing the second IRQ fires at a fixed cycle within its line is what eliminates jitter entirely.
+Knowing the instruction between IRQs (always a NOP in the loop) and knowing the second IRQ fires at a fixed cycle within its line together remove the jitter.
 
-Measured form (`recipes/kickassembler/stable-raster-irq.md`, VICE x64sc): through the KERNAL vector the handler's first instruction starts on cycle 37-43 of the line (7 interrupt sequence + 29 dispatcher + 0-6 jitter), so the first handler cannot finish its setup and be sliding through NOPs before the *next* line's interrupt; it arms the second IRQ two lines down, not one. Entered from a NOP, the second handler has one cycle of residual jitter, which two consecutive reads of $D012 four cycles apart plus a `BEQ` remove: with the right padding the reads straddle the line boundary in one case and not the other, and the branch costs 3 or 2 cycles to compensate. The padding is found by measurement — the recipe's bars align at `SYNC_PAD = 11` and split into two columns at 10 or 12. Two traps: the KERNAL dispatcher executes `TSX` itself, so a stack pointer saved in X by the first handler does not survive into the second (save it in memory); and every line the two handlers and the timed code occupy must be a non-badline except the one inside the NOP slide, where a stall is harmless.
+Measured form (`recipes/kickassembler/stable-raster-irq.md`, VICE x64sc): through the KERNAL vector the handler's first instruction starts on cycle 37-43 of the line (7 interrupt sequence + 29 dispatcher + 0-6 jitter), so the first handler cannot finish its setup and be sliding through NOPs before the *next* line's interrupt; it arms the second IRQ two lines down, not one. Entered from a NOP, the second handler has one cycle of residual jitter, which two consecutive reads of $D012 four cycles apart plus a `BEQ` remove: with the right padding the reads straddle the line boundary in one case and not the other, and the branch costs 3 or 2 cycles to compensate. The padding is found by measurement: the recipe's bars align at `SYNC_PAD = 11` and split into two columns at 10 or 12. Two traps: the KERNAL dispatcher executes `TSX` itself, so a stack pointer saved in X by the first handler does not survive into the second (save it in memory); and every line the two handlers and the timed code occupy must be a non-badline except the one inside the NOP slide, where a stall is harmless.
 
 ### Variations
 
-**NOP-padded single entry.** Some implementations fold the double-IRQ logic into a single handler that spins until the raster counter advances, then executes a counted NOP sequence to reach the target cycle. This is cleaner to write but harder to reason about cycle-exactly. The explicit two-handler approach is preferred for documentation and maintenance.
+**NOP-padded single entry.** Some implementations fold the double-IRQ logic into a single handler that spins until the raster counter advances, then executes a counted NOP sequence to reach the target cycle. This is shorter to write but harder to count cycle-exactly. The two-handler form is easier to document and maintain.
 
-**IRQ set on same line.** A variant sets both IRQs to the same $D012 value. The first fires normally; because the VIC's raster interrupt latches immediately, the second $D012 write (to the same value) causes the IRQ to fire again on the next frame at that same line — but this requires the handler to track which "fire" it is on, typically via a flag byte.
+**IRQ set on same line.** A variant sets both IRQs to the same $D012 value. The first fires normally; because the VIC's raster interrupt latches immediately, the second $D012 write (to the same value) causes the IRQ to fire again on the next frame at that same line. The handler must then track which firing it is on, usually with a flag byte.
 
-**CIA timer second stage.** Some extreme cases use a CIA timer started in the first IRQ handler to fire a second IRQ a counted number of cycles later, decoupling the second trigger from raster line boundaries entirely. This is used for effects that require a write at a specific horizontal dot position across multiple lines.
+**CIA timer second stage.** A CIA timer started in the first IRQ handler fires a second IRQ a counted number of cycles later, so the second trigger does not depend on raster line boundaries. Used for effects that need a write at a specific horizontal dot position across multiple lines.
 
 ### Cycle budget
 
-The double-IRQ technique's purpose is to minimize jitter rather than save cycles — it actually spends more cycles than a sloppy single IRQ. The overhead is:
+The double IRQ removes jitter; it does not save cycles, and it spends more than an uncounted single IRQ. The overhead is:
 - First IRQ: through $0314, 36-42 (7 interrupt sequence + 29 dispatcher + 0-6 jitter) + ~12 (ack + set $D012 + RTI) = ~48-54 cycles consumed on the arming line; with the KERNAL out, 7-13 + ~12 = ~19-25. An earlier version gave only the ~19 figure without naming the entry path.
-- Between IRQs: the NOP loop in the main loop body executes for however many cycles remain in line N after the first RTI — variable but bounded.
+- Between IRQs: the NOP loop in the main loop body runs for whatever cycles remain in line N after the first RTI (variable but bounded).
 - Second IRQ: 7 (enter) + NOP pad (0-6 cycles) + actual writes.
 
-Total cost per raster split in double-IRQ mode: through $0314, 36-42 + ~12 on the arming line for the first handler, then 36-42 + pad for the second — about 100 cycles over three lines (the first handler arms the second IRQ two lines down, see Why it works), not 35-45 over two as an earlier version said; roughly 60 over two lines with the KERNAL out. Compare 20-30 cycles for a sloppy single-IRQ split with the KERNAL out.
+Total cost per raster split in double-IRQ mode: through $0314, 36-42 + ~12 on the arming line for the first handler, then 36-42 + pad for the second, about 100 cycles over three lines (the first handler arms the second IRQ two lines down, see Why it works), not 35-45 over two as an earlier version said; roughly 60 over two lines with the KERNAL out. Compare 20-30 cycles for an uncounted single-IRQ split with the KERNAL out.
 
 ### Recipes
 
@@ -277,13 +277,13 @@ Total cost per raster split in double-IRQ mode: through $0314, 36-42 + ~12 on th
 
 ### Why
 
-The VIC-II's character-mode display is generated by fetching screen codes from a 40-column video matrix. The VIC fetches one row of 40 characters per character row during badlines, assembling pixel data from character ROM or character RAM to fill the 8 pixel rows between badlines. This architecture means horizontal scrolling can be accomplished by adjusting $D016 bits 2-0 (XSCROLL) to shift the display by up to 7 pixels, but going further — shifting by more than 7 pixels — requires changing the start address of the video matrix, which only takes effect at the beginning of the next character row.
+The VIC-II's character-mode display is generated from screen codes in a 40-column video matrix. The VIC fetches one row of 40 characters per character row during badlines, and builds the 8 pixel rows between badlines from character ROM or character RAM. Horizontal scrolling by up to 7 pixels is done with $D016 bits 2-0 (XSCROLL). Shifting by more than 7 pixels requires changing the start address of the video matrix, which only takes effect at the beginning of the next character row.
 
-VSP (Variable Screen Position) is a hardware glitch, not a designed feature, that allows mid-character-row screen address changes to take effect immediately by manipulating when the VIC-II thinks a new character row is beginning. The result is pixel-perfect horizontal scrolling independent of the 7-pixel XSCROLL limit, and it requires no extra memory or display-mode changes — it works within standard text mode.
+VSP (Variable Screen Position) is a hardware glitch, not a designed feature. It makes a mid-character-row screen address change take effect immediately by changing when the VIC-II thinks a new character row begins. The result is pixel-exact horizontal scrolling beyond the 7-pixel XSCROLL limit, with no extra memory or display-mode changes; it works in standard text mode.
 
 ### How
 
-VSP is a $D011 trick — the CSEL toggle described here before belongs to
+VSP is a $D011 trick; the CSEL toggle described here before belongs to
 `sideborder_open`. On the line that is about to be a badline for a
 character row, arrange for the badline condition to be *false* in cycle 14
 (YSCROLL not equal to `line & 7` at that moment), then at a chosen cycle
@@ -292,8 +292,8 @@ becomes true late. The VIC starts its c-accesses three cycles after BA drops,
 from whichever column slot the beam has reached, and the columns before it
 are not fetched for this row. Because the video counter VC advances only by
 the number of c-accesses actually performed, the row ends with VC short by
-that many characters, and every row after it — and every frame after it,
-until the counter is re-based — starts that many characters earlier in
+that many characters, and every row after it (and every frame after it,
+until the counter is re-based) starts that many characters earlier in
 screen RAM. The display has moved left by N characters, N being the cycle
 the condition became true minus 15. One cycle-exact write per character row,
 plus a matching adjustment of the screen base, scrolls the whole screen by
@@ -306,7 +306,7 @@ The VIC loads VC from VCBASE and clears VMLI in cycle 14, and only then; a
 badline condition that becomes true later leaves those alone and starts the
 c-access sequence mid-row, with VMLI counting from where the accesses start.
 Christian Bauer's VIC-II article documents this as "DMA delay" (§3.14.6),
-and it is the same mechanism FLI uses to lose its three leftmost columns —
+and it is the same mechanism FLI uses to lose its three leftmost columns;
 VSP uses it to lose N columns and keep the offset.
 
 The write cycle is N, so the write has to be placed from a stable raster
@@ -351,12 +351,12 @@ One cycle-exact `STA $D011` per character row on the badline row, plus the
 stable entry that positions it; the badline still costs its 40-43 cycles (plan on 43).
 Nothing per line. The earlier figure of 12 cycles per line via a CSEL toggle
 described the side-border mechanism, misattributed. Not yet measured in this
-knowledge base — there is no VSP recipe, and the account above is from
+knowledge base: there is no VSP recipe, and the account above is from
 Bauer's article and the VICE source, not from a run.
 
 ### Recipes
 
-(No standalone recipe yet — VSP is primarily a KickAssembler technique given its cycle-exact assembly requirements.)
+(No standalone recipe yet. VSP needs cycle-exact assembly, so it is mainly a KickAssembler technique.)
 
 ### Sources
 
@@ -431,9 +431,9 @@ The CPU is held for every line of the gap: the loop's work is 35 cycles per line
 
 ### Why
 
-The VIC-II renders the side (left and right) borders as a solid color region flanking the active display area. In the default 40-column mode (CSEL=1 in $D016 bit 3), the visible left border spans from the left edge of the screen to approximately dot position 24, and the right border spans from dot position 344 to the right edge. Hardware sprites can be positioned anywhere horizontally, including within the border area — but only if the border is suppressed. If the border is not suppressed, sprite pixels that land in the border region are occluded by the border color.
+The VIC-II renders the side (left and right) borders as a solid color region flanking the active display area. In the default 40-column mode (CSEL=1 in $D016 bit 3), the visible left border spans from the left edge of the screen to approximately dot position 24, and the right border spans from dot position 344 to the right edge. Hardware sprites can be positioned anywhere horizontally, including in the border area, but they show there only if the border is suppressed. Otherwise sprite pixels in the border region are hidden by the border color.
 
-Opening the side borders means suppressing the border rendering so that sprites appear on a background-color area rather than behind a fixed-color wall. This is indispensable for sprite multiplexing that uses all 8 sprites across the full horizontal width of the screen, for 24+ sprite systems that require sprites in the border to achieve higher counts, and for any visual design that extends graphics to the display edges.
+Opening the side borders suppresses the border so that sprites appear on a background-color area instead of behind the border color. It is required for sprite multiplexing that uses all 8 sprites across the full width of the screen, for 24+ sprite systems that place sprites in the border to reach higher counts, and for any design that extends graphics to the display edges.
 
 ### How
 
@@ -446,8 +446,8 @@ entered through a stable raster (`double_irq`).
 
 Two constraints on the region. No line in it may be a badline: the VIC holds
 the bus from cycle 12 to 54, no read cycle is possible in between, and every
-store's write follows a read, so the write cannot be placed on cycle 56 —
-either idle the character display inside the region by rewriting YSCROLL
+store's write follows a read, so the write cannot be placed on cycle 56.
+Either idle the character display inside the region by rewriting YSCROLL
 every line so no line matches, or accept a closed border on those rows. And
 if sprites are active in the region, the same sprites must be active on
 every line of it: sprite DMA stalls the CPU from cycle 55 to cycle 10 of the
@@ -489,7 +489,7 @@ PAL: the border flip-flop is set at X=335 when CSEL=0 and at X=344 when CSEL=1, 
 
 Per-line cost: one `DEC $D016` (6 cycles, new value written on its last cycle) and one `INC $D016` to restore, 12 cycles, plus whatever keeps the loop at exactly 63. On a badline it cannot be done at all: the CPU has no read cycle between 12 and 54, and a write on 56 needs a read on 55 at the latest, which puts the write on 58. Side-border regions are therefore badline-free (idle display, or YSCROLL rewritten each line) or accept a closed border on badline rows. With sprites active the write still lands: BA drops on cycle 55 for sprite 0, the 6510 completes up to three write cycles after BA drops, and `DEC`'s two writes are on 55 and 56. See `recipes/kickassembler/sideborder-open.md`, where this is measured.
 
-Border-opening IRQ overhead combined with a sprite multiplex update on the same line can push the line's cycle budget into deficit on badlines. The standard mitigation is to move the sprite Y coordinate update to the preceding line.
+Border-opening IRQ overhead plus a sprite multiplex update on the same line can exceed the line's cycle budget on badlines. The usual fix is to move the sprite Y coordinate update to the preceding line.
 
 ### Recipes
 
@@ -519,8 +519,8 @@ region must be on every line of it, which is why its recipe stacks all
 eight at one Y. A scroller or a logo that bobs in the side border wants
 the opposite, sprites at different heights that move, and on any line
 the set of sprites the VIC fetches then changes with the frame. DYSP
-(different Y sprite positions) is the demo staple that keeps the border
-open anyway, and the sideborder trick's usual reason for existing.
+(different Y sprite positions) keeps the border open anyway. It is a demo
+staple and the usual reason for opening the side border.
 
 ### How
 
@@ -648,42 +648,42 @@ DYCP rows above or below the band. Not built.
 
 The VIC-II's top and bottom borders are solid-color regions above and below the active display rows. In 25-row mode (RSEL=1, $D011 bit 3 set), the display area spans raster lines 51-250 and the borders fill lines 16-50 (top) and 251-299 (bottom) on PAL. In 24-row mode (RSEL=0), the display area shrinks to lines 55-246 and the borders expand correspondingly.
 
-Opening the top and bottom borders lets the whole frame, minus only the vertical blank, show sprites and the idle-state graphics byte (`$3FFF`, which can be changed per line) instead of border colour. The character or bitmap display itself does not grow — there are no badlines outside lines 48–247, so no new rows are fetched — but sprites and background colour reach every drawable line. Measured in VICE x64sc 3.10, every row of the emulator's viewport is drawable with the borders open: 272 lines on PAL and 247 on NTSC, against the display window's 200 (an earlier version of this paragraph gave "roughly 240 on PAL, approximately 192 on NTSC"). This is used for effects that require full-frame coverage: overscan demos, raster bars that extend into the borders, sprite effects that "bleed" above and below the traditional display area.
+Opening the top and bottom borders lets the whole frame, minus only the vertical blank, show sprites and the idle-state graphics byte (`$3FFF`, which can be changed per line) instead of border colour. The character or bitmap display itself does not grow (there are no badlines outside lines 48–247, so no new rows are fetched), but sprites and background colour reach every drawable line. Measured in VICE x64sc 3.10, every row of the emulator's viewport is drawable with the borders open: 272 lines on PAL and 247 on NTSC, against the display window's 200 (an earlier version of this paragraph gave "roughly 240 on PAL, approximately 192 on NTSC"). Uses: overscan demos, raster bars that extend into the borders, sprites above and below the usual display area.
 
-Hardware sprites can be positioned at any Y value 0-255 and will render wherever they land. Opening the top/bottom border does not enable additional sprite rendering per se — sprites already render in the border area when their Y position places them there. What border opening does is suppress the border color so that the background color shows through instead, making any sprites or bitmap data in that region visible.
+Hardware sprites can be positioned at any Y value 0-255 and will render wherever they land. Opening the top/bottom border does not add sprite rendering: sprites already render in the border area when their Y position places them there. Opening suppresses the border color so that the background color shows through, making any sprites or bitmap data in that region visible.
 
 ### How
 
 One mechanism, two writes per frame, both at the bottom of the display:
 
-- Clear RSEL ($D011 bit 3) on a line from 248 to 250 — after the raster has passed line 247 and before it reaches line 251 — with a read-modify-write that keeps YSCROLL, DEN and the mode bits and masks off bit 7 (which reads back as the raster's ninth bit, not the compare value).
+- Clear RSEL ($D011 bit 3) on a line from 248 to 250 (after the raster has passed line 247 and before it reaches line 251) with a read-modify-write that keeps YSCROLL, DEN and the mode bits and masks off bit 7 (which reads back as the raster's ninth bit, not the compare value).
 - Set RSEL again anywhere from line 252 to line 246 of the next frame, so that the next frame's line 247 is not a bottom comparison either.
 
-That is all. The bottom border of this frame and the top border of the next frame both open, because the vertical border flip-flop is never set. Nothing is written near line 51 or 55, and plain raster IRQs through $0314 are precise enough: the target is a line, not a cycle.
+The bottom border of this frame and the top border of the next frame both open, because the vertical border flip-flop is never set. Nothing is written near line 51 or 55, and plain raster IRQs through $0314 are precise enough: the target is a line, not a cycle.
 
-An earlier version of this section described a separate top-border write (RSEL=0 on line 55, "symmetric" with the bottom) and a top-only variant. The vertical border flip-flop has no top-side set, so the top opens as a consequence of suppressing the bottom set — measured in VICE x64sc 3.10: the line-55 write on its own leaves both borders closed and moves the bottom border up to line 247, while the two bottom-side writes on their own open both borders.
+An earlier version of this section described a separate top-border write (RSEL=0 on line 55, "symmetric" with the bottom) and a top-only variant. The vertical border flip-flop has no top-side set, so the top opens as a consequence of suppressing the bottom set. Measured in VICE x64sc 3.10: the line-55 write on its own leaves both borders closed and moves the bottom border up to line 247, while the two bottom-side writes on their own open both borders.
 
 ### Why it works
 
-The VIC-II's vertical border flip-flop (Bauer §3.9) is **set** only when the raster reaches the bottom comparison line — 251 with RSEL=1, 247 with RSEL=0 — checked in cycle 63 of the line and again when the beam reaches the left comparison X; it is **reset** only when the raster reaches the top comparison line — 51 with RSEL=1, 55 with RSEL=0 — at the same two moments, and only while DEN is set. Comparisons match on equality, never over a range, and no frame-start event touches the flip-flop. While it is set, the main border flip-flop cannot be reset at the left edge and the graphics sequencer outputs background colour, so the border is drawn; while it is clear, whatever the sequencer and the sprites produce is shown.
+The VIC-II's vertical border flip-flop (Bauer §3.9) is **set** only when the raster reaches the bottom comparison line (251 with RSEL=1, 247 with RSEL=0), checked in cycle 63 of the line and again when the beam reaches the left comparison X; it is **reset** only when the raster reaches the top comparison line (51 with RSEL=1, 55 with RSEL=0), at the same two moments, and only while DEN is set. Comparisons match on equality, never over a range, and no frame-start event touches the flip-flop. While it is set, the main border flip-flop cannot be reset at the left edge and the graphics sequencer outputs background colour, so the border is drawn; while it is clear, whatever the sequencer and the sprites produce is shown.
 
-RSEL=1 while line 247 passes means both of that line's checks look for 251; RSEL=0 while line 251 passes means both of its checks look for 247. Neither matches, the flip-flop stays clear, and there is no other set event until the next frame's bottom comparison — the vertical blank and lines 0–50 go by with the flip-flop clear, so the top border is not drawn either. At line 51 the top comparison resets a flip-flop that is already clear. Restoring RSEL=1 before the next line 247 keeps the cycle going frame after frame.
+RSEL=1 while line 247 passes means both of that line's checks look for 251; RSEL=0 while line 251 passes means both of its checks look for 247. Neither matches, the flip-flop stays clear, and there is no other set event until the next frame's bottom comparison. The vertical blank and lines 0–50 go by with the flip-flop clear, so the top border is not drawn either. At line 51 the top comparison resets a flip-flop that is already clear. Restoring RSEL=1 before the next line 247 keeps the cycle going frame after frame.
 
 The window for the clearing write is smaller than "before line 251 ends": the left-edge check on line 251 comes at X=24, about cycle 16, before a raster IRQ handler through $0314 has been entered (cycle 37–43). Measured in VICE x64sc 3.10: a clear on line 247 closes the border from line 248 (the cycle-63 check on 247 saw RSEL=0), clears on 248, 249 and 250 open it, and clears on 251 and 252 leave an ordinary frame with the border from line 251.
 
-The side borders are not affected; RSEL only governs the vertical comparison lines. In the opened area the VIC is in its idle state and shows the byte at `$3FFF` in colour 0 over the background colour, so `$3FFF` should be zero — VICE's RAM starts so; hardware RAM is not guaranteed to. Sprites are visible there because the border is no longer drawn over them, not because they render anywhere new.
+The side borders are not affected; RSEL only governs the vertical comparison lines. In the opened area the VIC is in its idle state and shows the byte at `$3FFF` in colour 0 over the background colour, so `$3FFF` should be zero. VICE's RAM starts so; hardware RAM is not guaranteed to. Sprites are visible there because the border is no longer drawn over them, not because they render anywhere new.
 
 ### Variations
 
-**Bottom only, top only.** Neither exists with RSEL alone: the flip-flop has one set (a bottom comparison) and one reset (a top comparison), and once the bottom set has been suppressed nothing can set it again before the next frame's line 247, so the two borders open as a pair. An earlier version of this section listed both as variations; the recipe below writes nothing near line 51 and the top opens anyway. A demo that shows one of them closed is painting it back — `$D021` set to the border colour over those lines from another raster interrupt — not closing it.
+**Bottom only, top only.** Neither exists with RSEL alone: the flip-flop has one set (a bottom comparison) and one reset (a top comparison), and once the bottom set has been suppressed nothing can set it again before the next frame's line 247, so the two borders open as a pair. An earlier version of this section listed both as variations; the recipe below writes nothing near line 51 and the top opens anyway. A demo that shows one of them closed is painting it back (`$D021` set to the border colour over those lines from another raster interrupt), not closing it.
 
-**Full vertical open with sprite coverage.** Open both borders and position 8 sprites to tile vertically across the entire frame (possible because sprites at Y positions above the visible area wrap around in the sprite's own 0-255 coordinate space). Combined with sprite multiplexing this covers nearly the full frame height with sprites.
+**Full vertical open with sprite coverage.** Open both borders and position 8 sprites to tile vertically across the entire frame (possible because sprites at Y positions above the visible area wrap around in the sprite's own 0-255 coordinate space). With sprite multiplexing this covers nearly the full frame height.
 
-**RSEL held at 0 for the full frame.** Opens nothing: both comparison lines simply move (top 55, bottom 247) and the border is drawn four lines further in at top and bottom. An earlier version of this paragraph said it "permanently opens both borders"; the control build with RSEL=0 from line 55 to line 0 shows a closed frame whose bottom border begins on line 247 (VICE x64sc 3.10). Worth knowing as the side effect of a raster split that leaves RSEL clear when line 247 arrives.
+**RSEL held at 0 for the full frame.** Opens nothing: both comparison lines simply move (top 55, bottom 247) and the border is drawn four lines further in at top and bottom. An earlier version of this paragraph said it "permanently opens both borders"; the control build with RSEL=0 from line 55 to line 0 shows a closed frame whose bottom border begins on line 247 (VICE x64sc 3.10). It is also the side effect of a raster split that leaves RSEL clear when line 247 arrives.
 
 ### Cycle budget
 
-Coarse: the writes need a line, not a cycle. A raster IRQ on any of lines 248–250 clears RSEL in time with the KERNAL dispatcher's latency included; 247 is too early and 251 too late for a write that lands after cycle 37 (see Why it works). RSEL is part of $D011 with YSCROLL (bits 2–0), DEN (bit 4), BMM and ECM (bits 5 and 6) and RST8 (bit 7), so the toggle is a read-modify-write — `LDA $D011`, `AND` or `ORA` immediate, `STA $D011`: 4 + 2 + 4 = 10 cycles — with bit 7 masked off. With the interrupt bookkeeping ($D012, $0314/$0315, the $D019 acknowledge and the exit) each handler body is about 40 cycles plus the 29-cycle dispatcher, twice per frame — except that the restore handler exits through `$EA31`, the full KERNAL service, which costs about 190 cycles once per frame while no key is held and about 1,600 while one is (measured in VICE x64sc for `recipes/kickassembler/raster-bars.md`; an earlier version of this sentence said "about a thousand", a figure nobody had measured); the opening handler exits through `$EA81`. An earlier version of this paragraph said the write "just needs to land before the end of line 248" and gave the RMW as "3 cycles"; both are replaced by the measured window and the cycle count above.
+Coarse: the writes need a line, not a cycle. A raster IRQ on any of lines 248–250 clears RSEL in time with the KERNAL dispatcher's latency included; 247 is too early and 251 too late for a write that lands after cycle 37 (see Why it works). RSEL is part of $D011 with YSCROLL (bits 2–0), DEN (bit 4), BMM and ECM (bits 5 and 6) and RST8 (bit 7), so the toggle is a read-modify-write (`LDA $D011`, `AND` or `ORA` immediate, `STA $D011`: 4 + 2 + 4 = 10 cycles) with bit 7 masked off. With the interrupt bookkeeping ($D012, $0314/$0315, the $D019 acknowledge and the exit) each handler body is about 40 cycles plus the 29-cycle dispatcher, twice per frame, except that the restore handler exits through `$EA31`, the full KERNAL service, which costs about 190 cycles once per frame while no key is held and about 1,600 while one is (measured in VICE x64sc for `recipes/kickassembler/raster-bars.md`; an earlier version of this sentence said "about a thousand", a figure nobody had measured); the opening handler exits through `$EA81`. An earlier version of this paragraph said the write "just needs to land before the end of line 248" and gave the RMW as "3 cycles"; both are replaced by the measured window and the cycle count above.
 
 ### Recipes
 
@@ -709,7 +709,7 @@ Coarse: the writes need a line, not a cycle. A raster IRQ on any of lines 248–
 
 A frame whose only content is sprites has no use for the character display, and the character display is what costs: twenty-five badlines a frame, 40 to 43 cycles each, and a border that hides any sprite outside lines 51 to 250. Switching the display off for the whole frame removes every badline, and opening the top and bottom border as `topbottom_border_open` does lets sprites stand on any of the drawable lines, 272 on PAL and 247 on NTSC in VICE's picture. The CPU keeps every cycle except sprite DMA and the interrupts that run the mode. Measured in VICE x64sc 3.10 with eight sprites on screen: 18,080 cycles a frame free on PAL against 16,940 for the ordinary text screen with the same sprites, 15,520 against 14,460 on NTSC.
 
-This is the natural frame for a sprite multiplexer with nothing behind it, a sprite-built logo or scroller, a vector-ball display, or any effect that wants the screen as a black backdrop and the CPU to itself.
+It suits a sprite multiplexer with nothing behind it, a sprite-built logo or scroller, a vector-ball display, or any effect that wants the screen as a black backdrop and the CPU to itself.
 
 ### How
 
@@ -789,11 +789,11 @@ An interrupt every frame at line 253 is also a free frame tick; the recipe count
 
 ### Why
 
-The VIC-II supports four display modes: standard character mode (text), multicolor character mode, standard bitmap mode, and multicolor bitmap mode. (Extended Background Color mode is a fifth; it is exclusive with multicolor and bitmap — ECM+MCM and ECM+BMM are the black "invalid" modes — and restricts the character set to 64 glyphs, since character code bits 7–6 select one of four background colours. Sprites, single- or multicolour, are unaffected: measured in VICE x64sc, a sprite renders identically with ECM set and clear. An earlier version of this sentence said ECM was "effectively mutually exclusive with sprites"; it is not.) Each mode is selected by the combination of $D011 bit 5 (BMM, bitmap mode), $D011 bit 6 (ECM, extended background color), and $D016 bit 4 (MCM, multicolor mode).
+The VIC-II supports four display modes: standard character mode (text), multicolor character mode, standard bitmap mode, and multicolor bitmap mode. (Extended Background Color mode is a fifth; it is exclusive with multicolor and bitmap (ECM+MCM and ECM+BMM are the black "invalid" modes) and restricts the character set to 64 glyphs, since character code bits 7–6 select one of four background colours. Sprites, single- or multicolour, are unaffected: measured in VICE x64sc, a sprite renders identically with ECM set and clear. An earlier version of this sentence said ECM was "effectively mutually exclusive with sprites"; it is not.) Each mode is selected by the combination of $D011 bit 5 (BMM, bitmap mode), $D011 bit 6 (ECM, extended background color), and $D016 bit 4 (MCM, multicolor mode).
 
-Changing these mode bits mid-frame via a raster IRQ switches the display from one mode to another at the target scanline. This is the fundamental mechanism behind one of the most common C64 screen layouts: a full-resolution or multicolor bitmap for the game or demo canvas, with a character-mode status bar at the top or bottom of the screen. On a single-display-mode system this layout would be impossible. With raster mode splits it is standard.
+Changing these mode bits mid-frame via a raster IRQ switches the display from one mode to another at the target scanline. One of the most common C64 screen layouts depends on it: a full-resolution or multicolor bitmap for the game or demo canvas, with a character-mode status bar at the top or bottom of the screen. A system with one display mode per frame cannot show this layout.
 
-The technique also underlies FLI (Flexible Line Interpretation) and IFLI effects, where mode bits and memory pointers are changed on every single line to defeat the VIC-II's 8-pixel-tall color attribute resolution. FLI is a separate technique (out of scope for this document), but the per-line mode change it uses is a direct extension of raster_split_modes at the limit of 1 IRQ per line.
+The technique also underlies FLI (Flexible Line Interpretation) and IFLI effects, where mode bits and memory pointers are changed on every line to get past the VIC-II's 8-pixel-tall color attribute resolution. FLI is a separate technique (not covered here); its per-line mode change is raster_split_modes at the limit of 1 IRQ per line.
 
 ### How
 
@@ -803,9 +803,9 @@ The mode change sequence in a raster IRQ handler:
 2. Write $D016 to set or clear MCM for the new mode.
 3. Write $D018 to point to the video matrix and character/bitmap base for the new mode's data.
 
-All three writes should be performed as close together as possible and as close to the start of the target line as possible, to avoid partial-line glitches. Writing $D011 a cycle late while $D016 has already been written produces an undefined intermediate mode for one cycle, which can manifest as pixel garbage on the first character position of the split line.
+Make all three writes as close together and as close to the start of the target line as possible, to avoid partial-line glitches. Writing $D011 a cycle late while $D016 has already been written produces an undefined intermediate mode for one cycle, which can show as pixel garbage on the first character position of the split line.
 
-The mode change can happen anywhere in the frame: top to bottom, multiple splits, alternating modes, or even per-line cycling. The only constraint is cycle budget per line.
+The mode change can happen anywhere in the frame: top to bottom, multiple splits, alternating modes, or per-line cycling. The only constraint is cycle budget per line.
 
 ### Why it works
 
@@ -817,27 +817,27 @@ The YSCROLL field ($D011 bits 2-0) interacts with mode changes: if YSCROLL chang
 
 ### Variations
 
-**Bitmap canvas with text status bar.** The most common application: bitmap mode for lines 50-200, character mode for lines 201-250 (or vice versa). $D018 points to bitmap data in the upper half of the frame and character data in the lower half. One raster IRQ handles the switch; another switches back at the top of the next frame.
+**Bitmap canvas with text status bar.** The most common use: bitmap mode for lines 50-200, character mode for lines 201-250 (or vice versa). $D018 points to bitmap data in the upper half of the frame and character data in the lower half. One raster IRQ handles the switch; another switches back at the top of the next frame.
 
 **Multiple mode zones.** Three or more display mode regions in a single frame. Each transition requires one raster IRQ. With 16 IRQ slots in Oscar64's rasterirq system, up to 16 transitions per frame are possible.
 
-**Per-line FLI preparation.** Set up mode bits and $D018 on every single line to defeat attribute color resolution. Full FLI implementation requires writing $D018 and possibly $D011 YSCROLL on every line within the FLI zone. This is a distinct and very demanding technique but shares the mode-change mechanism exactly.
+**Per-line FLI preparation.** Set up mode bits and $D018 on every line to get past the attribute color resolution. Full FLI requires writing $D018 and possibly $D011 YSCROLL on every line within the FLI zone. It is a separate technique with the same mode-change mechanism.
 
 **Multicolor-to-hires split.** Switch from multicolor character mode to hires character mode mid-frame. Used for effects where the upper portion of the screen uses 4-color characters and the lower uses high-resolution black-and-white data.
 
 ### Cycle budget
 
-Each raster split costs: 3 writes ($D011, $D016, $D018) × 4 cycles = 12 cycles minimum. With IRQ overhead — 13-20 cycles with the KERNAL out and $FFFE pointing at the handler, 42-50 through $0314, where the handler is entered on cycle 37-43 — a mode split consumes approximately 25-35 or 55-65 cycles on the split line respectively. An earlier version gave only 13-20 without naming the entry path.
+Each raster split costs: 3 writes ($D011, $D016, $D018) × 4 cycles = 12 cycles minimum. With IRQ overhead (13-20 cycles with the KERNAL out and $FFFE pointing at the handler, 42-50 through $0314, where the handler is entered on cycle 37-43) a mode split uses about 25-35 or 55-65 cycles on the split line respectively. An earlier version gave only 13-20 without naming the entry path.
 
-On a badline, a mode-split IRQ has only 20 usable cycles on PAL (cycles 1-11 and 55-63; 12-14 for writes only). A 12-cycle triple write fits, but combined with IRQ overhead it is tight. The standard mitigation is to position the mode split on a non-badline.
+On a badline, a mode-split IRQ has only 20 usable cycles on PAL (cycles 1-11 and 55-63; 12-14 for writes only). A 12-cycle triple write fits, with little room for the IRQ overhead. The usual fix is to put the mode split on a non-badline.
 
-YSCROLL manipulation during a mode split requires a fourth write to $D011 — but since $D011 carries both YSCROLL and mode bits, the YSCROLL write and the mode-bit write must be combined into one read-modify-write, costing 10 cycles instead of 4 for two separate stores. If the mode bits and YSCROLL value are known in advance, a precomputed combined value can be stored directly in 4 cycles.
+YSCROLL manipulation during a mode split requires a fourth write to $D011. Since $D011 carries both YSCROLL and mode bits, the YSCROLL write and the mode-bit write must be combined into one read-modify-write, costing 10 cycles instead of 4 for two separate stores. If the mode bits and YSCROLL value are known in advance, a precomputed combined value can be stored directly in 4 cycles.
 
-The $D018 write is the most timing-sensitive of the three, and its two halves behave differently. The character/bitmap base (CB bits 3-1) is read on every g-access, so a mid-row write changes the glyph or bitmap source from the very line the write lands on — measured in VICE x64sc: a CB switch on line 100 redrew lines 100-106 of that row from the new set, and a CB switch on line 98 redrew line 98, the last line of the previous row. A CB-only split therefore takes effect where it lands, and the advice to fire the IRQ "on the line before the first badline" tears that previous row's last line unless the store completes after the last g-access (cycle 55 on PAL) of that line; land the write in cycles 56-63 of the previous line or before cycle 16 of the zone's first line. The video-matrix pointer (VM bits 7-4) is consumed by the badline's c-accesses (cycles 15-54), whose 40 codes are held in the row buffer, so a VM change shows on the next character row — measured: a VM switch on line 100 left row 6 unchanged and row 7 drawn from the new matrix. Note the same VM bits also address the sprite pointers at VM+$3F8, which the p-accesses read on every line, so a VM move shifts sprite pointer reads at once. Put a split that moves the video matrix anywhere in the 8 lines before the zone's first badline, before cycle 15 of that badline. An earlier version of this paragraph said the whole of $D018 was latched once per row at the badline fetch, so a late write was ignored for eight lines; that is true only of the VM half.
+The $D018 write is the most timing-sensitive of the three, and its two halves behave differently. The character/bitmap base (CB bits 3-1) is read on every g-access, so a mid-row write changes the glyph or bitmap source from the line the write lands on. Measured in VICE x64sc: a CB switch on line 100 redrew lines 100-106 of that row from the new set, and a CB switch on line 98 redrew line 98, the last line of the previous row. A CB-only split therefore takes effect where it lands, and the advice to fire the IRQ "on the line before the first badline" tears that previous row's last line unless the store completes after the last g-access (cycle 55 on PAL) of that line; land the write in cycles 56-63 of the previous line or before cycle 16 of the zone's first line. The video-matrix pointer (VM bits 7-4) is consumed by the badline's c-accesses (cycles 15-54), whose 40 codes are held in the row buffer, so a VM change shows on the next character row. Measured: a VM switch on line 100 left row 6 unchanged and row 7 drawn from the new matrix. The same VM bits also address the sprite pointers at VM+$3F8, which the p-accesses read on every line, so a VM move shifts sprite pointer reads at once. Put a split that moves the video matrix anywhere in the 8 lines before the zone's first badline, before cycle 15 of that badline. An earlier version of this paragraph said the whole of $D018 was latched once per row at the badline fetch, so a late write was ignored for eight lines; that is true only of the VM half.
 
 ### Recipes
 
-(Standalone recipe not yet written — raster_split_modes is demonstrated as part of larger demo or game layout recipes.)
+(No standalone recipe yet. raster_split_modes appears as part of larger demo or game layout recipes.)
 
 ---
 
@@ -849,43 +849,43 @@ The $D018 write is the most timing-sensitive of the three, and its two halves be
 
 ### Why
 
-A C64 does not know which video standard it was built for, and neither does the program it is running: no register says PAL or NTSC. Yet almost everything timed by the frame or by the CPU clock differs between the two — 312 raster lines a frame against 263 (6567R8) or 262 (6567R56A), 63 cycles a line against 65 or 64, 985,248 Hz against 1,022,727 Hz (settled figures; `hardware/pal-ntsc-reference.md` has the tables). Music ticked once a frame runs a fifth too fast on NTSC, a CIA reload drifts 3.8 %, a raster interrupt set for line 280 never fires on a chip whose frame ends at 262; `pitfalls/region-timing.md` walks through all three. The cure in each case is the same: find out once, at boot, which chip this is, store the answer in a byte, and branch on it. This technique is that one measurement.
+A C64 does not know which video standard it was built for, and neither does the program it is running: no register says PAL or NTSC. Almost everything timed by the frame or by the CPU clock differs between the two: 312 raster lines a frame against 263 (6567R8) or 262 (6567R56A), 63 cycles a line against 65 or 64, 985,248 Hz against 1,022,727 Hz (settled figures; `hardware/pal-ntsc-reference.md` has the tables). Music ticked once a frame runs a fifth too fast on NTSC, a CIA reload drifts 3.8 %, a raster interrupt set for line 280 never fires on a chip whose frame ends at 262; `pitfalls/region-timing.md` covers all three. The fix in each case is to find out once, at boot, which chip this is, store the answer in a byte, and branch on it. This technique is that measurement.
 
 ### How
 
-The VIC-II's raster counter is nine bits wide: `$D012` holds the low eight and bit 7 of `$D011` (RST8) is the ninth. RST8 is therefore set for exactly the raster lines from 256 upward, and the frames of the three chips differ only in how many of those lines they have — 56 on PAL (256–311), 7 on the 6567R8 (256–262), 6 on the 6567R56A (256–261). The routine reads the length of that band:
+The VIC-II's raster counter is nine bits wide: `$D012` holds the low eight and bit 7 of `$D011` (RST8) is the ninth. RST8 is therefore set for exactly the raster lines from 256 upward, and the frames of the three chips differ only in how many of those lines they have: 56 on PAL (256–311), 7 on the 6567R8 (256–262), 6 on the 6567R56A (256–261). The routine reads the length of that band:
 
 1. Disable interrupts (`SEI`). A handler that ran for longer than a raster line would hide a line from the loop.
-2. Wait until RST8 is clear. This is not for calls that land in the middle of the band — the lines such a call skips are the smaller values, and a loop that keeps the latest one is indifferent to them (measured: the loop with this wait deleted, entered on PAL lines 256 and 300, still returned `$37`). It closes a race at the far end of the band. A call landing in the last cycles of the frame's final line takes its first `$D012` sample on that line and its RST8 check on line 0, so step 5 is reached before any value has been kept and the result is whatever the register held before the call (measured: the same wait-less loop entered on PAL line 311 with its result register preloaded to `$EE`, and the entry phase swept in 4-cycle steps, returned `$EE` at two of sixteen phases and `$37` at the other fourteen; with the wait restored, both racing phases returned `$37`). Waiting for RST8 to be clear first means step 3 can only exit at line 256, never at line 311. This page gave the mid-band reason until 2026-09-22; it was wrong.
+2. Wait until RST8 is clear. This is not for calls that land in the middle of the band: the lines such a call skips are the smaller values, and a loop that keeps the latest one is indifferent to them (measured: the loop with this wait deleted, entered on PAL lines 256 and 300, still returned `$37`). It closes a race at the far end of the band. A call landing in the last cycles of the frame's final line takes its first `$D012` sample on that line and its RST8 check on line 0, so step 5 is reached before any value has been kept and the result is whatever the register held before the call (measured: the same wait-less loop entered on PAL line 311 with its result register preloaded to `$EE`, and the entry phase swept in 4-cycle steps, returned `$EE` at two of sixteen phases and `$37` at the other fourteen; with the wait restored, both racing phases returned `$37`). Waiting for RST8 to be clear first means step 3 can only exit at line 256, never at line 311. This page gave the mid-band reason until 2026-09-22; it was wrong.
 3. Wait until RST8 is set. That is line 256 on every chip, and `$D012` reads `$00` there.
-4. While RST8 stays set, read `$D012` and keep the value — the most recent one, or the highest; inside the band they are the same. Read `$D012` first and RST8 second, and keep the sample only if RST8 was still set after it, so a read that has already wrapped to `$00` on line 0 is never recorded. The Oscar64 recipe tests RST8 at the top of its loop instead, because that is where the compiler puts a `while` condition, and keeps the highest value, which makes the wrapped `$00` harmless without the ordering; the two forms agree.
-5. When RST8 clears, the kept value is the low byte of the last line of the frame: `$37` on the 6569, `$06` on the 6567R8, `$05` on the 6567R56A. Store it, or reduce it to one flag, and re-enable interrupts. Anything that became pending during the wait — the KERNAL's 60 Hz timer interrupt, if its vector is still installed — is serviced the moment interrupts are back on, so call the routine before the KERNAL interrupt is replaced, or expect one KERNAL service to run right after it returns.
+4. While RST8 stays set, read `$D012` and keep the value (the most recent one, or the highest); inside the band they are the same. Read `$D012` first and RST8 second, and keep the sample only if RST8 was still set after it, so a read that has already wrapped to `$00` on line 0 is never recorded. The Oscar64 recipe tests RST8 at the top of its loop instead, because that is where the compiler puts a `while` condition, and keeps the highest value, which makes the wrapped `$00` harmless without the ordering; the two forms agree.
+5. When RST8 clears, the kept value is the low byte of the last line of the frame: `$37` on the 6569, `$06` on the 6567R8, `$05` on the 6567R56A. Store it, or reduce it to one flag, and re-enable interrupts. Anything that became pending during the wait (the KERNAL's 60 Hz timer interrupt, if its vector is still installed) is serviced the moment interrupts are back on, so call the routine before the KERNAL interrupt is replaced, or expect one KERNAL service to run right after it returns.
 
 For a two-way PAL/NTSC answer a shortcut suffices: any `$D012` value of `$10` or more seen while RST8 is set means PAL, because lines 272–311 exist on no NTSC chip. Keeping the whole value costs nothing more and tells the two NTSC chips apart.
 
 Measured in VICE x64sc 3.10 (rung 1): the kept value was `$37` on the default PAL model, `$06` with `-model ntsc` and `$05` with `-model oldntsc`, read back from the screen as hex digits, and the same when the run was stopped at 5,000,000 and at 8,000,000 cycles. The same wait-and-track loop, entered deliberately from raster lines 100, 300 and 311 on PAL and from 100 and 262 on NTSC, gave the right answer every time.
 
-**What does not work, and stood in this knowledge base until 2026-09-21:** polling for RST8 to become set and then reading `$D012` once. That read lands on line 256, the first line of the band, and returns `$00` on every chip — measured as `00` on all three VICE models — so a `cmp #$10` after it says NTSC unless the routine was called from inside lines 272–311 by luck. Both copies of the "shortest reliable detect" here did exactly that (`hardware/pal-ntsc-reference.md` Method 2, and the fix in `pitfalls/region-timing.md`, whose copy also fell through a `bne` after `lda #0` and so answered NTSC from either branch). Both are corrected on their own pages, with the measurements.
+**What does not work, and stood in this knowledge base until 2026-09-21:** polling for RST8 to become set and then reading `$D012` once. That read lands on line 256, the first line of the band, and returns `$00` on every chip (measured as `00` on all three VICE models), so a `cmp #$10` after it says NTSC unless the routine was called from inside lines 272–311 by luck. Both copies of the "shortest reliable detect" here did exactly that (`hardware/pal-ntsc-reference.md` Method 2, and the fix in `pitfalls/region-timing.md`, whose copy also fell through a `bne` after `lda #0` and so answered NTSC from either branch). Both are corrected on their own pages, with the measurements.
 
 ### Why it works
 
-The counter is incremented at the start of each raster line and reset to zero for line 0 (Bauer, §3.6.3; not measured here beyond the wrap values above). RST8 is nothing more than bit 8 of that counter, so it is a level, not an event: it reads 1 for the whole of lines 256 onward and 0 for the whole of lines 0–255, and a polling loop can watch it change without a raster interrupt and without touching `$D019`. The last line of the frame is the only place the three chips disagree, and it is the last line on which RST8 reads 1 — sampling the low byte until RST8 falls therefore reads that line's number without knowing it in advance. The display window is not involved: lines 256 and up are lower border or vertical blanking on every chip, and no badline can occur there since the badline condition needs a raster line between `$30` and `$F7` (Bauer, §3.5; not measured here), so with no sprites enabled — the state at boot; sprite DMA would take cycles from these lines too, since the sprite Y compare uses the low byte of the raster counter (Bauer, §3.8; not measured here) — the CPU keeps every cycle of every line in the band and a loop of fifteen to twenty-two cycles samples each line two to four times.
+The counter is incremented at the start of each raster line and reset to zero for line 0 (Bauer, §3.6.3; not measured here beyond the wrap values above). RST8 is bit 8 of that counter, so it is a level, not an event: it reads 1 for the whole of lines 256 onward and 0 for the whole of lines 0–255, and a polling loop can watch it change without a raster interrupt and without touching `$D019`. The last line of the frame is the only place the three chips disagree, and it is the last line on which RST8 reads 1. Sampling the low byte until RST8 falls therefore reads that line's number without knowing it in advance. The display window is not involved: lines 256 and up are lower border or vertical blanking on every chip, and no badline can occur there since the badline condition needs a raster line between `$30` and `$F7` (Bauer, §3.5; not measured here), so with no sprites enabled (the state at boot; sprite DMA would take cycles from these lines too, since the sprite Y compare uses the low byte of the raster counter: Bauer, §3.8; not measured here) the CPU keeps every cycle of every line in the band and a loop of fifteen to twenty-two cycles samples each line two to four times.
 
-The frame is the same length however the routine is entered, so the answer does not depend on when the program started; the two waits guarantee that sampling begins at line 256 and ends at line 0, so the band's last line is always among the samples. How long the routine holds the CPU does depend on the entry line. Called from line L below 256 it runs N − L lines, the rest of the frame; called from inside the band it runs 2N − L lines — the rest of that band, the 256 lines with RST8 clear, and the whole of the next band. So it takes at least N − 255 lines — 57 on PAL (3,591 cycles, about 3.6 ms), 8 on the 6567R8 (520 cycles, about 0.5 ms), 7 on the 6567R56A — and at most 2N − 256 lines — 368 on PAL (23,184 cycles, about 23.5 ms, 1.18 frames), 270 on the 6567R8 (17,550 cycles, about 17.2 ms, 1.03 frames), 268 on the 6567R56A (arithmetic from the settled constants). Measured in VICE x64sc 3.10 with CIA 1 timer A wrapped around the 26-byte tracking loop that `detect_region` in `pitfalls/region-timing.md` extends with its flag store, CIA interrupts masked and any pending one acknowledged first, and the wrapper's own 17 cycles taken off by a null-call control: 3,575 cycles from PAL line 255 and 23,172 from line 256; 500 and 17,535 on the 6567R8; 432 and 17,131 on the 6567R56A; 13,337 from PAL line 100 and 19,707 from line 311 — each within one line of the arithmetic. **Correction (2026-09-22):** until this date this page said the measurement "takes between one and two frames — about 40 ms on PAL, 33 ms on NTSC". That was a bound written from the shape of the loop, not measured, and it is wrong at both ends: the routine never reaches two frames, and from most entry lines it takes well under one.
+The frame is the same length however the routine is entered, so the answer does not depend on when the program started; the two waits guarantee that sampling begins at line 256 and ends at line 0, so the band's last line is always among the samples. How long the routine holds the CPU does depend on the entry line. Called from line L below 256 it runs N − L lines, the rest of the frame; called from inside the band it runs 2N − L lines: the rest of that band, the 256 lines with RST8 clear, and the whole of the next band. So it takes at least N − 255 lines: 57 on PAL (3,591 cycles, about 3.6 ms), 8 on the 6567R8 (520 cycles, about 0.5 ms), 7 on the 6567R56A. It takes at most 2N − 256 lines: 368 on PAL (23,184 cycles, about 23.5 ms, 1.18 frames), 270 on the 6567R8 (17,550 cycles, about 17.2 ms, 1.03 frames), 268 on the 6567R56A (arithmetic from the settled constants). Measured in VICE x64sc 3.10 with CIA 1 timer A wrapped around the 26-byte tracking loop that `detect_region` in `pitfalls/region-timing.md` extends with its flag store, CIA interrupts masked and any pending one acknowledged first, and the wrapper's own 17 cycles taken off by a null-call control: 3,575 cycles from PAL line 255 and 23,172 from line 256; 500 and 17,535 on the 6567R8; 432 and 17,131 on the 6567R56A; 13,337 from PAL line 100 and 19,707 from line 311, each within one line of the arithmetic. **Correction (2026-09-22):** until this date this page said the measurement "takes between one and two frames — about 40 ms on PAL, 33 ms on NTSC". That was a bound written from the shape of the loop, not measured, and it is wrong at both ends: the routine never reaches two frames, and from most entry lines it takes well under one.
 
 ### Variations
 
-**Time a frame with a CIA timer.** Start a CIA timer at one raster line 0 and read it at the next: about 19,656 cycles on PAL (312 × 63), 17,095 on the 6567R8 (263 × 65), 16,768 on the 6567R56A (262 × 64) — arithmetic from the settled constants; this variant was not run here. `hardware/pal-ntsc-reference.md` Method 1 lists it. It yields the cycle count, which the raster method does not, at the cost of a CIA timer, more code and a threshold to choose. On a stock machine the raster band is the shorter and more direct read.
+**Time a frame with a CIA timer.** Start a CIA timer at one raster line 0 and read it at the next: about 19,656 cycles on PAL (312 × 63), 17,095 on the 6567R8 (263 × 65), 16,768 on the 6567R56A (262 × 64) (arithmetic from the settled constants; this variant was not run here). `hardware/pal-ntsc-reference.md` Method 1 lists it. It yields the cycle count, which the raster method does not, at the cost of a CIA timer, more code and a threshold to choose. On a stock machine the raster band is the shorter read.
 
 **Store, do not repeat.** Take the measurement once, before interrupts are installed, into a byte the rest of the program branches on: the music tick (`pal_ntsc_tempo_mismatch`), CIA reloads (`cia_timer_phi2_difference`), raster tables (`raster_line_count_difference`). Nothing about the chip changes later.
 
-**Three-way or two-way.** Keep the raw last-line byte if the program counts cycles per line or lines per frame on NTSC — the R8 and the R56A differ in both, 65 against 64 and 263 against 262 (settled); reduce it to PAL/NTSC with one compare against `$10` otherwise.
+**Three-way or two-way.** Keep the raw last-line byte if the program counts cycles per line or lines per frame on NTSC (the R8 and the R56A differ in both, 65 against 64 and 263 against 262, settled); reduce it to PAL/NTSC with one compare against `$10` otherwise.
 
-**The KERNAL's own answer.** The stock KERNAL takes a two-way measurement of its own at reset and leaves it at `$02A6` (PALNTS): 1 for PAL, 0 for NTSC. The mechanism is in the ROM bytes (`kernal-901227-03.bin`, read here): the reset path at `$FF5B` initialises the VIC from a table that sets the raster compare to line 311 and acknowledges `$D019`, clears the screen, waits for `$D012` to read zero, then reads `$D019`, keeps bit 0 and stores it at `$02A6` — the raster-compare flag can only have been raised if a line 311 exists. It cannot tell the R8 from the R56A, a replacement KERNAL or an earlier program may have left anything there, and its reliability was not measured here; `hardware/pal-ntsc-reference.md` Method 3 has the detail. Measure the chip yourself when the answer matters.
+**The KERNAL's own answer.** The stock KERNAL takes a two-way measurement of its own at reset and leaves it at `$02A6` (PALNTS): 1 for PAL, 0 for NTSC. The mechanism is in the ROM bytes (`kernal-901227-03.bin`, read here): the reset path at `$FF5B` initialises the VIC from a table that sets the raster compare to line 311 and acknowledges `$D019`, clears the screen, waits for `$D012` to read zero, then reads `$D019`, keeps bit 0 and stores it at `$02A6`. The raster-compare flag can only have been raised if a line 311 exists. It cannot tell the R8 from the R56A, a replacement KERNAL or an earlier program may have left anything there, and its reliability was not measured here; `hardware/pal-ntsc-reference.md` Method 3 has the detail. Measure the chip when the answer matters.
 
 ### Cycle budget
 
-None per line. The routine runs once, with interrupts disabled, and holds the CPU for between 57 and 368 lines on PAL (about 3.6 to 23.5 ms) or between 8 and 270 lines on the 6567R8 (about 0.5 to 17 ms) depending on where in the frame it is entered — a fifth of a frame at best, 1.2 frames at worst, measured as described above; nothing else is expected to run during it. It takes no raster interrupt and writes neither `$D011` nor `$D012`. 36 bytes with the compare and flag store as `detect_region` in `pitfalls/region-timing.md` (assembler count); the hardware page's Method 1 `detect_region` returns a three-way code in A and its Method 2 `detect_pal` a carry flag, both with the same `wait_lo` guard.
+None per line. The routine runs once, with interrupts disabled, and holds the CPU for between 57 and 368 lines on PAL (about 3.6 to 23.5 ms) or between 8 and 270 lines on the 6567R8 (about 0.5 to 17 ms) depending on where in the frame it is entered: a fifth of a frame at best, 1.2 frames at worst, measured as described above; nothing else is expected to run during it. It takes no raster interrupt and writes neither `$D011` nor `$D012`. 36 bytes with the compare and flag store as `detect_region` in `pitfalls/region-timing.md` (assembler count); the hardware page's Method 1 `detect_region` returns a three-way code in A and its Method 2 `detect_pal` a carry flag, both with the same `wait_lo` guard.
 
 ### Recipes
 
@@ -916,13 +916,12 @@ A game loop that runs as fast as the CPU allows draws at a rate the VIC-II
 does not share: sprites move while the beam is drawing them, screen writes
 land half-way down a character row, and the speed of the game changes with
 the amount on screen. Locking the loop to the frame fixes all three. Once a
-frame, at a raster line of your choosing, the loop wakes, does its work, and
-goes back to waiting. Everything that follows needs an answer to three
-questions: how does the loop know a new frame has begun, how much of the
-frame did the work take, and did any frame go by without it. This technique
-is the standard answer to each, and it is the first thing to put in a game
-before anything else is written, because the budget bar it gives you is the
-profiler you will use for the rest of the project.
+frame, at a chosen raster line, the loop wakes, does its work, and
+goes back to waiting. Three questions follow: how does the loop know a new
+frame has begun, how much of the frame did the work take, and did any frame
+go by without it. This technique answers each. Put it in a game before
+anything else, because its budget bar is the profiler for the rest of the
+project.
 
 ### How
 
@@ -933,7 +932,7 @@ eight in `$D012` and RST8 in bit 7 of `$D011`, and RST8 is a level: it reads
 line 256 on every chip. That is what Oscar64's `vic_waitBottom()` does
 (`vic.c` lines 62 to 66), and `vic_waitFrame()` first spins until RST8 is
 clear and then until it is set (lines 74 to 80), so two calls in a row are
-always one frame apart. The distinction matters: the RST8 band is 56 lines
+always one frame apart. The difference counts: the RST8 band is 56 lines
 on PAL and 7 on the 6567R8 (settled frame lengths), so a loop that calls
 `vic_waitBottom()` twice with less than seven lines of work between the
 calls on NTSC gets two returns from one frame (arithmetic from the source
@@ -946,7 +945,7 @@ values 0 to 55 each occur on two lines of a PAL frame (0 to 6 on the
 6567R8), and a loop that watches for the counter to "wrap" fires twice a
 frame unless it also reads RST8. A spin on `$D012 == N` for a line at or
 above 256 needs the ninth bit or it matches the low line too; Oscar64's
-`vic_waitLine()` does exactly this, matching the low byte and then checking
+`vic_waitLine()` does this, matching the low byte and then checking
 RST8 against bit 8 of the target (`vic.c` lines 91 to 101). An equality spin
 has a second weakness: if anything holds the CPU for longer than a line
 while it is spinning, the target line goes by unseen and the loop waits a
@@ -959,24 +958,24 @@ form `vic_waitBelow()` uses (`vic.c` lines 103 to 121), can end late but
 cannot miss. And a target line the chip does not have, 300 on NTSC, never
 matches at all: the loop hangs (`pitfalls/region-timing.md`).
 
-**The wait, with an interrupt.** The cleaner form takes one raster interrupt
+**The wait, with an interrupt.** This form takes one raster interrupt
 at the sync line and lets it do one thing: increment a byte. The main loop
 keeps its own copy of the byte and spins while the two are equal. The
 interrupt only ever increments and the main loop only ever catches up;
 nothing is cleared across the boundary, so a tick cannot be lost between a
 read and a clear, and the byte is one byte so the read needs no `SEI`. In
 Oscar64, `rirq_count` and `rirq_wait()` (`rasterirq.c` lines 606 to 614) are
-this exact loop, with the byte incremented once per frame by the dispatcher
+this loop, with the byte incremented once per frame by the dispatcher
 after the last slot of the schedule; a `rirq_call` to an `__interrupt`
-function that increments a byte of your own is the same thing with the
+function that increments a program byte is the same thing with the
 counting on the page. The recipe below does the latter. A plain flag,
 set by the interrupt and cleared by the loop, works too, but it cannot count
 how many frames were missed; the tick byte can.
 
 **A frame counter.** Count the loop's iterations in a 16-bit variable owned
 by the main loop. That is the game's clock: animation phases, spawn timers
-and music tempo divide it. Count ticks separately if you also want a clock
-that keeps running while the loop is late.
+and music tempo divide it. Count ticks separately for a clock that keeps
+running while the loop is late.
 
 **Dropped-frame detection.** When the wait ends, subtract the copy from the
 tick byte in eight bits. The result is 1 when the loop kept up and more when
@@ -996,7 +995,7 @@ one and two frames of work (arithmetic; only the tick form was run here).
 the wait and the background colour as the last thing before it. The beam
 paints whatever `$D020` holds into the border as it goes, so the border is
 lit for exactly the lines the loop was working and the band's lower end is
-the budget used. Every C64 programmer does this; it costs two stores and it
+the budget used. C64 programmers use this as standard; it costs two stores and
 turns the raster into a profiler with a resolution of one line, which is 63
 cycles. Measured in VICE x64sc 3.10, rung 1 (`recipes/oscar64/frame-sync-loop.md`,
 PNG read down the border column): an IRQ on rirq row 250, landing on
@@ -1041,7 +1040,7 @@ lines; the bar shows the cost as extra lines.
 ### Variations
 
 **Flag instead of tick.** The interrupt sets a byte to 1 and the main loop
-clears it. Simplest possible form; cannot count missed frames, and a loop
+clears it. The simplest form; it cannot count missed frames, and a loop
 that runs long finds the flag already set and starts the next frame at once,
 exactly as the tick form does.
 
@@ -1277,8 +1276,8 @@ compare value, once per frame per value, and holds /IRQ low while IRST and
 ERST (`$D01A` bit 0) are both set. Writing 1 to `$D019` bit 0 clears IRST
 and nothing else. The compare value can be changed at any time; the next
 match is at the new line, in this frame if it is still ahead of the beam
-and in the next frame if not. That is the whole mechanism: one compare
-register, re-pointed once per interrupt, walks the beam through the table.
+and in the next frame if not. So one compare register, re-pointed once per
+interrupt, walks the beam through the table.
 Because the interrupt is level-triggered, a match that arrives while the
 CPU has interrupts disabled is not lost as long as IRST is still set when
 `RTI` clears the I flag; that is why the acknowledge belongs at the start of

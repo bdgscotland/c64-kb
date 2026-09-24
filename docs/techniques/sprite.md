@@ -19,11 +19,9 @@ the CPU nothing; an earlier version of this paragraph said data DMA runs on
 every line a sprite is enabled.)
 
 The eight sprites are individually positioned, colored, expanded, and
-prioritized via registers at $D000–$D02E. The fundamental constraint every
-sprite technique works around: only eight hardware sprites exist, the frame is
-312 lines on PAL (263 on NTSC), and sprite DMA competes with the CPU for bus
-access. Everything below describes how to work within, around, or deliberately
-against those constraints.
+prioritized via registers at $D000–$D02E. Every sprite technique works around
+three limits: only eight hardware sprites exist, the frame is 312 lines on PAL
+(263 on NTSC), and sprite DMA competes with the CPU for bus access.
 
 ---
 
@@ -43,17 +41,16 @@ against those constraints.
 ### Why
 
 A game with a scrolling playfield, player character, several enemy types, and
-projectiles quickly exceeds eight simultaneous on-screen objects. The VIC-II
-provides only eight hardware sprites per frame, but a typical action game needs
-twelve to twenty-four distinct moving objects visible at once. The 8-sprite
-multiplexer is the first level of the solution: reuse each of the eight hardware
-sprites multiple times within a single frame by reprogramming them between
-uses.
+projectiles exceeds eight simultaneous on-screen objects. The VIC-II provides
+only eight hardware sprites per frame, but a typical action game needs twelve
+to twenty-four distinct moving objects visible at once. The 8-sprite
+multiplexer reuses each of the eight hardware sprites several times within a
+single frame by reprogramming them between uses.
 
 ### How
 
-The core idea is time-division multiplexing along the Y axis. Before the frame
-begins, sort your logical sprite list by ascending Y position. Divide the screen
+This is time-division multiplexing along the Y axis. Before the frame
+begins, sort the logical sprite list by ascending Y position. Divide the screen
 into horizontal bands: the top band gets the first pass of the eight hardware
 sprites; below that, after each logical sprite has been drawn, re-arm the
 hardware sprites with the attributes of the next logical sprite waiting in line.
@@ -70,12 +67,12 @@ In practice:
 4. Acknowledge the interrupt ($D019), re-arm for the group after that, then
    return.
 
-The trick is that the VIC-II reads sprite data on the *current* raster line but
-compares the hardware sprite Y register at the *start* of each line. Once the
-chip has started drawing a sprite it continues drawing its pixel rows even if
-you change the Y register partway through. You can therefore safely repoint the
+The VIC-II reads sprite data on the *current* raster line but compares the
+hardware sprite Y register at the *start* of each line. Once the chip has
+started drawing a sprite it continues drawing its pixel rows even if the Y
+register changes partway through. The handler can therefore repoint the
 hardware sprite to a new logical sprite's data as soon as the old one has
-started its last pixel row — provided your IRQ fires before the new Y position
+started its last pixel row, provided the IRQ fires before the new Y position
 is reached.
 
 ### Why it works
@@ -89,18 +86,17 @@ has been reached and the chip is counting through its 21 rows), changes to the
 Y register take effect for the *next* activation comparison, not the current
 one.
 
-This means the hardware gives you a full 21 lines of safe window per sprite:
-after you see the sprite start rendering (raster counter passes its Y), you have
-21 lines to change the Y register and pointer to point at the next logical
-sprite before the VIC looks for its new activation. The raster IRQ, triggered at
-the right Y value via $D012/$D011, fires the CPU just in time to perform those
-register writes.
+Each sprite therefore gives a window of 21 lines: once the sprite starts
+rendering (the raster counter passes its Y), there are 21 lines to change the
+Y register and pointer to the next logical sprite before the VIC looks for its
+new activation. The raster IRQ, triggered at the right Y value via
+$D012/$D011, starts the CPU on those register writes in time.
 
 ### Variations
 
 **Double-y-frame:** Instead of pure Y-band multiplexing, the interrupt fires
-just below each sprite's *bottom* edge. This gives maximum flexibility but
-requires careful ordering to avoid races when two logical sprites have nearly
+just below each sprite's *bottom* edge. This is the most flexible scheme, but
+it needs an ordering that avoids races when two logical sprites have nearly
 the same Y position.
 
 **Fixed three-pass:** Split the screen into three equal-height bands (roughly
@@ -113,14 +109,14 @@ same-image, same-color sprite swarms (bullet patterns, particle effects).
 
 ### Cycle budget
 
-On PAL, each raster line is 63 cycles. Through the KERNAL vector ($0314) your
-handler's first instruction runs 36 cycles after the interrupt is taken — 7 for
-the interrupt sequence and 29 for the $FF48 dispatcher (PHA TXA PHA TYA PHA TSX
-LDA $0104,X AND #$10 BEQ JMP ($0314)) — plus 0–6 cycles of jitter from the
+On PAL, each raster line is 63 cycles. Through the KERNAL vector ($0314) the
+handler's first instruction runs 36 cycles after the interrupt is taken (7 for
+the interrupt sequence and 29 for the $FF48 dispatcher: PHA TXA PHA TYA PHA TSX
+LDA $0104,X AND #$10 BEQ JMP ($0314)), plus 0–6 cycles of jitter from the
 interrupted instruction, and more if the interrupt lands on a badline.
 Acknowledging $D019 costs about 6 more, and the bare exit through $EA81 (PLA
 TAY PLA TAX PLA RTI) 22, so the round trip is about 64 cycles, a full raster
-line, of which the 36–42 before your first write are what eat into the slack.
+line, of which the 36–42 before the first write eat into the slack.
 Banking the KERNAL out and pointing $FFFE/$FFFF at the handler removes the
 29-cycle dispatcher. (An earlier version of this section put the whole
 entry/acknowledge/exit overhead at about 15 cycles, which is not consistent
@@ -128,8 +124,8 @@ with the 29-cycle dispatcher documented in `raster.md`.) With 8 sprites per
 group, writing each sprite's Y ($D001+2n), image pointer (screen + $3F8 + n),
 and color ($D027+n) costs 3 stores × 4 cycles each = 12 cycles per sprite × 8
 sprites = 96 cycles. Entry of 36–42 cycles plus 96 cycles of writes is 132–138
-cycles, already more than two 63-cycle lines, so you need at least 3 lines of
-slack (not 2, as this section used to say) between the IRQ trigger line and the
+cycles, already more than two 63-cycle lines, so at least 3 lines of
+slack are needed (not 2, as this section used to say) between the IRQ trigger line and the
 first new sprite's Y position to complete all writes before the VIC latches the
 next activation. In practice, target 3–4 lines of slack.
 
@@ -161,8 +157,8 @@ sine-table motion, a demonstration payload.
 
 ### Why
 
-The basic 8-sprite multiplexer described above can extend to 16 in a
-straightforward two-pass design. Going beyond 16 — to 24, 32, or more — requires
+The 8-sprite multiplexer above extends to 16 in a two-pass design. Going
+beyond 16 (to 24, 32, or more) requires
 tighter IRQ scheduling, Y-sorted lists, and careful management of the MSB X
 register ($D010) across passes. Scene-tier demoscene sprite engines routinely
 display 30+ logical sprites on PAL systems by splitting the frame into three or
@@ -171,7 +167,7 @@ sprite-based status bars use the same approach.
 
 ### How
 
-The algorithm scales naturally from the 8-sprite multiplexer:
+The algorithm extends the 8-sprite multiplexer:
 
 1. **Sort by Y:** Before each frame, sort the entire logical sprite array by
    ascending Y position. Oscar64's `vspr_sort()` performs an insertion sort,
@@ -185,7 +181,7 @@ The algorithm scales naturally from the 8-sprite multiplexer:
 
 3. **Schedule reuse IRQs per hardware slot:** For each logical sprite beyond
    the first eight (sorted index ti+8, hardware slot ti & 7), `vspr_update()`
-   calls `rirq_move(ti, spriteYPos[ti + 1] + 23)` — the raster line two below
+   calls `rirq_move(ti, spriteYPos[ti + 1] + 23)`: the raster line two below
    the bottom of the sprite that slot is currently showing (the previous
    occupant's Y + 21 lines + 2 lines of IRQ latency margin), not a line derived
    from the incoming sprite's Y. It then stores the incoming sprite's Y, X (low
@@ -196,7 +192,7 @@ The algorithm scales naturally from the 8-sprite multiplexer:
    previous sprite has finished, and the `80 + 4*i` rows set in `vspr_init()`
    are placeholders overwritten every frame. (An earlier version of this step
    said the IRQ was placed "just above the first sprite in the group"; the
-   incoming sprite's Y is only written as data — `sprites.c` L318/L330.)
+   incoming sprite's Y is only written as data; see `sprites.c` L318/L330.)
 
 4. **MSB-X accumulation:** Sprites whose X position exceeds 255 require bit n
    of $D010 to be set. Because $D010 covers all eight sprites in a single byte,
@@ -216,7 +212,7 @@ first eight gets one slot in the `spirq` array (`VSPRITES_MAX - 8` entries, 8
 by default for 16 total; raise `VSPRITES_MAX` to extend). The raster IRQ
 executor in `rasterirq.c` fires each slot when the raster counter matches the
 programmed line, runs that slot's code template, and immediately re-arms for
-the next slot. The template is not just "five STAs": each `rirq_build` template
+the next slot. The template is more than five STAs: each `rirq_build` template
 starts with a raster busy-wait (LDY #/LDX #/CMP $D012/BCS) that holds the CPU
 from the IRQ at row−1 (row−2 via the KERNAL vector) until $D012 reads row+1,
 then does the five writes (Y, X low byte, image pointer, colour, $D010 mask),
@@ -229,14 +225,14 @@ re-arm or exit.
 
 Because `vspr_init` builds one slot per virtual sprite beyond the first eight
 (hardware sprite i & 7, moved to that sprite's Y + 23 each frame), 24 vspr
-sprites cost 16 reuse IRQs per frame — roughly 16 × 250 ≈ 4,000 cycles, about
+sprites cost 16 reuse IRQs per frame: roughly 16 × 250 ≈ 4,000 cycles, about
 20 % of PAL's 312 × 63 = 19,656 cycles per frame, not the 120 cycles this
 section used to claim. A hand-scheduled three-pass multiplexer that rewrites
 all eight sprites per IRQ (as the KickAssembler recipe does) is a different
 design with three IRQs per frame; the figures above are for the `vspr_*`
 per-slot design. The other constraint is Y-band density: if ten logical
-sprites cluster within a 21-line band, you only get one pass over them, not
-ten; duplicates at the same Y simply are not all visible simultaneously.
+sprites cluster within a 21-line band, they get one pass, not ten; duplicates
+at the same Y are not all visible at once.
 
 ### Variations
 
@@ -246,7 +242,7 @@ file does not reach `sprites.c`, and raise `NUM_IRQS` with it or `rasterirq.c`
 warns "Index out of bounds"). Each additional logical sprite adds one raster
 IRQ slot and needs a 21-line gap below its slot's previous occupant. With vspr
 slots at ~250 cycles each, 10 % of a PAL frame is about eight reuse IRQs, i.e.
-about 16 logical sprites — not the "roughly 48" this section used to say,
+about 16 logical sprites, not the "roughly 48" this section used to say,
 which assumed 25-cycle slots.
 
 **Per-sprite priority within a pass:** Within one pass (one set of eight
@@ -265,7 +261,7 @@ it a hand-scheduled, cycle-exact demoscene multiplexer, which it is not.)
 
 With Oscar64's `vspr_*` system and `VSPRITES_MAX=24`, each of the 16 reuse
 slots costs roughly 225–280 cycles (entry, busy-wait to row+1, five writes,
-re-arm, exit — measured in VICE, PAL, RAM vector), about 4,000 cycles per
+re-arm, exit; measured in VICE, PAL, RAM vector), about 4,000 cycles per
 frame. `vspr_sort()` (`sprites.c`, a byte-array insertion sort) costs about
 1,100 cycles per frame on an already-sorted list (~44–48 cycles per element ×
 23), about 1,750 when one sprite has moved past a neighbour, and about 10,000
@@ -438,8 +434,8 @@ families). cadaver/c64gameframework, https://github.com/cadaver/c64gameframework
 
 ### Why
 
-A standard C64 sprite is 24×21 pixels — small enough to look crisp at C64
-resolution but too small for boss characters, large vehicles, title-screen
+A standard C64 sprite is 24×21 pixels, too small at C64 resolution for boss
+characters, large vehicles, title-screen
 logos, or any object that needs to dominate the screen. Drawing a 48×42 sprite
 by storing the full 48×42 bitmap would require four 64-byte sprite blocks laid
 out as a 2×2 grid, plus positioning math. Hardware expansion achieves the same
@@ -458,23 +454,22 @@ To double the size of sprite 3 in both axes:
 
 The registers are independent, so X-only, Y-only, or both expansions are all
 valid. The sprite image data remains the original 63-byte block; the chip
-simply repeats each pixel column twice (X expansion) or each pixel row twice
+repeats each pixel column twice (X expansion) or each pixel row twice
 (Y expansion) during output.
 
 ### Why it works
 
 During sprite DMA the VIC-II reads the 63 data bytes for each active sprite once
-per "sprite line" — its internal row counter. With X expansion enabled, the chip's
+per "sprite line" (its internal row counter). With X expansion enabled, the chip's
 horizontal shift register clocks each pixel bit onto the output bus twice instead
 of once, stretching each pixel to two display clocks wide (two pixels on screen).
 With Y expansion enabled, the chip's internal row counter increments only on
 every *second* raster line instead of every line, so the same bitmap row is output
 twice, doubling the visible height.
 
-The result is 2× linear scaling with no antialiasing, producing visibly blocky
-edges at close range. This is generally acceptable for game objects (the C64
-aesthetic tolerates visible pixels) and is often desirable for close-range
-boss-fight scaling effects.
+The result is 2× linear scaling with no antialiasing, with visibly blocky
+edges. Game objects at C64 pixel sizes tolerate this, and close-range
+boss-fight scaling effects often use it on purpose.
 
 Combined X+Y expansion produces a 48×42 sprite that costs the same DMA bandwidth
 as an unexpanded sprite: the chip still fetches exactly 63 bytes of data per 21
@@ -488,11 +483,11 @@ nature of hardware expansion means the effect is coarse, but readable at
 C64 pixel sizes.
 
 **Mixed expanded/unexpanded sprites:** Sprite 0 (the player) can be fully
-expanded while sprites 1–7 (small bullets) are unexpanded — the registers are
-per-sprite. Mix freely.
+expanded while sprites 1–7 (small bullets) are unexpanded; the registers are
+per-sprite.
 
 **Fake 48×84 via two expanded sprites stacked:** Two X+Y-expanded sprites at
-the same X but offset 42 lines apart produce a visual object 84 lines tall —
+the same X but offset 42 lines apart produce a visual object 84 lines tall,
 about 42 % of the 200-line display window (three stacked reach 126). An
 earlier version of this paragraph called 84 lines "two-thirds of the PAL screen
 height"; two-thirds of 200 is 133.
@@ -517,24 +512,24 @@ height"; two-thirds of 200 is 133.
 
 Every action game needs collision detection: player versus enemy, bullet versus
 enemy, player versus terrain. Software bounding-box tests are fast but require
-explicit bounding-box data per sprite. The VIC-II provides hardware collision
-detection as a free by-product of its rendering pipeline: the chip tracks pixel
-overlap automatically and latches results in two read-only registers.
+explicit bounding-box data per sprite. The VIC-II detects collisions as a
+by-product of rendering: the chip tracks pixel overlap and latches results in
+two read-only registers.
 
 ### How
 
 **Sprite-sprite collision ($D01E, SPSPCL):** Each bit n is set whenever any
 non-transparent pixel of sprite n overlaps any non-transparent pixel of any
-other enabled sprite during rendering. The register is *read-to-clear*: as soon
-as you read $D01E, all bits reset to zero. A nonzero value means at least one
+other enabled sprite during rendering. The register is *read-to-clear*: reading
+$D01E resets all bits to zero. A nonzero value means at least one
 collision occurred since the last read.
 
 **Sprite-background collision ($D01F, SPBGCL):** Each bit n is set whenever any
 non-transparent pixel of sprite n overlaps a *foreground* pixel of the display,
 where foreground means: in standard hires text and hires bitmap, any pixel not
 drawn in background colour 0 ($D021); in ECM, any pixel not drawn in one of
-BGCOL0–3 — the four background colours are all background; in multicolor text
-and multicolor bitmap, only the %10 and %11 bit-pairs — %01 pixels (BGCOL1/$D022
+BGCOL0–3 (the four background colours are all background); in multicolor text
+and multicolor bitmap, only the %10 and %11 bit-pairs: %01 pixels (BGCOL1/$D022
 in MC text, the video-matrix high nibble in MC bitmap) count as background and
 do NOT set $D01F. This is the same foreground/background split that $D01B
 priority uses. Measured in VICE x64sc (solid sprites over MC-text, MC-bitmap
@@ -560,8 +555,8 @@ the sprite-sprite latch fires. The sprite-background latch fires when a sprite
 pixel is nonzero at the same position as a non-transparent background pixel from
 the display data.
 
-The latch is set by the chip during the *raster scan* — before the CPU ever sees
-the result. This means the hardware has already resolved sub-pixel-exact
+The chip sets the latch during the *raster scan*, before the CPU sees the
+result, so the hardware has already resolved sub-pixel-exact
 rectangular overlap by the time the CPU reads the register at end-of-frame.
 
 The read-to-clear mechanic is a hardware simplification: there is no separate
@@ -569,8 +564,8 @@ write-clear path. The register's internal flip-flops reset on the read cycle.
 
 ### The "sticky" problem
 
-A common pitfall: if you read $D01E inside an interrupt handler *and* again in
-your main loop, the second read sees zeros because the interrupt already cleared
+A common pitfall: if $D01E is read inside an interrupt handler *and* again in
+the main loop, the second read sees zeros because the interrupt already cleared
 it. Read each register *once* per frame and cache the value in a RAM variable.
 
 A second pitfall: the registers report which sprites were involved, not which
@@ -582,13 +577,13 @@ the bit pattern.
 
 **IRQ-driven collision:** Enable the sprite-sprite or sprite-background
 collision IRQ via bits 1–2 of $D01A (IRQMSK). The VIC fires the CPU IRQ line
-on the same cycle the collision is latched. This gives sub-frame-latency
-collision response, useful for precise physics reactions. Acknowledge by writing
+on the same cycle the collision is latched, so the response comes within the
+frame (sub-frame latency). Acknowledge by writing
 the corresponding bit in $D019.
 
 **Multicolor sprite collision:** Multicolor sprites have transparent pixels
 between their double-wide colored pixels (the %00 pattern bits are transparent).
-The hardware collision test correctly ignores transparent pixels, so collision
+The hardware collision test ignores transparent pixels, so collision
 boundaries track visual content rather than bounding boxes.
 
 ### Recipes
@@ -616,27 +611,27 @@ boundaries track visual content rather than bounding boxes.
 
 The VIC-II's Y-expansion mechanism contains a documented timing quirk: if a
 sprite's $D017 bit is cleared on one particular cycle of one of its display
-lines while its DMA is running, the sprite's remaining length changes — once,
-by a data-dependent amount — and the sprite then ends on its own. Demoscene
+lines while its DMA is running, the sprite's remaining length changes (once,
+by a data-dependent amount) and the sprite then ends on its own. Demoscene
 coders call this the "sprite crunch"; the per-line variant that is meant to
 hold a sprite on one row is the "Y stretch". An earlier version of this section
 said a single clear at line Y−1 makes "the sprite's row counter stall,
 repeating one or more rows indefinitely until the register is written again".
 Measured in VICE x64sc (PAL), that is wrong on both counts: a clear at Y−1, or
-anywhere on the first display line, simply gives a plain unexpanded 21-line
+anywhere on the first display line, gives a plain unexpanded 21-line
 sprite, and a crunching clear on a later line lengthened the sprite by 4, 16 or
 21 lines and then let it finish well before $D017 was touched again. Nothing
 is left "stuck" waiting for a re-write.
 
 ### How
 
-The VIC-II's Y expansion works via a per-sprite flip-flop — the "advance line"
+The VIC-II's Y expansion works via a per-sprite flip-flop, the "advance line"
 flip-flop in Bauer's VIC-II article (older editions and the VICE source call it
 the expansion flip-flop, `exp_flop`). It is held set while the sprite's $D017
 bit is clear; while the bit is set and the sprite's DMA is on, it is inverted
 in cycle 56 of every line. In cycle 16 of the next line, only if the flip-flop
 is set, the 6-bit sprite data counter base MCBASE is loaded from the data
-counter MC — which has advanced by 3 during that line's fetches — so the sprite
+counter MC, which has advanced by 3 during that line's fetches, so the sprite
 moves on to its next 3-byte row; if the flip-flop is clear, MCBASE stays and
 the row is fetched again. MCBASE is a counter, not the toggle, and neither it
 nor the flip-flop is documented in the Commodore 64 Programmer's Reference
@@ -660,7 +655,7 @@ To crunch a sprite:
    the row it is on: +21 lines at one row in the single-sprite sweep, +4 and
    +16 lines at other rows in the eight-sprite runs. Every crunch measured here
    lengthened the sprite; none shortened it. The sprite then finishes on its
-   own — $D017 does not have to be re-written to release it, and re-writing it
+   own: $D017 does not have to be re-written to release it, and re-writing it
    later does nothing to a sprite that has already ended.
 
 A write at any cycle of the line before the sprite starts (Y−1), or of its
@@ -677,7 +672,7 @@ On an ordinary display line the cycle-16 step either copies MC into MCBASE
 lands on the crunch cycle immediately before it is the one case the chip does
 not handle cleanly: the cycle-16 step then loads MCBASE with a bitwise blend of
 the old MCBASE and the current MC rather than either value (the formula is in
-Bauer's article and the VICE source; it was not derived here — rung 4 for the
+Bauer's article and the VICE source; it was not derived here; rung 4 for the
 formula, rung 1 for the effect). Because the blend depends on the two counter
 values at that instant, the number of rows the sprite has left afterwards
 depends on which row it was on, which is why the measured change was +21 at
@@ -711,12 +706,12 @@ depend on the horizontal mode, so it applies to multicolor sprites as well
 
 ### Cycle budget
 
-The crunching write must land on one specific cycle — cycle 15 of the chosen
-display line in VICE's PAL numbering — so the tolerance is a single cycle, and
+The crunching write must land on one specific cycle, cycle 15 of the chosen
+display line in VICE's PAL numbering, so the tolerance is a single cycle, and
 the write has to be on one of the sprite's own display lines after the first,
 not the line before it. Place the STA absolute (4 cycles; the write is its last
-cycle) with a stable raster IRQ (see `raster.md`) whose entry-to-STA cost you
-have counted, padded with NOPs to the cycle. The effect is one-shot, so no
+cycle) with a stable raster IRQ (see `raster.md`) whose entry-to-STA cost is
+counted, padded with NOPs to the cycle. The effect is one-shot, so no
 further writes are needed on the lines that follow. An earlier version of this
 section gave a "2-cycle window at cycles 55–56 of the preceding line" and a
 "15 cycles total" budget; both are withdrawn (the sweep found no crunching
@@ -733,12 +728,12 @@ position on the preceding line at all).
 
 ### Why
 
-By default, VIC-II sprites render on top of everything — characters, bitmap
-pixels, even other sprites of higher index. For many game effects you want
-a sprite to appear *behind* the playfield: a character walking behind a tree,
-an enemy partially obscured by a wall tile, a shadow below a platform. Without
-hardware priority, you would need to composite the sprite manually into the
-screen data, which is expensive. $D01B provides per-sprite priority control at
+By default, VIC-II sprites render on top of everything: characters, bitmap
+pixels, even other sprites of higher index. Many game effects need a sprite
+*behind* the playfield: a character walking behind a tree, an enemy partially
+obscured by a wall tile, a shadow below a platform. Without hardware priority
+the sprite would have to be composited into the screen data, which is
+expensive. $D01B provides per-sprite priority control at
 zero CPU cost during rendering.
 
 ### How
@@ -755,21 +750,19 @@ To make sprite 4 appear behind solid tiles: OR bit 4 into $D01B (`$D01B |= %0001
 To restore it to the front: AND the complement (`$D01B &= ~%00010000`).
 
 The write takes effect immediately for the remainder of the current frame at the
-sprite's current raster position. For clean visual results, update $D01B in the
-vertical blank or at least before the sprite's first rendered line.
+sprite's current raster position. Update $D01B in the vertical blank or at least before the sprite's first rendered line.
 
 ### Why it works
 
 The VIC-II's output multiplexer operates in priority order during each pixel
 clock. When rendering a pixel, the chip evaluates (from highest to lowest
 priority): sprites 0–7 (in index order), then foreground pixels, then background.
-However, if a sprite's $D01B bit is set, the chip inverts that sprite's position
+If a sprite's $D01B bit is set, the chip inverts that sprite's position
 in the priority stack: foreground pixels win over it, while background pixels
 still lose. Background-priority sprites therefore appear to "punch through" the
 sprite layer into the background layer, letting foreground pixels obscure them.
 
-One important constraint: sprite-vs-sprite priority is **not** affected by
-$D01B. Sprite 0 is always in front of sprite 1 regardless of their $D01B bits.
+Sprite-vs-sprite priority is **not** affected by $D01B. Sprite 0 is always in front of sprite 1 regardless of their $D01B bits.
 $D01B only modulates each sprite's relationship with the *background plane*.
 
 **Pixel classes, measured.** The `kickassembler/sprite-priority-classes`
@@ -804,7 +797,7 @@ VICE x64sc on PAL and NTSC. Three rules came out, and one correction:
   earlier version of this section, read as a stack of layers, would have
   drawn sprite 5 in front there.
 
-A second constraint: the border is the front-most layer of the VIC-II's output
+The border is the front-most layer of the VIC-II's output
 and is drawn over every sprite regardless of $D01B. A sprite that moves under
 the (unopened) border disappears whether its priority bit is set or clear; it
 does not become visible again. Border pixels are also not foreground for $D01F:
@@ -854,18 +847,15 @@ foreground pixels even when rendered behind them.
 ### Why
 
 A VIC-II sprite has one individual color register ($D027–$D02E). That color
-applies uniformly to every pixel of the sprite across all 21 rows. If you want
-a sprite to show a color gradient — a flame that transitions from white at the
-center to orange to red at the edges, for example — the single color register
-is the bottleneck. The solution is to change the color register mid-frame, on
-a specific raster line, while the sprite is actively rendering. This produces
-a sprite with visually distinct color bands at the cost of a tightly-timed
-write.
+applies uniformly to every pixel of the sprite across all 21 rows, so one
+register cannot give a color gradient (a flame that transitions from white at
+the center to orange to red at the edges, for example). Changing the color
+register mid-frame, on a specific raster line, while the sprite is rendering
+gives distinct color bands at the cost of a tightly-timed write.
 
 ### How
 
 The technique requires a stable raster IRQ (see `raster.md`, `stable_raster_irq`).
-The steps are:
 
 1. Set the sprite's color to the desired *top band* color in $D027+n before the
    sprite's first row is rendered.
@@ -888,7 +878,7 @@ correct cycle within the scanline after the sprite starts rendering.
 $D027–$D02E are standard memory-mapped I/O registers. The VIC-II reads the
 color for sprite n once per pixel clock when sprite n's shift register is
 outputting a non-transparent pixel. There is no internal color latch per sprite
-that holds the value for the whole line — the chip reads the register each time.
+that holds the value for the whole line; the chip reads the register each time.
 A CPU write to $D027+n that completes partway through a horizontal scan therefore
 splits the sprite's pixel output into two color regions: pixels rendered before
 the write use the old color, pixels after use the new one.
@@ -897,8 +887,8 @@ The cycle precision requirement comes from the VIC-II bus timing. On a PAL
 machine running at 0.985 MHz, each cycle is approximately 1 microsecond, and
 one CPU cycle is eight pixels: the 40 character columns of 8 pixels are fetched
 over the 40 g-access cycles 16–55. A sprite's 24 pixels are therefore 3 CPU
-cycles wide, in both hires and multicolor — multicolor halves the resolution to
-12 double-width pixels, not the width — and an X-expanded sprite's 48 pixels
+cycles wide, in both hires and multicolor (multicolor halves the resolution to
+12 double-width pixels, not the width), and an X-expanded sprite's 48 pixels
 are 6 cycles. (An earlier version of this paragraph said 6 cycles in hires and
 12 in multicolor, which is wrong by a factor of two and inverts what multicolor
 changes.) To achieve a specific horizontal split, the write must complete on
@@ -909,7 +899,7 @@ cycle offset from the IRQ entry point to the STA instruction.
 
 **Per-sprite gradient:** Apply independent color swap schedules to multiple
 sprites, each with its own raster IRQ slot. With 8 sprites and 2 color bands
-each, you can schedule 16 IRQ writes spread across the frame.
+each, that is 16 IRQ writes spread across the frame.
 
 **Animated gradient:** Each frame, shift the color band assignments up or down
 by one row by adjusting the IRQ trigger line. The result is a scrolling color
@@ -918,11 +908,11 @@ wash moving through the sprite.
 **Multicolor sprite color swap:** In multicolor mode, the sprite has three
 color registers: the individual color ($D027+n) and two shared colors ($D025,
 $D026). All three can be swapped mid-line. Changing $D025 mid-frame affects
-every multicolor sprite simultaneously — useful for palette flashes but
-destructive if sprites need independent colors.
+every multicolor sprite at once: useful for palette flashes, destructive if
+sprites need independent colors.
 
 **Combined with Y-expand glitch:** A color swap on a Y-crunched sprite produces
-banded gradients on tall stretched sprites — flame and waterfall effects. This
+banded gradients on tall stretched sprites for flame and waterfall effects. This
 depends on the Y stretch, which `sprite_y_stretch_glitch` now marks as
 unverified on this machine.
 
@@ -930,18 +920,18 @@ unverified on this machine.
 
 On PAL (VICE 3.10 x64sc, default C64C model, VIC-II 8565; an earlier version
 said 6569) a write to $D027+n that completes on CPU cycle
-c — cycles numbered 1–63, the numbering in which the CSEL side-border pulse
-lands on cycle 56 — takes effect from sprite X ≈ 8c − 111. So a write on cycle
+c (cycles numbered 1–63, the numbering in which the CSEL side-border pulse
+lands on cycle 56) takes effect from sprite X ≈ 8c − 111. So a write on cycle
 16 recolours a sprite at X=24 (the left edge of the display window) from its
 first pixel, cycle 18 splits it at X=33, and cycle 34 splits a sprite at X=152
 at X=161. Equivalently, the STA's write cycle must be ≈ 16 + (X_split − 24)/8;
-subtract your stable IRQ's entry-to-STA cost to get the delay. Use
+subtract the stable IRQ's entry-to-STA cost to get the delay. Use
 `rirq_delay()` (5 cycles per unit) plus NOP padding (2 cycles) for sub-5-cycle
 alignment. An earlier version of this section placed a sprite at X 24–47 "during
 approximately CPU cycles 30–35" and asked for a "30-cycle delay for the left
 edge, 33 for a midpoint"; cycles 30–35 are where a sprite at X ≈ 128–175 is
 drawn, not one at X=24. The whole swap still fits within one raster line: STA 4
-cycles plus whatever your IRQ entry and exit cost (see the `sprite_multiplex_8`
+cycles plus the IRQ entry and exit cost (see the `sprite_multiplex_8`
 cycle budget for the KERNAL-vector figures).
 
 ### Recipes
@@ -1071,7 +1061,7 @@ recipe's measured positions.
 
 **Two tables, two speeds.** Give X and Y different `STRIDE` values (read
 Y at `2 * base` or `3 * base`) for Lissajous figures. The 8-bit index
-still wraps for free.
+still wraps with no extra code.
 
 **Colour cycling along the chain.** Rotate the eight colour registers
 `$D027` to `$D02E` one place every few frames so a hue runs down the
@@ -1263,8 +1253,7 @@ Not measured here.
   jump.
 - `sprite_x_range_hidden_and_seam` (`docs/pitfalls/sprite.md`): the
   columns are deliberately parked under both borders and in the X 344 to
-  383 gap; the entry relies on the hidden range rather than being
-  surprised by it.
+  383 gap; the entry relies on the hidden range.
 
 ### Sources
 
@@ -1359,9 +1348,9 @@ and sprites are drawn as anywhere else. The flip-flop is set only when
 the raster reaches the bottom comparison line, 251 with RSEL set or 247
 with it clear. RSEL is 1 when line 247 passes and 0 when line 251
 arrives, so neither comparison ever matches, the flip-flop stays clear
-from line 251 to the end of the frame, and a sprite at Y 254 is simply
-visible. The control build that never clears RSEL is the proof by
-absence: the same seven sprites, enabled, positioned and pointed at
+from line 251 to the end of the frame, and a sprite at Y 254 is
+visible. The control build that never clears RSEL shows the converse:
+the same seven sprites, enabled, positioned and pointed at
 their glyphs, and zero white pixels below line 250 on either model.
 
 Measured in VICE x64sc on the recipe's pinned frame (`p = 174`): white
@@ -1481,9 +1470,9 @@ repeated down the screen for as long as the CPU keeps toggling, so a
 24-pixel-wide column of any height costs 63 bytes of sprite data and no
 redraw. The trick is old, widely described and, in this knowledge base,
 was marked unverified: `sprite_y_stretch_glitch` above says that its
-per-line clear+set attempts gave irregular rows. This entry is the
-measurement that closes that. It is reproduced in VICE 3.10, with a
-sharp edge: the setting write must complete in or before cycle 55 of the
+per-line clear+set attempts gave irregular rows. This entry settles that
+by measurement. It is reproduced in VICE 3.10, and the edge is one cycle
+wide: the setting write must complete in or before cycle 55 of the
 line, the last CPU write cycle before the sprite's own DMA stalls the
 6510, and one cycle later the write is pushed to cycle 61 and gives
 nothing.
@@ -1492,8 +1481,8 @@ nothing.
 
 1. Put the sprite up as usual (position, colour, pointer, $D015 bit),
    with its $D017 bit clear.
-2. Take a stable raster interrupt on the line before the first line you
-   want stretched (`stable_raster_irq`; the recipe uses the double-IRQ
+2. Take a stable raster interrupt on the line before the first line to be
+   stretched (`stable_raster_irq`; the recipe uses the double-IRQ
    entry of `stable-raster-irq.md` on line 99 for a sprite at Y 100).
 3. From there, run straight-line code for the whole region, one block
    per line, each exactly one line long. In each block, clear the
@@ -1535,7 +1524,7 @@ The audited hardware page names the flip-flop but not its cycle:
 `hardware/vic-ii-reference.md`, Expansion, says that on the Y axis "the
 chip uses an internal 'expansion flip-flop' that toggles each line", and
 that changing $D017 mid-line "can confuse the flip-flop and cause
-'sprite crunch'". The rule that matters here is the pair: while the bit
+'sprite crunch'". The rule used here: while the bit
 is clear the flip-flop is held set; while the bit is set and the
 sprite's DMA is on it is inverted in cycle 56 (VICE 3.10's PAL cycle
 table, as cited under `sprite_y_stretch_glitch`); and in cycle 16 of the
@@ -1736,7 +1725,7 @@ displayed, so a pointer change or a new block takes effect on the next
 fetch; nothing is copied at display time. A horizontal mirror reverses
 the pixel order of each row, and a row's pixel order runs from bit 7 of
 byte 0 to bit 0 of byte 2 (hires) or pair by pair (multicolour), which
-is exactly what the byte swap and the table undo. The recipe checks the
+is what the byte swap and the table undo. The recipe checks the
 result three ways: every table entry against a table the assembler
 computed, every mirrored frame against the assembler's string-reversed
 frame, and the exit screenshot, where each left-facing sprite is the
@@ -2085,7 +2074,7 @@ when the entry holds (instruction-table arithmetic, not measured here).
 Eight hardware sprites run out. A multiplexer (`sprite_multiplex_8`)
 stretches them down the screen, but it cannot put a ninth object on the
 same raster lines as eight others, and many small objects on one row is
-exactly what a shooter's bullet cloud or a puzzle game's falling pieces
+what a shooter's bullet cloud or a puzzle game's falling pieces
 need. A software sprite is drawn by the CPU into memory the VIC is
 already displaying: a block of character definitions laid out as a
 canvas, or a bitmap. It costs CPU time instead of a hardware slot, and
@@ -2147,8 +2136,7 @@ top, without a sprite-priority register.
 The recipe times one masked blit of a 24x21 object at each of the eight
 shifts with CIA2 timer A, display blanked, net of the call: 1,428
 cycles at every shift, on PAL and NTSC alike (measured in VICE x64sc).
-That is `84 * 17`, and the equality is the point: the run-time cost of
-the shift is zero. The tile erase of the same footprint is 462 cycles.
+That is `84 * 17`: the run-time cost of the shift is zero. The tile erase of the same footprint is 462 cycles.
 One object drawn and erased is therefore 1,890 cycles a frame, about
 9.6 % of a PAL frame; two are 3,780. The same blit started at raster
 line 100 with the display on measured 1,557 on PAL and on NTSC: the
@@ -2160,7 +2148,7 @@ timing figures were taken with DEN off.
 
 Choose the multiplexer when the objects are few per raster line, need
 free pixel placement in both axes and their own colours, and move over
-a background you cannot cheaply repaint: it costs a raster IRQ and
+a background that cannot cheaply be repainted: it costs a raster IRQ and
 register writes, not a redraw. Choose pre-shifted software sprites
 when several objects share raster lines, when they sit on a tiled or
 saved background, or when the sprite hardware is spoken for by the
@@ -2230,7 +2218,7 @@ position, one movement routine, one death. The answer is a part table.
 The object has one origin, and each part is a hardware sprite at a fixed
 offset from it.
 
-The offsets break the one-sprite habits. A part can be past X 255 while
+The offsets break assumptions that hold for one sprite. A part can be past X 255 while
 the origin is not, or the reverse, so the ninth X bit belongs to each
 part. A part can be off screen while the object is on screen. The parts
 also use several of the eight sprites on the same raster lines, which a
@@ -2300,7 +2288,7 @@ every part, so the flip is a choice of column, not arithmetic
 
 ### Why it works
 
-The VIC-II has no idea the parts belong together. Each part is a
+The VIC-II does not know the parts belong together. Each part is a
 complete sprite with its own X, Y, pointer, colour and expand bits. The
 object stays in one piece because every part is recomputed from the same
 origin in the same frame, before the raster reaches the object. Write
@@ -2313,7 +2301,7 @@ The Oscar64 recipe checks this against a model each frame: every part's
 X low byte, `$D010` bit, Y, `$D015` bit, pointer, colour and expand bits,
 and the bits of a sprite that belongs to another object. It found no
 mismatch in any frame of a sweep across X 255 and past the right edge,
-on PAL and NTSC. Its screenshots put each part's pixels exactly where
+on PAL and NTSC. Its screenshots put each part's pixels where
 the model places it, including a part whose register X is 240 while its
 pixels cross X 256 (VICE x64sc).
 
@@ -2411,7 +2399,7 @@ A beat-'em-up or sports fighter is bigger than a sprite. Two fighters
 of 2 x 2 multicolour sprites take all eight, and they stand side by
 side on the same raster lines, so a multiplexer cannot reuse any of
 them: it reuses a sprite only below the lines where it was last shown.
-Nothing is left for a third actor, a ball or an effect. The way round
+Nothing is left for a third actor, a ball or an effect. The alternative
 is to draw part of the cast in character cells: a block of cells whose
 glyphs belong to that actor alone and are rewritten when it animates
 or moves inside a cell. It costs CPU time when the picture changes and

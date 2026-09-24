@@ -12,7 +12,7 @@ from CIA1 and the SID, without the KERNAL's once-per-jiffy scanner. The
 techniques share one fact: CIA1 port A (`$DC00`) is control port 2 and the keyboard's
 column drive, CIA1 port B (`$DC01`) is control port 1 and the keyboard's
 row sense, and every switch on either port reads as a 0 bit when closed.
-The wiring is in `hardware/cia-reference.md`; the ways it bites are in
+The wiring is in `hardware/cia-reference.md`; its failure modes are in
 `pitfalls/input.md`. Every number below that came from an instrument says
 so; the rest is marked as arithmetic or as not measured here.
 
@@ -63,7 +63,7 @@ Oscar64's library path is `joy_poll(n)` from `<c64/joystick.h>`, which
 reads `$DC00 + n` (so `joy_poll(0)` is control port 2) and leaves
 `joyx[n]`, `joyy[n]` as signed -1, 0 or 1 and `joyb[n]` as a bool (read
 from the header and `joystick.c`). It reports levels, not edges; keep the
-previous `joyb[n]` yourself if you use it. The bare-register path is one
+previous `joyb[n]` to get them. The bare-register path is one
 `LDA $DC00` per frame and the four lines above.
 
 ### Why it works
@@ -231,7 +231,7 @@ table is in `hardware/cia-reference.md`; SPACE is column 7, row 4, so
 and the XOR trick from `joystick_edge_detect` gives press and release
 events per key; an age counter per key gives auto-repeat.
 
-The Oscar64 library does exactly this in `keyb_poll()` from
+The Oscar64 library does this in `keyb_poll()` from
 `<c64/keyboard.h>`: `keyb_matrix[8]` holds the eight row bytes as read,
 `key_pressed(KSCAN_x)` tests bit `code & 7` of `keyb_matrix[code >> 3]`,
 so the scan code is `column * 8 + row` and `KSCAN_SPACE` is 60. It also
@@ -251,7 +251,7 @@ afterwards, or all low, is a choice; the KERNAL leaves `$7F` (column 7
 low), which is why the STOP key can be tested with a single read of
 `$DC01` bit 7 (`hardware/c64-memory-map.md`).
 
-**Ghosting.** Because a switch is just a wire, three closed keys at three
+**Ghosting.** Because a switch is a wire, three closed keys at three
 corners of a rectangle in the matrix connect the fourth corner's column to
 its row through the other three, and the scan reads four keys. Two keys
 in the same row or the same column never ghost; three keys sharing no
@@ -277,9 +277,9 @@ keyboard together therefore see keyboard corruption only while the stick
 is held, and only for keys in five of the eight columns.
 
 **Why the KERNAL IRQ must be out of the way.** SCNKEY writes `$DC00` on
-its own schedule inside the jiffy IRQ. If it fires between your column
-write and your row read, the row byte belongs to whichever column SCNKEY
-left selected, and its final `$7F` clobbers your walk. Either take over
+its own schedule inside the jiffy IRQ. If it fires between the column
+write and the row read, the row byte belongs to whichever column SCNKEY
+left selected, and its final `$7F` clobbers the walk. Either take over
 the IRQ, or bracket the eight-column loop with `SEI`/`CLI`, or (the
 recipe's choice) run with interrupts off and sync to a raster line
 instead of the jiffy. The pitfall page's measurements put the main-loop
@@ -303,7 +303,7 @@ does need a filter, because it can see both edges of a bounce.
 
 ### Variations
 
-**Only the keys you use.** Drive just the columns holding the game's keys
+**Only the keys in use.** Drive just the columns holding the game's keys
 and skip the rest; a WASD plus SPACE game needs columns 1, 2 and 7.
 
 **Shift handling.** Left shift is column 1 row 7, right shift column 6
@@ -357,7 +357,7 @@ x2 = $D419
 y2 = $D41A
 ```
 
-The wait is the whole difficulty. The SID converts on its own clock, one
+The wait is the hard part. The SID converts on its own clock, one
 conversion every 512 cycles, and the switch does not restart it. A read
 taken before a conversion that began after the switch has completed
 returns the old port's value or a byte from the middle of a conversion.
@@ -434,8 +434,8 @@ shows only what VICE does with it).
 
 **One port, no switching.** A single-port paddle game writes the select
 once and never touches `$DC00` again, and then only the KERNAL scan can
-disturb it. With the KERNAL IRQ off it can read `$D419` whenever it
-likes.
+disturb it. With the KERNAL IRQ off it can read `$D419` at any
+time.
 
 **Interleaved frames.** Select port 1 on even frames and read it on odd
 frames, port 2 the other way. Every paddle updates at half the frame
@@ -476,7 +476,7 @@ paddle, though it uses both sets of lines. Its movement arrives through
 the SID's pot registers, `$D419` and `$D41A`, as a position counter the
 mouse keeps itself; its two buttons arrive on the control port's switch
 lines. A program that reads it as a paddle sees a value that wanders
-and wraps; a program that reads it as a joystick sees nothing at all
+and wraps; a program that reads it as a joystick sees nothing
 unless the mouse was powered up in its joystick mode. The 1350, and the
 1351 with the right button held at power-up, report movement as
 joystick direction pulses on the switch lines instead; nothing below
@@ -550,7 +550,7 @@ handles the pair.
 
 Both button lines are joystick lines, so `joystick2_scan_phantom_press`
 and `cia1_ddr_cleared_kills_keyboard` in `pitfalls/input.md` apply to a
-mouse in port 2 exactly as to a stick: read `$DC00` from the main loop
+mouse in port 2 as to a stick: read `$DC00` from the main loop
 or from a handler that cannot interrupt the scan, and never clear
 `$DC02` to do it. A mouse in port 1 has the keyboard problem the other
 way round, and the select makes it worse: `$40` in `$DC00` sets bit 6
@@ -611,15 +611,13 @@ select to read paddles on the other port pays `paddle_read`'s settle.
 
 ### Why
 
-A title screen that idles is a still frame. The arcade answer is the
-attract mode: after a while the game plays itself, and anyone watching
-sees what the game is. The cheap way to get one is not a second code
-path that moves the player about; it is the game itself, with its input
-coming from somewhere other than the joystick port. The player code
+In an attract mode the game plays itself on the title screen after a
+while. The cheap way to build one is not a second code path that moves
+the player about but the game itself, with its input coming from
+somewhere other than the joystick port. The player code
 reads one input byte. During play the port fills it. During the demo a
-recording fills it. Nothing else changes, so the demo does exactly what
-the game does, and a change to the game's rules is a change to the demo
-for free.
+recording fills it. Nothing else changes, so the demo does what the
+game does, and a change to the game's rules changes the demo too.
 
 ### How
 
@@ -629,7 +627,7 @@ the game read the pair, never `$DC00` directly. The main loop is the
 only place that writes it: from the port on the title and in play, from
 the recording during the demo.
 
-Store the recording as run-length pairs: the port byte exactly as
+Store the recording as run-length pairs: the port byte as
 `$DC00` gives it, active low, and the number of frames it was held. A
 joystick changes a few times a second, so a 285-frame demo is eight
 pairs. A count of zero ends the stream. Beside the stream keep the seed
@@ -672,8 +670,8 @@ guard costs one compare.
 Öörni's control override, named on `game-design/game-structure.md`, is
 the same seam used the other way: enemies and cutscene actors read a
 virtual joystick byte that the AI or the script writes, and a
-conversation freezes the player by writing zero. A recorded human run is
-the natural source for the stream: log the byte and the frame count
+conversation freezes the player by writing zero. A recorded human run
+supplies the stream: log the byte and the frame count
 through the same variable during a real game and dump the pairs. The
 verdict constants are then whatever the recording ended on, which is how
 a shipped game can check its own attract mode after a rules change. A
@@ -847,7 +845,7 @@ A game that takes the IRQ vector and masks CIA1 has switched off
 SCNKEY, so `GETIN`, the buffer at `$0277` and the STOP key all go
 quiet; the fix a platformer built for a blind test needed on 2026-09-22
 (`pitfalls/input.md`, `cia1_ddr_cleared_kills_keyboard`) is the general
-one. Scan the matrix yourself, once a frame, from the same IRQ that
+one. Scan the matrix directly, once a frame, from the same IRQ that
 drives the game. Done there rather than in the main loop, the scan
 cannot be torn by the KERNAL's column writes, runs at a fixed point in
 the frame, and gives every key a frame-accurate history: pressed this
@@ -874,7 +872,7 @@ frame, held N frames, released this frame.
    the press event; age N is "held N frames"; a repeat rule on the age
    (first at REPEAT_AT, then every second frame) is `joystick_autorepeat`
    applied to a key.
-6. Leave through the KERNAL's exit that matches what you kept. Read from
+6. Leave through the KERNAL's exit that matches what the handler kept. Read from
    the ROM image: `$EA81` is `PLA TAY PLA TAX PLA RTI`, the bare exit;
    `$EA7E` is `LDA $DC0D` then the same, a bare exit that also
    acknowledges CIA1; `$EA7B` is `JSR $EA87`, the SCNKEY call, then the
@@ -889,7 +887,7 @@ frame, held N frames, released this frame.
 There are no diodes in the matrix, so one column pulled low lets only
 that column's closed switches pull rows down; eight passes see all 64
 switches (`keyboard_matrix_scan`). SCNKEY can no longer interleave its
-own column writes with yours because it is not running: it is only
+own column writes with the game's because it is not running: it is only
 ever called from the handler at `$EA31`, and masking CIA1 stops that
 handler. Everything the KERNAL did with the result, the decode to
 PETSCII, the modifier tables, the ten-byte buffer, the repeat delay
@@ -918,13 +916,13 @@ ordinary switches to the scan; a game reads them as modifiers by
 testing those bits alongside the key. SHIFT LOCK is left shift held
 mechanically.
 
-**A keyboard-driven menu.** Ages give a menu its repeat for free: move
+**A keyboard-driven menu.** Ages give a menu its repeat: move
 the cursor when a direction key's age is 1, again when it is
 REPEAT_AT, then every second frame. The press set gives one event per
 key per press for the confirm key, whatever the frame rate.
 
 **Keeping the KERNAL IRQ.** If the game needs the jiffy clock or the
-KERNAL's STOP handling, leave `$DC0D` alone, scan in your own raster
+KERNAL's STOP handling, leave `$DC0D` alone, scan in the game's raster
 IRQ and exit through `$EA81` after acknowledging `$D019`; the KERNAL's
 own SCNKEY still runs on the CIA timer and still leaves `$7F` on
 `$DC00`. A joystick 2 read then has to tolerate `$7F`, or write `$FF`
