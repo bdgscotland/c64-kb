@@ -999,6 +999,104 @@ cycles a line, 25 of them spent on the two writes and the loop in the recipe.
 
 ---
 
+## line_doubling_and_colour_ram_double_buffer — Doubled text rows, and two colour RAMs in one
+
+**Complexity:** high
+**Region:** both
+
+**Uses registers:** SCROLY, RASTER
+**Demands:** cpu_every_line, midframe_raster_irqs
+**Requires:** stable_raster_irq, badline_synchronization
+**Claims:** vic_raster_irq (owns), vic_yscroll (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/line-doubling.md` saw `$D011` written twice per
+row, twice at the top and once after the last row, and the raster
+compare re-armed each frame. The recipe's `$0314` vector and zero-page
+bytes are its own choices.
+
+### Why
+
+Colour RAM is one fixed kilobyte at `$D800`. The screen and the character
+set move with `$D018` and the VIC bank, so they can be double-buffered;
+colour RAM cannot, and a colour change larger than the border time tears
+(`eight_way_scroll_double_buffer` races the beam instead). Doubling every
+text row makes the VIC read only every second row of colour RAM, so the
+other rows are a second buffer that one raster line selects. The price
+is half the vertical resolution: rows 16 lines tall.
+
+### How
+
+On the last line of each text row (RC = 7), write `$D011` with YSCROLL =
+that line's low three bits on a cycle from 54 to 57: the row is drawn
+again from its first pixel row. Three lines later write the old YSCROLL
+back, so the next badline comes 16 lines after the last. Each 8-line half
+still moves the VIC's row base on 40 cells, so the rows fetched are 0, 2,
+4 ... from the top of screen and colour RAM. To show the odd rows 1, 3, 5
+... instead, crunch one line before the display starts (a `linecrunch`
+write on line 50); to show the even rows at the same height, hold the
+first badline off one line with FLD. Rewrite the hidden rows at any
+time.
+
+### Why it works
+
+Bauer (§3.14.5): a badline condition asserted on cycles 54 to 57 of a
+row's last line keeps the sequencer in display state through cycle 58,
+so RC wraps from 7 to 0 and the row is shown again with no c-access; the
+pointers and colours latched for it are reused. VCBASE is still loaded
+from VC in that cycle 58 (§3.7.2), and VC has counted the 40 cells of the
+half just drawn, so the next fetch is two rows on. Measured in VICE
+x64sc 3.10, PAL c64c and NTSC, by `recipes/kickassembler/line-doubling.md`:
+192 of 192 lines match "line 52 + 16j + q shows row 2j + b, pixel row
+q & 7" for both buffers on both models, one colour per band, the colours
+of the buffer selected; and over 8,000,000 cycles no program store to
+colour RAM touched a row of the buffer being shown. Without the doubling
+write the same program shows rows 1, 2, 3 ...; with it, 1, 1, 3, 3, 5.
+
+The doubling write, swept one cycle at a time: 54 to 57 double the row;
+58 to 60 are the linecrunch window, one extra pixel row 7 and then idle
+lines; 52 and 53 start a late badline (DMA delay) and break the row.
+
+### Variations
+
+**Doubling some rows.** Only the rows given the write are doubled; the
+others take 8 lines and one row of screen memory. Not measured here.
+
+**More than two buffers.** Crunching 2 or 3 rows would start from rows
+2, 3 ...; with doubled rows only two phases exist (even, odd). Tripled
+rows (a second restart 8 lines later) would read every third row and
+give three buffers. Not measured here.
+
+**Bitmap.** The g-access in bitmap mode uses VC, which moves on 40 cells
+per half, so a doubled bitmap row shows the next row's graphics in its
+second half, not a repeat. Not measured here.
+
+### Cycle budget
+
+Two `$D011` writes per 16-line row, at a fixed cycle, so the CPU is held
+by a cycle-counted loop through the display in the recipe: each pass is
+16 lines, 1,008 cycles on PAL and 1,040 on NTSC counting the badline
+stall. The two top writes take lines 50 and 51. The buffer switch itself
+is free: a different value in one write.
+
+### Recipes
+
+- `recipes/kickassembler/line-doubling.md` — twelve doubled rows, both
+  buffers alternating every 32 frames with the hidden one rewritten one
+  row a frame, PAL and NTSC, every line decoded, with the store trace of
+  colour RAM and the doubling-write sweep.
+
+### Sources
+
+- Christian Bauer, "The MOS 6567/6569 video controller (VIC-II) and its
+  application in the Commodore 64" (1996), §3.7.2, §3.14.5:
+  https://www.zimmers.net/cbmpics/cbm/c64/vic-ii.txt
+- Codebase64, "Introduction to Vertical Tweaks", "Repeating char-line":
+  https://codebase64.c64.org/doku.php?id=base:introduction_to_vertical_tweaks
+
+---
+
 ## sideborder_open — Open the side border
 
 **Complexity:** high

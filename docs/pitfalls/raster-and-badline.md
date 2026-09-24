@@ -948,3 +948,58 @@ a badline.
 - Pitfall: `linecrunch_write_outside_window`, the same window for a crunch.
 - Recipe: `recipes/kickassembler/fpp.md`, the three sweep sections.
 - Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.3 to §3.14.6.
+
+---
+
+## doubled_row_skips_a_screen_row — A doubled text row uses up two rows of screen and colour RAM
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D011
+**Triggered by techniques:** line_doubling_and_colour_ram_double_buffer
+
+### Symptom
+
+Text rows made 16 lines tall by the doubled-line write show rows 0, 2, 4
+... of the screen: every second row of the text and of its colours never
+appears, and the last rows of a 25-row screen are unreachable. In bitmap
+mode, by the same rule, the second half of a doubled row would show the
+next row's graphics in the first row's colours (not measured here).
+
+### Mechanism
+
+The write on cycles 54 to 57 of a row's last line wraps RC to 0 and the
+row is drawn again from its latched pointers and colours, but the VIC's
+cycle-58 step still loads VCBASE from VC, which has counted the 40 cells
+of the half just drawn (Bauer §3.7.2, §3.14.5). Each 8-line half moves
+the row base on by one row. Measured in VICE x64sc 3.10, PAL c64c and
+NTSC, with `recipes/kickassembler/line-doubling.md`: with the write the
+rows shown from line 52 in 8-line halves are 1, 1, 3, 3, 5, 5, 7, 7 (PAL,
+buffer 1); built `:nodbl=1`, with the write aimed at RAM, they are 1, 2,
+3, 4, 5, 6, 7, 8.
+
+### Fix
+
+Lay the screen and colour data out in every second row, or use the
+skipped rows on purpose: they are a second colour RAM, picked by starting
+the display one row on with a single crunched line (the recipe's
+buffer 1). Put the text for doubled row j in screen row 2j (or 2j + 1).
+
+### Worked example
+
+From `recipes/kickassembler/line-doubling.md`: row j of buffer b is
+screen row 2j + b, so the refill steps 80 bytes a row.
+
+```text
+    lda ptr
+    clc
+    adc #80                     // the buffer's next row: two screen rows on
+    sta ptr
+```
+
+### Cross-references
+
+- Technique: `line_doubling_and_colour_ram_double_buffer` in `techniques/raster.md`.
+- Technique: `linecrunch` in `techniques/raster.md`: the one-line crunch that picks the odd rows.
+- Recipe: `recipes/kickassembler/line-doubling.md`, "The doubling write cycle".
+- Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.5.

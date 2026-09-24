@@ -2411,5 +2411,25 @@
     "build": [
       ":mode=2"
     ]
+  },
+  "kickassembler/line-doubling": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/line-doubling.png",
+      "ntsc": "screenshots/line-doubling-ntsc.png"
+    }
+  },
+  "kickassembler/line-doubling@later": {
+    "cycles": 8300000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
   }
 }
