@@ -539,6 +539,9 @@ height"; two-thirds of 200 is 133.
 **Region:** both
 **Uses registers:** D01E, D01F
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=16
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sprite-priority-classes (one read of each register stored to RAM, screen on; PAL and NTSC)
 
 ### Why
 
@@ -624,6 +627,16 @@ between their double-wide colored pixels (the %00 pattern bits are transparent).
 The hardware collision test ignores transparent pixels, so collision
 boundaries track visual content rather than bounding boxes.
 
+### Cycle budget
+
+The latching is free; the CPU pays only for the reads. The polling
+pattern above, `lda $d01e / sta` then `lda $d01f / sta` to absolute RAM,
+took 16 cycles in `kickassembler/sprite-priority-classes`, timed with the
+VICE x64sc monitor stopwatch between breakpoints on PAL and NTSC. That
+recipe is this technique's measured instance, and the Cost line. Acting
+on the bits (which sprite, which pair) is the game's own code and not in
+the figure.
+
 ### Recipes
 
 - `recipes/oscar64/simple-shmup.md` (reads $D01E/$D01F each frame). An earlier
@@ -632,7 +645,9 @@ boundaries track visual content rather than bounding boxes.
 - `recipes/kickassembler/sprite-priority-classes.md` clears both registers, lets
   two frames of a still picture latch, reads each once and compares with an
   expectation; it measures that $D01F follows the playfield's bit pattern (pair
-  01 in multicolour text latches nothing) and ignores $D01B.
+  01 in multicolour text latches nothing) and ignores $D01B. It is the
+  instance the Cost line was measured on. There is no Oscar64 recipe that
+  only polls the registers; `simple-shmup` above reads them in C.
 
 ---
 
@@ -763,6 +778,9 @@ position on the preceding line at all).
 **Region:** both
 **Uses registers:** D01B
 **Uses kernal:** (none)
+**Cost:** cycles_per_frame=6
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sprite-priority-classes (one `lda #` / `sta $d01b` of the whole byte, screen on; PAL and NTSC)
 
 ### Why
 
@@ -861,6 +879,18 @@ exits (returns to front) at precise screen positions.
 **Collision interaction:** $D01B does not disable $D01F (sprite-background
 collision). A background-priority sprite still registers collisions with
 foreground pixels even when rendered behind them.
+
+### Cycle budget
+
+The VIC applies the bit while it draws, at no CPU cost. The CPU pays for
+the write: `lda #` then `sta $d01b` took 6 cycles in
+`kickassembler/sprite-priority-classes`, timed with the VICE x64sc monitor
+stopwatch between breakpoints on PAL and NTSC. That is the Cost line, one
+write per frame. Changing one sprite's bit and keeping the others
+(`lda $d01b / ora # / sta $d01b`) is 10 cycles by the instruction table
+(arithmetic, not measured here). A mid-frame switch under a raster IRQ
+costs the IRQ, not the write (`sprite_multiplex_24` and `stable_raster_irq`
+carry those figures).
 
 ### Recipes
 
