@@ -5,7 +5,18 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 828, schema 39, tools 2.14.0, package 0.27.0.
+Data 828, schema 39, tools 2.15.0, package 0.28.0.
+
+**The double buffer's redraw is counted, and briefings drop a found
+technique that conflicts with a forced one (tools 2.15.0, package
+0.28.0; #106, #97).** screen_double_buffer_d018's Cost was 57 cycles
+(flip and pointer copy); plan-budget neither counted nor named the
+hidden-page redraw, so the game test's T6 regressed. Now
+`cycles_per_item=814` per 40-byte row (the steepest step over 0-25-row
+builds, PAL and NTSC, screen on) plus 57; with no count, the recipe's
+full redraw, 13,196. game-briefing runs check-compatibility on its
+selection and drops a technique found only by search that hard-conflicts
+with a forced one (new optional `conflicts_left_out`).
 
 **tech-tech steady on NTSC, LOAD's missing-file pulse, drive timing in
 drive cycles, and every recipe's claims declared (data 828; #100, #101,
