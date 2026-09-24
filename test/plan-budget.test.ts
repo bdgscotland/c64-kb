@@ -637,19 +637,23 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(pal.verdict).toBe("undetermined");
   });
 
-  it("sprite-multiplex-game: fits PAL on its 16,600 arithmetic ceiling, undetermined NTSC; no measured typical frame yet", () => {
-    // Measured in play: sort 611-953, build 3,815, IRQs 2,201-2,764 (sprite.md "Cycle budget").
+  it("sprite-multiplex-game: 8,995 to 16,600; fits PAL, undetermined NTSC on the arithmetic ceiling", () => {
+    // #33: the largest whole frame in play, 8,995 with the IRQ cycles the timer
+    // misses (NTSC, screen on, sprite-multiplex-game.md). Before it the range
+    // was 16,600-16,600 and NTSC listed sprite_multiplex_game in worst_only.
     const pal = play(plan(recipeTechniques("kickassembler-sprite-multiplex-game")));
-    expect([pal.low, pal.high]).toEqual([16600, 16600]);
+    expect([pal.low, pal.high]).toEqual([8995, 16600]);
+    expect(pal.worst_only).toEqual([]);
     expect(pal.fixed_losses.badlines).toBe(1075);
     expect(pal.verdict).toBe("fits");
-    // NTSC: 16,600 + 1,075 passes 17,095, but 16,600 is a built worst frame
-    // with no measured typical beside it; the recipe runs on NTSC with 24 of 24 drawn.
+    // NTSC: 16,600 + 1,075 passes 17,095 only on the built reversal (basis
+    // arithmetic, so the badlines are still charged); undetermined, not over.
     const ntsc = play(
       plan(recipeTechniques("kickassembler-sprite-multiplex-game"), { region: "NTSC" }),
       "NTSC",
     );
-    expect(ntsc.worst_only).toEqual(["sprite_multiplex_game"]);
+    expect([ntsc.low, ntsc.high]).toEqual([8995, 16600]);
+    expect(ntsc.worst_only).toEqual([]);
     expect(ntsc.verdict).toBe("undetermined");
   });
 
