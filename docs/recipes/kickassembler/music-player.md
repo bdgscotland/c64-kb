@@ -165,7 +165,10 @@ irq:    pha
         beq !+
         jsr music_play          // report shown: play untimed
         jmp irq_out
-!:      jsr script
+!:
+#if !NO_FX
+        jsr script
+#endif
         lda sfx_num
         sta fxbefore
         lda mu_gate+14
@@ -520,6 +523,13 @@ maxwait:    .byte 0
 //
 // On NTSC one call in six is skipped, so the tune keeps its PAL tempo, and
 // the NTSC frequency table keeps it in tune.
+//
+// Build switches (java -jar KickAss.jar -define NO_VIB ...) remove a feature
+// to measure what it costs; with none defined, this is the full player.
+// NO_VIB vibrato, NO_PWS pulse sweep, NO_FLT filter program (the
+// $D418 volume set by music_init stays), NO_WT the wavetable after a note's
+// first frame (no arpeggios or drum sweeps), NO_HR hard restart, NO_LEG
+// legato (every note gates), NO_FX sound effects (the harness requests none).
 // ===========================================================================
 
 .const PAL_CLOCK  = 985248
@@ -716,7 +726,10 @@ music_play:
         lda #5                  // every sixth NTSC call: nothing moves
         sta mu_ncnt
         rts
-mp_run: jsr fx_frame            // first: decides who owns voice 3
+mp_run:
+#if !NO_FX
+        jsr fx_frame            // first: decides who owns voice 3
+#endif
         lda mu_par
         eor #1
         sta mu_par
@@ -737,6 +750,7 @@ mp_v:
         jsr mu_voice
         ldx #7
         jsr mu_voice
+#if !NO_FX
         lda #$ff
         ldx sfx_num
         beq !+
@@ -744,9 +758,13 @@ mp_v:
         sta mu_skip
         lda #$fb
 !:      sta mu_fmask
+#endif
         ldx #14
         jsr mu_voice
         // filter program
+#if NO_FLT
+        rts
+#endif
         lda mu_fres
         beq mp_ret
         lda mu_fspd
@@ -795,7 +813,11 @@ mu_voice:
         dec mu_dur,x
         bne mv_frame
         jsr mu_start            // a voice with an event this frame skips its
-        jmp mv_wt               // vibrato and pulse sweep for the frame
+#if NO_WT                        // vibrato and pulse sweep for the frame
+        jsr mv_wave
+        jmp mv_out
+#endif
+        jmp mv_wt
 mv_nostep:
         lda mu_dur,x            // last step of the note: read the next event
         cmp #1                  // on this voice's tick, restart on tick 2,
@@ -804,26 +826,36 @@ mv_nostep:
         cmp mu_ftk,x
         bne mv_n2
         jsr mu_fetch
+#if !NO_HR
         lda mu_tick
         cmp #2
         bne mv_wt
         jsr mu_hr
+#endif
         jmp mv_wt
-mv_n2:  cmp #2
+mv_n2:
+#if !NO_HR
+        cmp #2
         bne !+
         jsr mu_hr               // C set: restarted, the voice is silent
         bcs mv_out2
         jmp mv_frame
+#endif
 !:      cmp #1
         bne mv_frame
         jsr mu_pre              // C set: the new instrument is loaded
         bcc mv_frame
 mv_out2:
         jmp mv_out
-mv_wt:  jsr mv_wave
+mv_wt:
+#if !NO_WT
+        jsr mv_wave
+#endif
         jmp mv_out
 mv_frame:
+#if !NO_WT
         jsr mv_wave
+#endif
         jmp mv_vib0
         // wavetable: waveform and note for this frame. Waveform 0 is a
         // jump to the row in the note column, or a hold when that is $FF.
@@ -853,6 +885,9 @@ mv_n:   sta mu_arp,x
 mv_wr:  rts
 mv_vib0:
         // vibrato: a triangle about the note, after its delay
+#if NO_VIB
+        jmp mv_pw
+#endif
         lda mu_vsp,x
         beq mv_pw
         lda mu_vdl,x
@@ -888,6 +923,9 @@ mv_vc:  lda mu_upd,x
         sta mu_vdir,x
 mv_pw:  // pulse sweep, every other frame (voice 2 on the frames voices 1
         // and 3 skip): bounce inside $100-$EFF
+#if NO_PWS
+        jmp mv_out
+#endif
         lda mu_pws,x
         beq mv_out
         txa
@@ -1045,6 +1083,10 @@ mh_no:  clc
 // has the legato flag, it is the instrument sounding, and the gate is on.
 // Returns Y = the next instrument.
 mu_leg: ldy mu_ni,x
+#if NO_LEG
+        clc
+        rts
+#endif
         lda tn_flags,y
         lsr
         bcc ml_ret
@@ -1111,8 +1153,16 @@ mu_pre: lda mu_nn,x
         sta mu_pwh,x
         lda tn_pwl,y
         sta mu_pwl,x
-!:      lda tn_pws,y
+!:
+#if !NO_PWS
+        lda tn_pws,y
         sta mu_pws,x
+#endif
+#if NO_VIB
+        lda #4
+        sta mu_upd,x
+        jmp ms_flt
+#endif
         lda tn_vdel,y
         sta mu_vdl,x
         lda #0
@@ -1152,7 +1202,11 @@ mu_pre: lda mu_nn,x
 mp_vh:  sta mu_vdhi,x
         pla
         tay
-ms_flt: lda tn_flt,y            // filter program: bit 7 restarts it on every note
+ms_flt:
+#if NO_FLT
+        jmp mp_ret2
+#endif
+        lda tn_flt,y            // filter program: bit 7 restarts it on every note
         beq mp_ret2
         bmi !+
         cmp mu_fprog
@@ -1377,6 +1431,13 @@ byte), 0 failed. The PRG occupies `$0801`-`$196E`. From the symbol file:
 | Tune "Test Card" | `$17AC`-`$196E` | 451 |
 
 The player and tune together are 2,484 bytes, with no zero page.
+
+**Build switches.** `-define NO_VIB`, `NO_PWS`, `NO_FLT`, `NO_WT`,
+`NO_HR`, `NO_LEG` or `NO_FX` removes one feature, for measuring what it
+costs: `java -jar KickAss.jar -define NO_VIB music-player.asm -o
+music-player.prg`. With no switch, the PRG is byte-identical to the one
+measured below. The cost of each feature is tabled under "Cycle budget"
+for `sid_play_routine_pattern` in `techniques/music-sid.md`.
 
 ## Expected output
 
