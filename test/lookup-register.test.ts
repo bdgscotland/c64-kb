@@ -70,14 +70,16 @@ describe("lookupRegister documentation leads with the register's own section", (
     }
     await f.addRegister("DC00", "$DC00", "CIA1", "RW", []);
     await f.addRegister("DC01", "$DC01", "CIA1", "RW", []);
-  });
+    // Seeding embeds seven large pages through Ollama: over a minute on CI's CPU
+    // runner, so the default 60 s hook limit failed every CI run from 7e5a515.
+  }, 600_000);
 
   // The test collection is shared by every file; leave it as it was found
   // (the briefing tests read it and would propose raster_bars from these).
   afterAll(async () => {
     const q = await getQdrant();
     for (const rel of SEEDED) await q.deleteBySource(rel);
-  });
+  }, 120_000);
 
   it.each([
     ["DC01", "$DC01 — DC01 — Data Port B (RW)"],

@@ -30,14 +30,16 @@ beforeAll(async () => {
     const seeded = await ingestDoc(rel, readFileSync(new URL(`../docs/${rel}`, import.meta.url), "utf8"));
     if (/not available/i.test(seeded)) throw new Error(`test collection could not be seeded: ${seeded}`);
   }
-});
+  // Seeding embeds large pages through Ollama: over a minute on CI's CPU
+  // runner, so the default 60 s hook limit failed every CI run from 7e5a515.
+}, 600_000);
 
 // The test collection is shared by every file; leave it as it was found.
 afterAll(async () => {
   const q = await getQdrant();
   for (const rel of SEEDED) await q.deleteBySource(rel);
   await f.close();
-});
+}, 120_000);
 
 describe("technique card documentation floor (#41)", () => {
   it.each(["raster_split_modes", "stable_raster_irq", "fld_flexible_line_distance"])(
