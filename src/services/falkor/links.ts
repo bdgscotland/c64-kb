@@ -123,6 +123,20 @@ export class FalkorLinks extends FalkorNodes {
     });
   }
 
+  /**
+   * CONSUMES from a Technique (schema 37): the technique reads files of this
+   * format. Both ends MATCHed, so a misspelt format drops the edge with a
+   * warning instead of making a FileFormat stub. Returns whether it landed.
+   */
+  async linkTechniqueConsumes(techniqueName: string, formatName: string): Promise<boolean> {
+    return this.mergeOrWarn({
+      from: { label: "Technique", name: techniqueName },
+      rel: "CONSUMES",
+      to: { label: "FileFormat", name: formatName },
+      warn: `linkTechniqueConsumes: ${techniqueName} -> ${formatName} — technique or FileFormat not found`,
+    });
+  }
+
   async linkTargets(toolName: string, chipName: string): Promise<void> {
     await this.mergeEdge({
       from: { label: "Tool", name: toolName },

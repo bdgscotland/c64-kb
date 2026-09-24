@@ -523,9 +523,17 @@ Meaning: "this tool produces this file format."
 
 ### CONSUMES
 
-Direction: `Tool → FileFormat`
+Direction: `Tool → FileFormat`, `Technique → FileFormat` (schema 37)
 
-Meaning: "this tool reads/converts this file format."
+Meaning: "this tool reads/converts this file format", or "this technique
+reads files of this format". The Tool edge comes from a format H3's
+`**Consumed by:**` line; the Technique edge from a technique's
+`**Consumes formats:**` line (`CONVENTIONS-techniques.md`), both ends
+MATCHed, misses warned about and counted (`consumes_formats … dropped`).
+No tool reads the Technique edge yet; the query it serves is
+`MATCH (:FileFormat {name: 'SID'})<-[:CONSUMES]-(t:Technique)<-[:IMPLEMENTS]-(r:Recipe)`.
+There is no Technique `PRODUCES`: a technique produces a screen, and a
+recipe's `file_formats` (its `PRODUCES` edge) already says what it builds.
 
 ### TARGETS
 

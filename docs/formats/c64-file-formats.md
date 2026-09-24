@@ -909,6 +909,32 @@ The attribute byte at offset 63 of each block carries the sprite colour in bits 
 
 ---
 
+### .KLA — Koala Painter multicolour bitmap image
+
+Koala Painter's picture file, the usual interchange format for C64
+multicolour bitmaps. It is the three regions multicolour bitmap mode reads,
+in the order the VIC-II uses them, after a two-byte load address: 10,003
+bytes in all.
+
+| Offset | Size | Content |
+|--------|------|---------|
+| $0000 | 2 | Load address, little-endian (Koala Painter uses `$6000`) |
+| $0002 | 8000 | Bitmap |
+| $1F42 | 1000 | Screen RAM: the two colours of each cell, one per nibble |
+| $232A | 1000 | Colour RAM: the third colour of each cell, low nibble |
+| $2712 | 1 | Background colour for `$D021`, low nibble |
+
+The layout is `koala_format`'s in `techniques/bitmap-modes.md`, and
+`toolchains/png2prg.md` reports the same layout, 10,003 bytes loading at
+`$2000`, for `png2prg -m koala` output it converted on this machine. No file
+saved by Koala Painter itself was read here. The `koala_format` technique
+displays it (`**Consumes formats:** KLA`);
+`recipes/oscar64/bitmap-koala-viewer.md` reads the regions at offsets 2,
+8002, 9002 and 10002. No Tool node in this knowledge base writes or reads
+a `.KLA` as such.
+
+---
+
 ## Memory Snapshots
 
 ### .VSF — VICE snapshot

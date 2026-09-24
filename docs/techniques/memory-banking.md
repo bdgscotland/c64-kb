@@ -638,6 +638,7 @@ No Phase 3 recipes. Bitmap setup will be demonstrated in Phase 4+ recipe docs.
 
 **Complexity:** medium
 **Region:** both
+**Consumes formats:** CRT
 
 ### Why
 

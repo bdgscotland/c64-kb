@@ -35,6 +35,8 @@ export interface TechniqueMeta {
   requires?: string[];
   /** Raw items of an **Alternative to:** line: `name (tradeoff)`. */
   alternatives?: string[];
+  /** FileFormat names from a **Consumes formats:** line. */
+  consumes?: string[];
   cost?: TechniqueCost;
   costBasis?: string;
   costBytesBasis?: string;
@@ -276,6 +278,30 @@ function alternativeEntities({ head, meta, sourcePath }: Section): GraphEntity[]
   return out;
 }
 
+// A FileFormat node name: the extension, upper case, without its dot.
+const FORMAT_NAME = /^\.?([A-Z0-9]+)$/;
+
+/**
+ * CONSUMES from a Technique (schema 37): the file formats whose files the
+ * technique reads. A word that is not an upper-case extension is refused
+ * here; whether it names a FileFormat node is settled at link time, where a
+ * miss is warned about and counted, never MERGEd into a stub.
+ */
+function consumesEntities({ head, meta, sourcePath }: Section): GraphEntity[] {
+  const out: GraphEntity[] = [];
+  for (const word of meta.consumes ?? []) {
+    const format = FORMAT_NAME.exec(word)?.at(1);
+    if (!format) {
+      warn(
+        `${sourcePath}: technique ${head.name} has **Consumes formats:** "${word}", which is not an upper-case format name such as SID — not ingested (see CONVENTIONS-techniques.md)`,
+      );
+    } else if (!out.some((e) => e.type === "technique_consumes" && e.format === format)) {
+      out.push({ type: "technique_consumes", technique: head.name, format });
+    }
+  }
+  return out;
+}
+
 export function techniqueEntities(
   head: TechniqueHead,
   meta: TechniqueMeta,
@@ -304,7 +330,12 @@ export function techniqueEntities(
       out.push({ type: "claims", owner: technique, ownerKind: "Technique", ...c, basis: claims.basis });
   }
   if (head.chip) out.push({ type: "technique_belongs_to", technique, chip: head.chip });
-  out.push(...demandEntities(section), ...requiresEntities(section), ...alternativeEntities(section));
+  out.push(
+    ...demandEntities(section),
+    ...requiresEntities(section),
+    ...alternativeEntities(section),
+    ...consumesEntities(section),
+  );
   if (meta.region && meta.region !== "both") {
     out.push({ type: "technique_requires_region", technique, region: meta.region });
   }

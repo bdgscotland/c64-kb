@@ -981,6 +981,7 @@ buffer) is the main budget item and is scene-specific.
 **Cost:** cycles_per_frame=268
 **Cost basis:** arithmetic
 **Cost measured on:** oscar64-tile-map-render (one column edge, 11 metatiles)
+**Consumes formats:** CTM
 
 ### Why
 

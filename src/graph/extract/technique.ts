@@ -27,6 +27,10 @@ const REQUIRES_LINE = /^\*\*Requires:\*\*\s+(.+)$/;
 // needs a sorted list)`. The parenthesis describes this technique against
 // the named one. Settled in technique-entities.ts.
 const ALTERNATIVE_LINE = /^\*\*Alternative to:\*\*\s+(.+)$/;
+// **Consumes formats:** names FileFormat nodes (SID, CRT, KLA) whose files
+// the technique reads; a leading dot is dropped. Settled in
+// technique-entities.ts.
+const CONSUMES_LINE = /^\*\*Consumes formats:\*\*\s+(.+)$/;
 const RASTER_BAND_LINE = /^\*\*Raster band:\*\*\s+(.+)$/;
 // **Cost:** carries key=value pairs from COST_VOCABULARY and **Cost basis:**
 // one word from COST_BASIS_WORDS. A pair with an unknown key or a
@@ -171,6 +175,7 @@ const LINE_RULES: readonly { re: RegExp; apply: (value: string, c: Current) => v
   { re: DEMANDS_LINE, apply: (v, c) => (c.meta.demands = nameList(v)) },
   { re: REQUIRES_LINE, apply: (v, c) => (c.meta.requires = nameList(v, true)) },
   { re: ALTERNATIVE_LINE, apply: (v, c) => (c.meta.alternatives = alternativeItems(v)) },
+  { re: CONSUMES_LINE, apply: (v, c) => (c.meta.consumes = nameList(v, true)) },
   { re: RASTER_BAND_LINE, apply: applyRasterBand },
   { re: COST_BASIS_LINE, apply: (v, c) => (c.meta.costBasis = v.trim().replace(/`/g, "")) },
   { re: COST_BYTES_BASIS_LINE, apply: (v, c) => (c.meta.costBytesBasis = v.trim().replace(/`/g, "")) },

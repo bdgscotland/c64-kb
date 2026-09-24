@@ -156,6 +156,23 @@ counted. `c64_technique_lookup` returns the edge as `alternatives`; the
 briefings keep one technique of each pair and report the other under the
 kept one's `alternatives_left_out`.
 
+An optional `**Consumes formats:**` line names the file formats whose
+files the technique reads, by their FileFormat node names (the extension,
+upper case, no dot: `SID`, `CRT`, `KLA`). The extractor makes one
+`CONSUMES` edge per item, Technique to FileFormat (schema 37).
+
+```
+**Consumes formats:** SID
+```
+
+Name only a format that has an H3 in a format or toolchain page
+(`formats/c64-file-formats.md`); the edge is MATCHed at both ends, so a
+misspelt or undocumented format is dropped with a warning and counted,
+never created. It answers "I have a .SID: which technique reads it, and
+which recipe realises that": `MATCH (:FileFormat {name: 'SID'})<-[:CONSUMES]-(t:Technique)<-[:IMPLEMENTS]-(r:Recipe)`.
+A technique produces a screen, not a file, so there is no technique-side
+`PRODUCES`; a recipe's `file_formats` says what it builds.
+
 An optional `**Raster band:**` line names the raster lines on which the
 technique holds the CPU. It rides the Technique node as `raster_band`. For a technique
 that works by raster IRQs, the band is every line on which its IRQs run,

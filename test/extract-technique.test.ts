@@ -271,6 +271,37 @@ Body.
     }
   });
 
+  it("emits technique_consumes per **Consumes formats:** word, refusing a lower-case one (#17 ONTO-08)", () => {
+    const orig = console.warn;
+    const warnings: string[] = [];
+    console.warn = (msg: string) => {
+      warnings.push(msg);
+    };
+    try {
+      const doc = `---
+category: music
+---
+
+<!-- doc-type: technique-reference -->
+
+# Music
+
+## sid_play_routine_pattern — Init and play
+
+**Consumes formats:** .SID, \`SID\`, sng
+
+Body.
+`;
+      const ents = extractGraphEntities(doc, "techniques/music-sid.md");
+      expect(ents.filter((e) => e.type === "technique_consumes")).toEqual([
+        { type: "technique_consumes", technique: "sid_play_routine_pattern", format: "SID" },
+      ]);
+      expect(warnings.some((w) => w.includes('**Consumes formats:** "sng"'))).toBe(true);
+    } finally {
+      console.warn = orig;
+    }
+  });
+
   it("skips files without the technique-reference marker", () => {
     const doc = `## stable_raster_irq — Stable raster IRQ
 

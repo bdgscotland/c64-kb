@@ -20,6 +20,7 @@ export type TrackedEdge =
   | "caused_by"
   | "technique_requires"
   | "technique_alternative"
+  | "technique_consumes"
   | "mitigated_by"
   | "archetype_features"
   | "archetype_risks"
@@ -41,6 +42,7 @@ const REFERENCE_KEYS: { [K in TrackedEdge]: (e: EdgeOf<K>) => string } = {
   caused_by: (e) => `${e.symptom}|${e.targetKind}|${e.target}`,
   technique_requires: (e) => `${e.technique}|${e.requires}`,
   technique_alternative: (e) => `${e.technique}|${e.alternative}`,
+  technique_consumes: (e) => `${e.technique}|${e.format}`,
   mitigated_by: (e) => `${e.pitfall}|${e.target}`,
   archetype_features: (e) => `${e.archetype}|${e.technique}`,
   archetype_risks: (e) => `${e.archetype}|${e.pitfall}`,

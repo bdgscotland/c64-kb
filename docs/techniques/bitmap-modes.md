@@ -716,6 +716,7 @@ Measured with CIA1 timer A on the recipe, the same on PAL and NTSC: 34 cycles on
 **Requires:** multicolor_bitmap
 **Claims:** vic_char_base (owns)
 **Claims basis:** measured-vice
+**Consumes formats:** KLA
 
 Store trace of `recipes/oscar64/bitmap-koala-viewer.md`: display step 5,
 the `$D018` store, moves the character base to the bitmap. The
