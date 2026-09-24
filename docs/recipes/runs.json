@@ -1620,5 +1620,23 @@
       "pal": "screenshots/sid-env3-filter.png",
       "ntsc": "screenshots/sid-env3-filter-ntsc.png"
     }
+  },
+  "kickassembler/music-player": {
+    "cycles": 50000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ],
+    "shots": {
+      "pal": "screenshots/music-player.png",
+      "ntsc": "screenshots/music-player-ntsc.png"
+    }
   }
 }

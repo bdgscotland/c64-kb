@@ -5,7 +5,16 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 777, schema 31, tools 2.4.0, package 0.17.1.
+Data 778, schema 31, tools 2.4.0, package 0.17.1.
+
+**A full SID music player recipe with measured cost (data 778; #50).**
+`recipes/kickassembler/music-player.md`: order lists, patterns,
+instruments with a wavetable, a two-frame hard restart, two filter
+programs and six prioritised effects on voice 3, with an original tune.
+A CIA1 stopwatch over 2,000 calls measures the worst call at 1,198 cycles
+on PAL and 1,174 on NTSC; an ENV3 check finds the music's attack after
+all 11 hand-backs. Two bugs in the source player are fixed: the pulse
+sweep never ran, and the NTSC skip was one call in five, not six.
 
 **Plain prose and corrected claims across docs/ (data 777; #56, #67).**
 Every page's prose lost its machine-written wording in six batches;
