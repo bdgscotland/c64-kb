@@ -109,6 +109,47 @@ the chip revision and even on individual chips. Tunes that rely on
 combined waveforms (e.g. triangle+pulse for warm pad sounds) sound
 different on 6581 vs 8580.
 
+How much quieter, measured in VICE x64sc 3.10 reSID (`-sidmodel 0` and
+`1`), from real-time WAV captures (`-sound -sounddev wav`, 44,100 Hz;
+the method is in `runtime/vice-reference.md`, "Recording the SID
+output"). One voice at `$1D45` (440 Hz on PAL), AD `$00`, SR `$F0`,
+volume 15, no filter unless stated. The figure is the RMS of 16-bit
+samples, mean removed, over the middle 0.6 s (0.25 s for the pulse-width
+rows) of each held note. Silence reads 1 to 20.
+
+| Waveform | 6581 | 8580 |
+|---|---|---|
+| Sawtooth `$21` | 2,617 | 2,025 |
+| Triangle `$11` | 2,655 | 2,053 |
+| Pulse `$41`, PW `$800` | 4,669 | 3,522 |
+| Saw+pulse `$61`, PW `$080` to `$700` | 420 to 423 | 2,330 to 2,341 |
+| Saw+pulse `$61`, PW `$800` to `$C00` | 2 | 2,341 to 2,370 |
+| Tri+pulse `$51`, PW `$080` to `$600` | 2,373 to 2,391 | 2,420 to 2,458 |
+| Tri+pulse `$51`, PW `$700` / `$800` / `$A00` / `$C00` / `$F00` | 2,344 / 1,751 / 524 / 226 / 2 | 2,329 / 1,936 / 850 / 304 / 3 |
+| Band-pass, cutoff `$200`, resonance 8: sawtooth | 1,050 | 700 |
+| Same filter: saw+pulse, PW `$800` | 0 | 780 |
+| Same filter: pulse, PW `$800` | 1,247 | 1,047 |
+
+The plain waveforms read about 30 % louder on the 6581 model. Tri+pulse
+reads within 3 % on the two, so "quieter on the 6581" holds for
+saw+pulse and not for every combination.
+
+Two consequences for instrument design:
+
+- **Saw+pulse is close to silent on the 6581.** It is 16 % of a plain
+  sawtooth at PW below `$800` and nothing at PW `$800` or above. On the
+  8580 it matches the sawtooth at any width. A saw+pulse stab through
+  the band-pass that is heard on the 8580 disappears on the 6581. The
+  #50 player's port measured the same in a whole tune: RMS about 100
+  for such a stab against 2,384 for the bass in the same window (from
+  the issue, not re-measured here).
+- **Tri+pulse loudness follows the pulse width on both chips.** The
+  pulse gates the triangle: the level holds near the triangle's up to
+  PW `$600`, then falls to a tenth by `$C00` and to silence at `$F00`.
+  A pulse-width sweep on a tri+pulse pad therefore sweeps its volume.
+  Hold the width below `$700` (the port used a fixed `$200`) to keep
+  the level steady.
+
 **Write-only registers.** Registers $D400-$D418 are write-only. Reading
 one (or an unused address $D41D-$D41F, or any mirror through $D7FF)
 does not return open bus: the SID drives the bus with the byte it last
@@ -1071,6 +1112,10 @@ are not touched.
   (e.g. TRI+PULSE) produces a bit-wise AND of the waveform outputs;
   the resulting amplitude is louder on 8580 than 6581. Some specific
   combined-waveform shapes only sound right on one chip revision.
+  Measured in reSID (table under "Combined waveforms" above): saw+pulse
+  is silent on the 6581 at PW `$800` and above, while tri+pulse is as
+  loud on the 6581 as on the 8580 and loses level as PW rises past
+  `$700` on both chips.
 
 - **No frequency read-back.** The current oscillator
   frequency cannot be read. $D41B (OSC3) shows the upper 8 bits of

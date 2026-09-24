@@ -234,9 +234,9 @@ Changing $D416 while voices are playing produces a live filter sweep; SID tracke
 **Region:** both
 **Uses registers:** D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D415, D416, D417, D418
 **Requires:** sid_voice_setup
-**Cost:** cycles_per_frame=1198, irq_slots=1
+**Cost:** cycles_per_frame=1198, cycles_per_frame_typical=779, irq_slots=1, bytes_code=1414, bytes_data=1070, zp_bytes=0
 **Cost basis:** measured-vice
-**Cost measured on:** kickassembler-music-player (worst of 2,000 calls, PAL, a frame where an effect hands voice 3 back; 1,159 with no effect; NTSC 1,174)
+**Cost measured on:** kickassembler-music-player (worst of 2,000 calls, PAL, a frame where an effect hands voice 3 back; 1,159 with no effect; NTSC 1,174; typical is the NTSC median, PAL 773; bytes from the symbol file: player code $10FD-$1682, data is player state 322 + effect data 249 + octave-6 tables 48 + tune 451)
 **Claims:** sid_voice_1-3 (owns), sid_filter_volume (owns)
 **Claims basis:** estimated
 
@@ -409,7 +409,7 @@ The 8580 cleaned up the DAC design; the DC offset is nearly absent. The same $D4
 
 #### Combined waveforms
 
-Enabling more than one waveform bit simultaneously produces a bitwise AND of the waveform outputs. On the 6581 this combined output is quieter and exhibits noise artifacts at the zero-crossing points. On the 8580 the combined output is louder and cleaner. Tunes that rely on TRI+PULSE for warm pad sounds or TRI+SAW for soft brass will sound louder and brighter on 8580 than on 6581. The exact bit patterns produced by combined waveforms depend on the chip revision; some combinations produce a fundamentally different harmonic spectrum between revisions.
+Enabling more than one waveform bit simultaneously produces a bitwise AND of the waveform outputs. On the 6581 this combined output is quieter and exhibits noise artifacts at the zero-crossing points. On the 8580 the combined output is louder and cleaner. Tunes that rely on TRI+PULSE for warm pad sounds or TRI+SAW for soft brass will sound louder and brighter on 8580 than on 6581. The exact bit patterns produced by combined waveforms depend on the chip revision; some combinations produce a fundamentally different harmonic spectrum between revisions. Measured levels in reSID for saw+pulse and tri+pulse across pulse widths, both models, are in [sid-reference.md](../hardware/sid-reference.md) under "Combined waveforms": saw+pulse is silent on the 6581 at PW `$800` and above, while tri+pulse is within 3 % between the models, so the TRI+PULSE half of the sentence above does not hold in reSID (TRI+SAW was not measured).
 
 #### Voltage and capacitor differences
 
