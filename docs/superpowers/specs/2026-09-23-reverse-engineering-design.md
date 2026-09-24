@@ -134,9 +134,14 @@ Tools take a `sha1`, not a path. The tool resolves it through
 `c64_re_session` runs it, verifies `in_play`, writes the snapshot (local,
 gitignored) and returns the frame and cycle at which play was reached. The
 other tools start from that snapshot, so boot, loading and title screens
-are not measured. Keyboard input uses `keybuf`. Joystick input is an open
-problem (below); until it is solved, a session may only use keys or
-fire-free starts.
+are not measured. Keyboard input uses `keybuf`. Joystick input uses the
+binary monitor's Joyport Set with control port 2 holding VICE's Joyport I/O
+simulation device, timed in frames by raster-line checkpoints
+(`docs/runtime/vice-reference.md`, "Pressing the joystick headless";
+`templates/_harness/drive.py`). VICE's event playback, the route #59 set
+out to evaluate, does not start in 3.10. An earlier version of this
+paragraph called joystick input an open problem and limited sessions to
+keys or fire-free starts.
 
 ### The tools
 
@@ -298,5 +303,5 @@ said step 1 closes #3 without naming that split.
 | False cycle precision in IRQ attribution | calibration against known figures; nested handlers and KERNAL dispatch counted apart; unknown when unobserved |
 | Trace volume on all-RAM runs | targeted ranges first; byte caps; `memmapshow` from a checkpoint (no rebuild needed, see above) |
 | Coverage mistaken for complete disassembly | `unknown` class; epochs per depack transition |
-| Joystick-only games unreachable | issue above; pilot games chosen to start from keys or fire-free where possible |
+| Joystick-only games unreachable | solved by #59: Joyport Set on the I/O simulation device, frame-timed (see "Session file") |
 | Expression leaking into pages | `study_expression` lint; review of every study page |

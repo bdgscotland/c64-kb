@@ -33,7 +33,10 @@
 //
 // meter_print writes "F00144 W01234 T01100" (20 cells) at the row and column
 // given; the character set in use must hold 0-9, F, W and T at their screen
-// codes. check.py reads it back.
+// codes. check.py reads it back. It renders a field only when its value
+// changed (F is stepped in place) into a 20-byte copy, then writes the cells
+// of the screen that differ from that copy: a few hundred cycles a frame once
+// the figures stop changing, and a cleared row comes back on the next print.
 //
 // Timer choice: CIA2 timer A. The KERNAL IRQ uses CIA1 timer A and the KERNAL
 // serial (disk) routines write CIA1 timer B (issue #35), so neither collides.

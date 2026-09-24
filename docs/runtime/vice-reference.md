@@ -489,6 +489,31 @@ execution point without a visible window.
 On Linux CI, add `Xvfb` or set `SDL_VIDEODRIVER=offscreen` (SDL2 build) to suppress the
 display requirement.
 
+### The SID under `+sound`
+
+The pinned headless command passes `+sound`, which is fastest, but then the
+SID's read-back registers are wrong: `$D41B` (OSC3) and `$D41C` (ENV3)
+follow the emulator's sound buffer, not the voice. A program that reads
+them, for random numbers or an envelope follower, needs a sink that clocks
+the SID: `-sound -sounddev dump -soundarg /dev/null` (or `wav`). Measured
+in the windowless x64sc 3.10, PAL, voice 3 gated with noise, attack 10
+(500 ms), both registers read once a frame for 64 frames, two runs each:
+
+| Sink | `$D41C` (ENV3) | `$D41B` (OSC3, noise) |
+|---|---|---|
+| `+sound` | 1, 201, 145, 89 ...: down 56 a frame, wrapping; not an envelope | 10, 210, 154, 98 ...: the same ramp, 32 values |
+| `-sounddev dummy` | 0 every frame | 254 every frame |
+| `-sounddev dump` | 6, 16, 26, 37 ...: the attack, about 10 a frame | 56 values of 64: noise |
+| `-sounddev wav` | as dump | as dump |
+
+Every sink gave the same bytes on both runs. The template harness takes
+`SOUND_SINK := dump` for this. An earlier version of
+`docs/workflow/agent-harness.md` withdrew a claim that the dummy driver
+breaks these reads, on the evidence of 16 different values from a noise
+voice under `+sound`: those were distinct, but they were the ramp above,
+not noise. Issue #55's filter build found the same (a six-run probe, not
+in this repository).
+
 ---
 
 ## Reading the exit screenshot
@@ -938,6 +963,47 @@ with `Quit` instead of waiting for the cycle limit; it is the one to grow
 into a test runner. All three agree on both builds. None of them was run
 against `sim6502-reference.md`'s VICE backend, which uses a different
 server on port 6510.
+
+### Pressing the joystick headless
+
+Joyport Set (`0xa2`, body: port and value, two little-endian words) and
+the text monitor's `jpdb <port> <value>` set a control port's lines only
+when that port holds device 37, "Joyport I/O simulation"
+(`-controlport2device 37`). Port 0 is control port 1, port 1 is control
+port 2. The value is the lines as `$DC00` reads them, active low: `$FF`
+is nothing pressed, `$EF` is fire. The device starts with every line low,
+all four directions and fire held, so set `$FF` before the program reads
+the port. Measured in the windowless x64sc 3.10: a program that waits for
+fire on `$DC00` saw the press with device 37 and never with the default
+joystick device, which ignores the command. The starters under
+`templates/` once said the windowless build's joyport commands never reach
+`$DC00`; that was the default device. An Undump restores the device the
+snapshot was taken with: after undumping a default-device snapshot, the
+press did not arrive.
+
+A run repeats exactly when time is counted in frames and the machine starts
+under the monitor's control. Two exec checkpoints over `$0000-$FFFF`, with
+the conditions `RL == $00` and `RL == $80`, are enabled in turn, so the
+machine stops at the first instruction of raster line 0 once a frame
+(about 500 frames a second of wall time here). The start: connect, set
+`$FF`, Reset (`0xcc`, type 1, a power cycle), then Autostart (`0xdd`).
+Measured: the platformer starter's title came 190 frames in, six runs of
+six; autostarted from the command line instead, and stopped when the
+client connected, it came 180, 185 or 190 frames in. `-initbreak` does not
+help: with no client connected yet it opens the text monitor, which reads
+end of input and lets the machine run. A fire press at a fixed frame gave
+the same CIA1 timer A reading on three PAL and three NTSC runs.
+`templates/_harness/drive.py` does all of this; `make joyprobe` in any
+starter is its proof.
+
+VICE's event history (`-playback`, `-eventsnapshotdir`) is not a way in.
+In 3.10 `-playback` sets a CPU trap while the command line is parsed, and
+the power-on reset during initialisation clears pending traps
+(`interrupt_cpu_status_reset` in `src/interrupt.c`, source read, not
+traced). No monitor command starts playback, and the windowless build has
+no menu. Measured once: an end snapshot carrying a hand-written `EVENT`
+module (one fire press) and its start snapshot, played with `-playback`,
+left the machine at the READY prompt with the start snapshot never loaded.
 
 ### Checking every store against the claims: `scripts/claims-watch.ts`
 

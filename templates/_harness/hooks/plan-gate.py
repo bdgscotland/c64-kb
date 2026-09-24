@@ -3,7 +3,13 @@
 the c64-kb output the plan was made from.
 
   plan-gate.py --check PLAN.md [--c64kb DIR] [--cache FILE]
-      make's gate: exit 0 when the plan passes, 1 when it does not.
+      make's gate: exit 0 when the plan passes (one line says so), 1 when it
+      does not.
+  plan-gate.py --seed PLAN.md --cache FILE
+      marks a starter's shipped plan as passed without the re-run (c64-kb's
+      new-project and verify-templates do this), so building a shipped
+      example never depends on the live graph. Any edit to the plan, or a
+      `make clean`, brings the re-run back.
   plan-gate.py
       Claude Code PreToolUse hook: reads the tool call as JSON on stdin; exit
       2 blocks an Edit, MultiEdit, Write or NotebookEdit under <project>/src/
@@ -18,10 +24,14 @@ The plan passes when:
   - every technique those two outputs name is a row of the "## Techniques"
     table (first cell), and the two outputs name the same techniques.
 With --c64kb pointing at a c64-kb checkout, `make` also re-runs
-check-compatibility on the pasted names and requires the same Verdict line
-(the result is cached against PLAN.md's contents in --cache). When the
-checkout or its graph cannot be reached, it says so and checks the
-structure only.
+check-compatibility on the pasted names and requires the same Verdict line.
+The pass is cached against PLAN.md's contents in --cache, with the
+checkout's KB_DATA_VERSION and commit, which the pass line and a refusal
+both print. When the checkout or its graph cannot be reached, it warns and
+checks the structure only. A verdict can change with no change to the plan:
+another session's ingest into a shared live graph, or a new KB version.
+Seen 2026-09-23: a plan that passed at 20:03 was refused at 20:28 after
+five commits landed in the checkout, and passed again a minute later.
 
 What it cannot catch: a plan whose outputs were edited by hand into the
 right shape with the right verdict, and writes to src/ made through a Bash
@@ -114,26 +124,79 @@ def rerun_verdict(c64kb, names):
     return m.group(0).strip() if (r.returncode == 0 and m) else None
 
 
+def kb_version(c64kb):
+    """'KB data 777, commit abc1234' for the checkout, as far as it can be read."""
+    parts = []
+    try:
+        m = re.search(r"^KB_DATA_VERSION=(\S+)", open(os.path.join(c64kb, "VERSION")).read(), re.M)
+        parts.append(f"KB data {m.group(1)}" if m else "no KB_DATA_VERSION")
+    except OSError:
+        parts.append("no VERSION file")
+    try:
+        r = subprocess.run(["git", "-C", c64kb, "rev-parse", "--short", "HEAD"],
+                           capture_output=True, text=True, timeout=10)
+        if r.returncode == 0:
+            parts.append(f"commit {r.stdout.strip()}")
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+    return ", ".join(parts)
+
+
+def read_cache(cache):
+    try:
+        return json.load(open(cache))
+    except (OSError, ValueError):
+        return {}
+
+
+def write_cache(cache, digest, how, verdict):
+    os.makedirs(os.path.dirname(cache) or ".", exist_ok=True)
+    with open(cache, "w") as f:
+        json.dump({"plan_sha256": digest, "checked": how, "verdict": verdict}, f)
+        f.write("\n")
+
+
+def short(verdict):
+    """'**Verdict:** WARNINGS — ...' -> 'WARNINGS'."""
+    return (verdict or "").replace("**Verdict:**", "").split("\u2014")[0].strip()
+
+
 def check(plan, c64kb=None, cache=None):
+    """(problems, the one line to print on a pass or a warning, or None)."""
     if not os.path.isfile(plan):
-        return [f"{plan} does not exist: copy it from the harness's PLAN.md.template"]
+        return [f"{plan} does not exist: copy it from the harness's PLAN.md.template"], None
     text = open(plan).read()
     problems, compat, verdict = parse(text)
     if problems or not c64kb:
-        return problems
+        return problems, None
     digest = hashlib.sha256(text.encode()).hexdigest()
-    if cache and os.path.isfile(cache) and open(cache).read().strip() == digest:
-        return []
+    seen = read_cache(cache) if cache else {}
+    if seen.get("plan_sha256") == digest:
+        return [], f"plan-gate: {plan} passes (unchanged; {seen.get('checked')}: {short(seen.get('verdict'))})"
     now = rerun_verdict(c64kb, compat)
     if now is None:
-        print(f"plan-gate: could not re-run check-compatibility in {c64kb}; checked the plan's structure only")
-        return []
+        return [], (f"plan-gate: warning: could not re-run check-compatibility in {c64kb} "
+                    "(no checkout, or its graph is down); checked the plan's structure only")
+    kb = kb_version(c64kb)
     if now != verdict:
-        return [f"the pasted verdict is '{verdict}', but check-compatibility now prints '{now}': re-run and paste"]
+        return [f"the KB's answer changed: {plan} pastes '{verdict}', but check-compatibility on "
+                f"{c64kb} ({kb}) now prints '{now}'. Re-run check-compatibility and plan-budget "
+                "and re-paste both. A shared checkout whose graph another session is re-ingesting "
+                "can flip a verdict with no change to the plan; run it again if the checkout is busy."], None
+    how = f"check-compatibility re-run on {kb}"
     if cache:
-        os.makedirs(os.path.dirname(cache) or ".", exist_ok=True)
-        with open(cache, "w") as f:
-            f.write(digest + "\n")
+        write_cache(cache, digest, how, now)
+    return [], f"plan-gate: {plan} passes ({how}: {short(now)})"
+
+
+def seed(plan, cache):
+    """Mark a starter's shipped plan as passed, without the re-run."""
+    text = open(plan).read()
+    problems, _, verdict = parse(text)
+    if problems:
+        return problems
+    write_cache(cache, hashlib.sha256(text.encode()).hexdigest(),
+                "the starter's shipped plan, check-compatibility not re-run", verdict)
     return []
 
 
@@ -156,7 +219,7 @@ def hook():
     path = os.path.realpath(os.path.join(root, path))
     if not path.startswith(os.path.join(root, "src") + os.sep):
         return 0
-    problems = check(os.path.join(root, "PLAN.md"))
+    problems, _ = check(os.path.join(root, "PLAN.md"))
     if not problems:
         return 0
     print("BLOCKED: writes under src/ wait until PLAN.md passes the plan gate.", file=sys.stderr)
@@ -167,10 +230,17 @@ def hook():
 
 
 def main():
+    if "--seed" in sys.argv:
+        problems = seed(arg("--seed") or "PLAN.md", arg("--cache") or "build/.plan-gate")
+        for p in problems:
+            print(f"plan-gate: not seeded: {p}")
+        return 1 if problems else 0
     if "--check" not in sys.argv:
         return hook()
     plan = arg("--check") or "PLAN.md"
-    problems = check(plan, arg("--c64kb"), arg("--cache"))
+    problems, line = check(plan, arg("--c64kb"), arg("--cache"))
+    if line:
+        print(line)
     if not problems:
         return 0
     print("plan-gate: the plan does not pass, so nothing is built.")

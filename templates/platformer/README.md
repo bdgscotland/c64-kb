@@ -218,18 +218,23 @@ attaches the image during `make shot`), a variable jump height (cut
 
 ## Driving it headless
 
-`make joy` builds the normal game with its port byte read from `$02FE`
-instead of `$DC00`; `tools/drive.py` (from the action-puzzle starter) plays
-it over VICE's binary monitor, at real speed (no warp; the monitor port is
-DRIVE_PORT or a free one), and reads the HUD page. Measured: title,
-fire, LIVES 3, holding right loses all three lives, GAME OVER, the title
-with HI 000030, fire, a new game at LIVES 3.
+`make drive` plays the normal game through `harness/drive.py`, over
+VICE's binary monitor, with the stick on the real `$DC00`, and reads the
+HUD page (`DRIVE_SCREEN` in the Makefile). Time is counted in frames, so a
+run repeats exactly. Measured (2026-09-24, VICE x64sc 3.10): title, fire,
+LIVES 3, holding right loses all three lives (GAME OVER 580 frames in,
+SCORE 000030), the title with HI 000030, fire, a new game at LIVES 3.
+`make drivetest` (a proof target) plays to GAME OVER.
 
 ```bash
-make joy
-python3 tools/drive.py build/platformer-joy.prg "until:PRESS FIRE" tap:fire \
-    "until:LIVES 3" hold:right "until:GAME OVER" "until:PRESS FIRE" print
+make drive STEPS='"until:PRESS FIRE" tap:fire "until:LIVES 3" hold:right \
+    "until:GAME OVER" "until:PRESS FIRE" print tap:fire "until:LIVES 3" print'
 ```
+
+An earlier version built a separate `make joy` game that read its port
+byte from `$02FE`, because VICE's joyport command seemed not to reach
+`$DC00`; it does, once control port 2 holds the "Joyport I/O simulation"
+device (`-controlport2device 37`), which `drive.py` selects.
 
 `make run` starts the windowed VICE with no joystick device chosen: pick
 one for port 2 in its settings, or pass one, e.g.
@@ -267,8 +272,9 @@ compiler that the local build does not have:
 
 ## Not established
 
-- A real `$DC00` joystick: the normal game was played through `make joy`
-  (a RAM port byte), not through the CIA.
+- A physical joystick: the normal game was played through VICE's simulated
+  port 2 lines on `$DC00`, not a stick. An earlier version played a build
+  that read `$02FE` instead.
 - Real hardware: everything was measured in VICE x64sc 3.10.
 - The tune was never listened to; its note table is arithmetic.
 - The tear check samples 32 moments of one run; it does not prove every

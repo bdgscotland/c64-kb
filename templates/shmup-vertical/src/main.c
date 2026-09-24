@@ -254,15 +254,6 @@ static char port_read(void)
     }
     return out;
 }
-#elif defined(JOY_SOURCE)
-// Headless driving of the normal game (make joy, tools/drive.py): the port
-// byte comes from RAM at JOY_SOURCE, which a VICE monitor writes; the
-// windowless VICE's joyport commands do not reach $DC00.
-#define PLAY_FRAMES 1
-static char port_read(void)
-{
-    return *(volatile char *)JOY_SOURCE;
-}
 #else
 #define PLAY_FRAMES 1
 static char port_read(void)
@@ -449,8 +440,8 @@ static void over_enter(void)
 // Frames that woke late (after a lost one) are left out. -dWORKEND=2 also
 // reads the line after each step: words 3-10 that frame's lines when it
 // woke and after each of the 7 steps, 11-17 each step's most lines in any
-// frame; the reads cost about 300 cycles a frame. Any build, the joy build
-// too: nothing is held off, so the timing is the game's own.
+// frame; the reads cost about 300 cycles a frame. Any build, the normal
+// one too: nothing is held off, so the timing is the game's own.
 #define WE ((volatile unsigned *)0x0370)
 static unsigned we_step[8];
 static unsigned we_line(void)
@@ -728,9 +719,6 @@ int main(void)
     ACT_PTR[0] = SPR_BLOCK + F_SHIP;
     ACT_COL[0] = VCOL_LT_BLUE;
     title_enter();
-#if !AUTOPILOT && defined(JOY_SOURCE)
-    *(volatile char *)JOY_SOURCE = 0xff;        // nothing pressed until the monitor says so
-#endif
 #ifdef DRAWEND
     *(volatile int *)0x0364 = 0x7fff;
     *(volatile int *)0x0366 = 0x7fff;

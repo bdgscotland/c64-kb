@@ -41,7 +41,6 @@ The GO sign blinks when a stage is clear: walk right.
 | `src/engine.asm` | KickAssembler: the IRQ chain that writes the sprite bands, the scroll's slice copy, the brute's glyph builder, the tune |
 | `src/autopilot.h`, `src/verdict.h` | AUTOPILOT builds only: the bot, the photo stops, the self-checks |
 | `tools/flickercheck.py` | Renders the fighters and the brute from `src/` and proves every pixel is on the screen in the crowded moments (`make flickercheck`) |
-| `tools/drive.py` | Plays the `make joy` build headless over VICE's monitor |
 | `expect.json`, `expect-gameover.json`, `PLAN.md` | The screenshot checks; the plan with the c64-kb tool output |
 
 ## How a frame runs
@@ -254,17 +253,23 @@ re-pin `FLICKER_PAL` and `FLICKER_NTSC` in the Makefile.
 
 ## Driving it headless
 
-`make joy` builds the normal game with its port byte read from `$02FE`
-instead of `$DC00`; `tools/drive.py` plays it over VICE's binary monitor
-and reads the HUD. Measured: title, fire, LIVES 3, the hero standing still
-loses all three lives, the title again, fire, a new game at LIVES 3. Set
-`DRIVE_PORT` if another VICE holds port 6581.
+`make drive` plays the normal game through `harness/drive.py`, over
+VICE's binary monitor, with the stick on the real `$DC00`, and reads the
+HUD page (`DRIVE_SCREEN` in the Makefile). Time is counted in frames, so a
+run repeats exactly. Measured (2026-09-24, VICE x64sc 3.10): title, fire,
+LIVES 3, the hero standing still is down to LIVES 1 after 1,570 frames,
+the title again 960 frames later, fire, a new game at LIVES 3.
+`make drivetest` (a proof target) plays to LIVES 2.
 
 ```bash
-make joy
-DRIVE_PORT=6811 python3 tools/drive.py build/beat-em-up-joy.prg "until:PRESS FIRE" tap:fire \
-    "until:LIVES 3" "until:LIVES 1" "until:PRESS FIRE" tap:fire "until:LIVES 3" print
+make drive STEPS='"until:PRESS FIRE" tap:fire "until:LIVES 3" "until:LIVES 1" \
+    "until:PRESS FIRE" tap:fire "until:LIVES 3" print'
 ```
+
+An earlier version built a separate `make joy` game that read its port
+byte from `$02FE`, because VICE's joyport command seemed not to reach
+`$DC00`; it does, once control port 2 holds the "Joyport I/O simulation"
+device (`-controlport2device 37`), which `drive.py` selects.
 
 ## Which Oscar64
 
@@ -303,8 +308,9 @@ The meter reads a little lower on v1.32.273 (window 0: 14,773 / 9,131 PAL,
 
 ## Not established
 
-- A real `$DC00` joystick: the normal game was played through `make joy`
-  (a RAM port byte), not through the CIA.
+- A physical joystick: the normal game was played through VICE's simulated
+  port 2 lines on `$DC00`, not a stick. An earlier version played a build
+  that read `$02FE` instead.
 - Real hardware: everything was measured in VICE x64sc 3.10.
 - The tune was never listened to; its note table is arithmetic.
 - The flicker check covers the three photo stops, six moments a model; the

@@ -45,8 +45,7 @@ Make a project from it in c64-kb with
 | `src/step.asm` | The path bytecode run for every enemy, explosions, one path step for every flying enemy |
 | `tools/phases.py` | `make phases`: the panel at every YSCROLL phase against the graded one |
 | `tools/meter.py` | `make stage`: reads the meter off the staged run's shots |
-| `tools/drive.py` | Plays the `make joy` build headless over VICE's binary monitor |
-| `tools/joytest.py` | `make joytest`: games played on PAL and NTSC to GAME OVER, graded on lost frames, and a reboot that must show the saved HI; `make longplay`: long games with a ship that is never lost |
+| `tools/joytest.py` | `make joytest` (through `harness/drive.py`): games played on PAL and NTSC to GAME OVER, graded on lost frames, and a reboot that must show the saved HI; `make longplay`: long games with a ship that is never lost |
 | `PLAN.md` | The plan, with the c64-kb tool output it was built from |
 | `expect.json`, `stage-expect.json` | What the graded and the staged screenshots must show |
 
@@ -108,9 +107,10 @@ skips enemies whose lines miss every box and walks only the boxes that are
 on; the multiplexer's build loop keeps its write place in a register.
 `make joytest` now plays 16 games a model with fire held and a sweep, and
 fails on any lost frame: 16 of 16 NTSC games lost none. `make longplay`
-plays 4 games a model for 40 s of warp with a ship that is never lost
-(about 44,000 play frames each on NTSC, through the level's later loops):
-none lost a frame. The latest end over those runs was line 256 of 263 on
+plays 4 games a model with a ship that is never lost, then for 40 s of
+warp by the wall clock (about 44,000 play frames each on NTSC, through the
+level's later loops), now for 740 s of emulated time (44,400 NTSC frames,
+37,000 PAL): none lost a frame. The latest end over those runs was line 256 of 263 on
 NTSC (7 lines, about 450 cycles, to spare) and 243 of 312 on PAL.
 
 A frame far past the frame shows in the meter as about 65,524: CIA2 timer A
@@ -177,9 +177,13 @@ starts the ship 16 pixels to the right and must fail. `make stage`, `make
 joytest` and `make longplay` are this starter's proof targets
 (VERIFY_TARGETS), which `npm run verify:templates -- --selftest` runs too. `make claims` checks
 every store the program makes against what the Makefile declares. `make
-joy` builds the normal game reading its stick from `$02FE`, for
-`python3 tools/drive.py build/shmup-vertical-joy.prg "until:PUSH FIRE" tap:fire ...`
-(it takes a free monitor port unless DRIVE_PORT names one).
+drive STEPS='"until:PUSH FIRE" tap:fire ...'` plays the normal game through
+`harness/drive.py`, with the stick on the real `$DC00` and time counted in
+emulated frames, so a run repeats exactly; `make joytest` and `make
+longplay` play it the same way. An earlier version built a separate `make
+joy` game that read its stick from `$02FE`, because VICE's joyport command
+seemed not to reach `$DC00`; it does, once control port 2 holds the
+"Joyport I/O simulation" device, which `drive.py` selects.
 
 Measuring switches, none in a release build: `-dPROFILE=1` (each step of the
 heaviest frame), `-dDRAWEND=1` (the bullet draw's margin to the beam),

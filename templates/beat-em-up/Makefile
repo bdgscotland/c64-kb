@@ -1,5 +1,5 @@
 # beat-em-up: the side-on brawler starter. Every target but flickercheck
-# and joy comes from the harness:
+# and gameover comes from the harness:
 #   make              build build/beat-em-up.prg (after the PLAN.md gate)
 #   make run          windowed VICE, joystick in port 2
 #   make shot         headless PAL and NTSC exit screenshots of the autopilot build
@@ -11,7 +11,7 @@
 #                     then prove the check fails on the FLICKER_DEMO=1 build
 #   make gameover     the AP_GIVE_UP=1 build: the bot never fights, three lives
 #                     go, GAME OVER shows; graded by expect-gameover.json
-#   make joy          the normal game reading its port byte from $02FE, for tools/drive.py
+#   make drive        the normal game played headless (harness/drive.py; README "Driving it headless")
 #   make disk         build/beat-em-up.d64
 #   make claims       c64-kb's claims-watch over the autopilot build
 #   make clean
@@ -41,7 +41,7 @@ SHOT_CYCLES_NTSC := 110000000
 CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite_5, sprite_6, sprite_7, vic_raster_irq, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$6F' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 120000000
 
 # This starter's own proofs, which npm run verify:templates runs too.
-VERIFY_TARGETS := flickercheck gameover
+VERIFY_TARGETS := flickercheck gameover drivetest
 
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
@@ -85,12 +85,7 @@ gameover: $(PRG_OVER)
 	$(call vice_shot,$(PRG_OVER),$(GAMEOVER_NTSC),-model ntsc,shots/over-ntsc.png)
 	$(PYTHON) $(HARNESS_DIR)/check.py expect-gameover.json shots/over-pal.png shots/over-ntsc.png
 
-# The normal game with its port byte read from $02FE instead of $DC00, so a
-# VICE monitor can drive it headless (tools/drive.py).
-PRG_JOY := build/$(NAME)-joy.prg
-$(PRG_JOY): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
-	@mkdir -p build
-	$(OSCAR64_BUILD) -dJOY_SOURCE=0x02fe -o=$@ $(C_MAIN)
-
-.PHONY: joy
-joy: $(PRG_JOY)
+# make drive and drivetest read the HUD page's rows 21-24 (src/game.h HUDPAGE).
+# drivetest: the normal build, stick on $DC00: fire on the title starts a game.
+DRIVE_SCREEN := C800:21-24
+DRIVE_STEPS  := "until:PRESS FIRE" tap:fire "until:LIVES 3" "until:LIVES 2" print

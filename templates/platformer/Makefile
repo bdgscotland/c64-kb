@@ -8,7 +8,7 @@
 #   make tearcheck  shoot the autopilot run mid-scroll and match every picture
 #                   against a render of the level (tools/tearcheck.py); then
 #                   prove the check fails on the TEAR_DEMO=1 build
-#   make joy        the normal game reading its port byte from $02FE, for tools/drive.py
+#   make drive      the normal game played headless (harness/drive.py; README "Driving it headless")
 #   make disk       build/platformer.d64
 #   make claims     c64-kb's claims-watch over the autopilot build
 #   make clean
@@ -32,7 +32,7 @@ CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, sprite_3, sprite_4, sprite
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 # Proof targets `npm run verify:templates -- --selftest` runs after selftest.
-VERIFY_TARGETS := tearcheck stage
+VERIFY_TARGETS := tearcheck stage drivetest
 
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
@@ -59,15 +59,10 @@ tearcheck: $(PRG_AUTO) $(PRG_TEAR)
 	$(PYTHON) tools/tearcheck.py --x64sc $(X64SC) --harness $(HARNESS_DIR) --src src --expect whole $(PRG_AUTO) $(TEAR_CYCLES)
 	$(PYTHON) tools/tearcheck.py --x64sc $(X64SC) --harness $(HARNESS_DIR) --src src --expect torn $(PRG_TEAR) $(TEAR_DEMO_CYCLES)
 
-# The normal game with its port byte read from $02FE instead of $DC00, so a
-# VICE monitor can drive it headless (tools/drive.py).
-PRG_JOY := build/$(NAME)-joy.prg
-$(PRG_JOY): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
-	@mkdir -p build
-	$(OSCAR64_BUILD) -dJOY_SOURCE=0x02fe -o=$@ $(C_MAIN)
-
-.PHONY: joy
-joy: $(PRG_JOY)
+# make drive and drivetest read the HUD page's rows 21-24 (src/game.h HUDPAGE).
+# drivetest: the normal build, stick on $DC00: fire on the title starts a game.
+DRIVE_SCREEN := C800:21-24
+DRIVE_STEPS  := "until:PRESS FIRE" tap:fire "until:LIVES 3" hold:right "until:GAME OVER" print
 
 # ---- stage: the worst frame with every enemy slot full ------------------------------
 # STAGE_CROWD puts ten enemies in the first view (src/level.c), so all five

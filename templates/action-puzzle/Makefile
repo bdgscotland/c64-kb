@@ -10,7 +10,7 @@
 #   make gen        re-run tools/gen.py (caves, script, model, note table)
 #   make disktest   the high-score save on a true-drive 1541: save, save over it, cold start, load
 #   make modelcheck every visible cave cell of the shots against tools/gen.py's model
-#   make joy        the normal game reading its port byte from $02FE, for tools/drive.py
+#   make drive      the normal game played headless: make drive STEPS='"until:FIRE TO START" tap:fire print'
 #   make clean
 NAME   := action-puzzle
 C_MAIN := src/main.c
@@ -39,7 +39,12 @@ CLAIMS_ARGS := --cycles 24000000 --kernal SETLFS,SETNAM,OPEN,CLOSE,CHKIN,CHKOUT,
 # The harness sits beside the starter in c64-kb (../_harness) or is vendored
 # into ./harness when the starter is copied out on its own.
 # Proof targets `npm run verify:templates -- --selftest` runs after selftest.
-VERIFY_TARGETS := disktest modelcheck selftest-scan
+VERIFY_TARGETS := disktest modelcheck selftest-scan drivetest
+
+# make drivetest: the normal build (no autopilot) played through harness/drive.py
+# with the stick on $DC00: fire on the title starts cave 1, and holding right
+# digs to a gem.
+DRIVE_STEPS := "until:FIRE TO START" tap:fire "until:LIVES" hold:right "until:GEMS 01/06" print
 
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
@@ -90,14 +95,6 @@ disktest: $(D64) $(PRG_AUTO)
 	$(C1541) -attach $(DISKTEST_D64) -list > build/disktest-dir.txt 2>/dev/null
 	$(call disk_run,disk-load,60000000,$(DISKTEST_D64),)
 	$(PYTHON) tools/disk_check.py $(HARNESS_DIR) build $(DISK_MODEL)
-
-# The normal game with its port byte read from $02FE instead of $DC00, so a
-# VICE monitor can drive it headless (tools/drive.py; README "Driving it headless").
-.PHONY: joy
-joy: build/$(NAME)-joy.prg
-build/$(NAME)-joy.prg: $(C_DEPS) $(METER_DEPS) | plan-gate
-	@mkdir -p build
-	$(OSCAR64_BUILD) -dJOY_SOURCE=0x02fe -o=$@ $(C_MAIN)
 
 # The scanned bit's self-test: the autopilot built with SCAN_FLAG=0 (the
 # cave-scan recipe's double-move bug) must fail check.py and name E in its
