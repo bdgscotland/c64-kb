@@ -356,6 +356,9 @@ its record read and the drive's reply.
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** SETLFS, SETNAM, OPEN, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+**Cost:** cycles_per_frame=81421
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-platformer-scaffold (PROFILE builds, one bare status read through kernalio.h, open to close, the longest of 8 runs; replies 62, 01 and 00; true drive, PAL; 43,852 the shortest)
 **Claims:** serial_bus (shares), cia1_timer_b (shares)
 **Claims basis:** measured-vice
 
@@ -480,6 +483,17 @@ the recipe `../recipes/kickassembler/dos-error-codes.md`.
 - **Hang on a missing drive.** CHKIN on a device that does not answer
   hangs with no timeout, per `hardware/kernal-routines-reference.md`;
   the OPEN's C=1, A=5 return is the last chance to notice, so test it.
+
+### Cycle budget
+
+One read, open to close, is 43,852 to 81,421 cycles in VICE x64sc 3.10
+with the true-drive 1541, two to four PAL frames: measured on
+`recipes/oscar64/platformer-scaffold.md`'s profile builds, CIA2's timers
+chained as a 32-bit counter (the KERNAL's serial code uses CIA1 timer B),
+eight runs over PAL and NTSC, replies `62, FILE NOT FOUND`,
+`01, FILES SCRATCHED` and `00, OK`. The range is the emulated drive's
+timing. It is multi-frame: a budget lists it and does not sum it. The
+page had no figure before #37.
 
 ### Recipes
 

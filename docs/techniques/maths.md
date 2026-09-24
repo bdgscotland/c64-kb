@@ -18,6 +18,9 @@ program is at the end of the page.
 **Complexity:** low
 **Region:** both
 **Uses registers:** (none)
+**Cost:** cycles_per_frame=31
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-platformer-scaffold (PROFILE=2 build, the 8.8 Y add and the pixel byte of one actor, display off, PAL and NTSC)
 
 ### Why
 
@@ -94,6 +97,19 @@ first version of the harness ran two more sweeps meant to cover the
 high-byte pairs under a forced carry of 0 and of 1; they left the
 checksum unchanged, which means they did not run as written, so they
 were removed and are not claimed here.
+
+### Cycle budget
+
+31 cycles for one actor's Y step, `py_fp += vy_fp` and the pixel byte
+`py_fp >> 8`, as Oscar64 compiled it inside the platformer's
+`player_update`. Measured in VICE x64sc 3.10 on
+`recipes/oscar64/platformer-scaffold.md`'s `PROFILE=2` build: CIA1 timer B
+around the two lines, the timer's 18 cycles subtracted, largest of 800
+frames, display off, PAL and NTSC alike. With the display on, one NTSC
+reading was 74: a badline stall landed inside. An X step is the same
+shape. `recipes/oscar64/fixed-point-jump.md` counts its two adds at 25 to
+31 cycles from the instruction table (rung 3). The page had no figure
+before #37.
 
 ### Recipes
 
@@ -421,6 +437,9 @@ about 4 per cent of a PAL frame in its slowest form (791 of 19,656).
 **Region:** both
 **Uses registers:** (none)
 **Requires:** fixed_point_8_8
+**Cost:** cycles_per_frame=66
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-platformer-scaffold (PROFILE=2 build, one actor's velocity step: table read, gravity add past the table, or launch; display off, PAL and NTSC)
 
 ### Why
 
@@ -498,6 +517,17 @@ runs two sprites from floors 64 pixels apart off one table and checks
 the exact landing on the 6510 every jump; the constants were picked in
 Python for the zero sum, and the pair `-3.5` with `+$28` does not give
 one for any terminal velocity from 1.5 to 4.0 in steps of 1/32.
+
+### Cycle budget
+
+66 cycles for one actor's velocity step: the table read while the jump
+lasts, the 8.8 gravity add and fall clamp after it, or the launch. The
+position add that follows is `fixed_point_8_8`'s, 31 more. Measured in
+VICE x64sc 3.10 on `recipes/oscar64/platformer-scaffold.md`'s `PROFILE=2`
+build, CIA1 timer B, the timer's 18 cycles subtracted, largest of 800
+frames, display off, PAL and NTSC alike; with the display on one NTSC
+reading was 109, a badline stall inside. The page had no figure before
+#37.
 
 ### Recipes
 

@@ -708,7 +708,7 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(b.bytes.contributors.find((c) => c.name === "sprite_cache_flip")?.basis).toBe("arithmetic");
   });
 
-  it("platformer-scaffold: undetermined, five unknowns named, known range well under the measured 8,693 peak", () => {
+  it("platformer-scaffold: every member has a figure since #37, and the known range fits", () => {
     // Measured (platformer-scaffold.md, "What was measured"): CYC 4,966, MAX 8,606-8,693 PAL; 10,287 NTSC.
     const specs = recipeTechniques("oscar64-platformer-scaffold").map((t) =>
       t === "lfsr_random"
@@ -720,36 +720,29 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     expect(specs).toContain("sid_play_routine_pattern");
     const b = plan(specs, { region: "both" });
     const pal = play(b, "PAL");
-    expect(pal.unknown.sort()).toEqual(
-      [
-        "fixed_point_8_8",
-        "frame_sync_loop",
-        "joystick_autorepeat",
-        "joystick_edge_detect",
-        "jump_arc_table",
-      ].sort(),
-    );
-    expect(pal.to_measure.find((t) => t.technique === "frame_sync_loop")?.recipe).toBe(
-      "oscar64-frame-sync-loop",
-    );
+    // Until #37 five were unknown: fixed_point_8_8, frame_sync_loop,
+    // joystick_autorepeat, joystick_edge_detect, jump_arc_table.
+    expect(pal.unknown).toEqual([]);
     // tile_map_render 268 + tile_grid_collision 2,345 + object_pool 380 + decimal_print 1,361
     // + sid_play_routine_pattern 1,198 (kickassembler-music-player's worst call;
-    // 327 until data 779, the stub tune; its typical 779, the median call, is the
-    // low end) + sfx_engine_beside_music 50-258.
-    expect([pal.low, pal.high]).toEqual([5183, 5810]);
+    // its typical 779, the median call, is the low end) + sfx_engine_beside_music 50-258
+    // + the #37 figures from the platformer's profile builds: frame_sync_loop 314,
+    // joystick_edge_detect 76, joystick_autorepeat 73, jump_arc_table 66, fixed_point_8_8 31.
+    expect([pal.low, pal.high]).toEqual([5743, 6370]);
     expect(pal.fixed_losses.badlines).toBe(1075);
-    expect(pal.verdict).toBe("undetermined");
-    // #45: kernal_file_write_seq and kernal_file_read_seq gained Cost lines
-    // (oscar64-save-load-seq-file, 3,989,946 and 530,736 NTSC), so they are
-    // named as multi-frame instead of unknown; error_channel_check is still unknown.
+    expect(pal.verdict).toBe("fits");
+    // #45 gave the file transfers Cost lines and #37 error_channel_check (81,421,
+    // the platformer's longest status read): all three are multi-frame, none unknown.
     const transition = b.phases.find((p) => p.phase === "transition");
-    expect(transition?.unknown).toEqual(["error_channel_check"]);
+    expect(transition?.unknown).toEqual([]);
     expect(transition?.excluded.map((e) => [e.name, e.reason, e.cycles]).sort()).toEqual([
+      ["error_channel_check", "multi_frame", 81421],
       ["kernal_file_read_seq", "multi_frame", 530736],
       ["kernal_file_write_seq", "multi_frame", 3989946],
     ]);
     expect(transition?.verdict).toBe("undetermined");
-    expect(b.bytes.excluded.map((e) => e.name).sort()).toEqual(["frame_sync_loop", "lfsr_random"]);
+    // frame_sync_loop's bytes_code=985 was the whole frame-sync-loop PRG; #37 dropped it.
+    expect(b.bytes.excluded.map((e) => e.name).sort()).toEqual(["lfsr_random"]);
   });
 
   it("simple-shmup: undetermined, soft_scroll_v unknown", () => {
@@ -830,14 +823,9 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     const b = plan(recipeTechniques("oscar64-falling-blocks"), { region: "both" });
     const pal = play(b, "PAL");
     // The frontmatter names seven since #22 step 4, every one in play here.
-    expect(pal.unknown.sort()).toEqual([
-      "frame_sync_loop",
-      "joystick_autorepeat",
-      "joystick_edge_detect",
-      "pal_ntsc_detection",
-      "text_mode_overlay_render",
-    ]);
-    expect(pal.high).toBe(5888 + 14);
+    // #37 measured frame_sync_loop, joystick_edge_detect and joystick_autorepeat.
+    expect(pal.unknown.sort()).toEqual(["pal_ntsc_detection", "text_mode_overlay_render"]);
+    expect(pal.high).toBe(5888 + 14 + 314 + 76 + 73);
     expect(pal.verdict).toBe("undetermined");
     expect(play(b, "NTSC").verdict).toBe("undetermined");
   });
