@@ -3,9 +3,19 @@
  * (data/games/manifest.json, gitignored; never committed). The RE tools
  * only ever took a .prg inside this repo or the OS temp directory
  * (src/tools/re.ts allowedPrg); on the Commando dogfood run a D64 had to be
- * unpacked by hand with c1541 first. resolveImage does that unpacking, and
- * copies the source file before touching it, so a caller's own D64 or PRG
- * is never opened for write and never modified.
+ * unpacked by hand with c1541 first. resolveImage does that unpacking.
+ *
+ * Every resolution copies the manifest's file into a fresh work directory
+ * first, then hashes and reads *that copy*, never the original: hashing the
+ * original before copying it would leave a window in which the source
+ * changes between the check and the copy, so a caller's own D64 or PRG is
+ * never opened for write, and a passing hash always describes the bytes the
+ * run actually used. c1541's two subprocess results (a failure to launch,
+ * and its exit status) are both checked; a run that neither produced the
+ * requested file nor cleanly reported it missing is refused as
+ * "c1541-failed", never silently accepted because a (possibly partial) file
+ * happened to exist, and never misreported as "no-file" when the disk's own
+ * directory cannot be trusted.
  */
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -38,7 +48,7 @@ export type Resolved =
     }
   | {
       ok: false;
-      reason: "no-manifest" | "unknown-sha1" | "image-changed" | "no-file" | "not-prg";
+      reason: "no-manifest" | "unknown-sha1" | "image-changed" | "no-file" | "not-prg" | "c1541-failed";
       error: string;
     };
 
@@ -64,6 +74,16 @@ export function directoryOf(text: string): string[] {
   return names.slice(1);
 }
 
+/** A real directory listing always starts with a `0 "name..."` header row. */
+function hasDirectoryHeader(text: string): boolean {
+  return /^\s*\d+\s+"/m.test(text);
+}
+
+function classify(imagePath: string): "prg" | "d64" | null {
+  const ext = path.extname(imagePath).toLowerCase();
+  return ext === ".prg" ? "prg" : ext === ".d64" ? "d64" : null;
+}
+
 function finish(
   prg: string,
   work: string,
@@ -81,18 +101,57 @@ function finish(
   };
 }
 
-/** Extracts `file` from the D64 copy at `copy` into `work`/p.prg with c1541. */
-function extractFromD64(copy: string, file: string, work: string, imageSha1: string): Resolved {
-  const c1541 = findC1541();
-  if (!c1541)
-    return { ok: false, reason: "no-file", error: "c1541 not found (C1541, PATH, .tools/vice-headless)" };
-  const outPrg = path.join(work, "p.prg");
-  // c1541 prints "OPENCBM: opening dynamic library libopencbm.dylib failed!"
-  // on this machine (no real IEC hardware attached); harmless, not a failure.
-  spawnSync(c1541, ["-attach", copy, "-read", file, outPrg], { encoding: "utf8" });
-  if (existsSync(outPrg)) return finish(outPrg, work, { kind: "d64", imageSha1, file });
-  const list = spawnSync(c1541, ["-attach", copy, "-list"], { encoding: "utf8" });
-  const dir = directoryOf(list.stdout + list.stderr);
+// --- c1541 process handling -------------------------------------------------
+
+interface ProcResult {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  error?: Error;
+}
+
+function runC1541(c1541: string, args: string[]): ProcResult {
+  const r = spawnSync(c1541, args, { encoding: "utf8" });
+  return { status: r.status, stdout: r.stdout, stderr: r.stderr, ...(r.error ? { error: r.error } : {}) };
+}
+
+// c1541 prints "OPENCBM: opening dynamic library libopencbm.dylib failed!"
+// on this machine (no real IEC hardware attached); harmless, stripped from
+// diagnostics rather than treated as a sign of failure.
+const ANSI = new RegExp(`${String.fromCharCode(0x1b)}\\[[0-9;]*m`, "g");
+const BENIGN_LINE = "OPENCBM: opening dynamic library libopencbm.dylib failed!";
+
+function cleanLines(text: string): string {
+  return text
+    .replace(ANSI, "")
+    .split("\n")
+    .filter((l) => l.trim() && l.trim() !== BENIGN_LINE)
+    .join(" | ");
+}
+
+/** c1541's own narrative output, ANSI and the one known-benign line stripped, for a refusal's `error`. */
+function diagnostics(r: ProcResult): string {
+  const parts = [cleanLines(r.stdout), cleanLines(r.stderr)].filter(Boolean);
+  return parts.join(" || ") || `c1541 exited ${String(r.status)}`;
+}
+
+/**
+ * `-read` neither produced the file nor exited 0: consult the disk's own
+ * directory (ground truth) rather than guess a reason from c1541's text.
+ */
+function diagnoseMissingRead(c1541: string, copy: string, file: string, read: ProcResult): Resolved {
+  const list = runC1541(c1541, ["-attach", copy, "-list"]);
+  if (list.error)
+    return { ok: false, reason: "c1541-failed", error: `c1541 -list did not run: ${list.error.message}` };
+  if (list.status !== 0 || !hasDirectoryHeader(list.stdout))
+    return { ok: false, reason: "c1541-failed", error: `c1541 could not list ${copy}: ${diagnostics(list)}` };
+  const dir = directoryOf(list.stdout);
+  if (dir.includes(file))
+    return {
+      ok: false,
+      reason: "c1541-failed",
+      error: `"${file}" is on the disk but c1541 could not read it: ${diagnostics(read)}`,
+    };
   return {
     ok: false,
     reason: "no-file",
@@ -100,48 +159,79 @@ function extractFromD64(copy: string, file: string, work: string, imageSha1: str
   };
 }
 
-function classify(imagePath: string): "prg" | "d64" | null {
-  const ext = path.extname(imagePath).toLowerCase();
-  return ext === ".prg" ? "prg" : ext === ".d64" ? "d64" : null;
+/** Extracts `file` from the D64 copy at `copy` into `work`/p.prg with c1541. */
+function extractFromD64(copy: string, file: string, work: string, imageSha1: string): Resolved {
+  const c1541 = findC1541();
+  if (!c1541)
+    return {
+      ok: false,
+      reason: "c1541-failed",
+      error: "c1541 not found (C1541, PATH, .tools/vice-headless)",
+    };
+  const outPrg = path.join(work, "p.prg");
+  const read = runC1541(c1541, ["-attach", copy, "-read", file, outPrg]);
+  if (read.error)
+    return { ok: false, reason: "c1541-failed", error: `c1541 -read did not run: ${read.error.message}` };
+  // Only a clean exit paired with the file actually landing counts: a
+  // nonzero exit that still left bytes at outPrg (a partial read) is not
+  // accepted just because the file exists.
+  if (read.status === 0 && existsSync(outPrg)) return finish(outPrg, work, { kind: "d64", imageSha1, file });
+  return diagnoseMissingRead(c1541, copy, file, read);
 }
 
-/**
- * Synchronous core (c1541 and the hashing are both synchronous already);
- * resolveImage below wraps it in a Promise so callers can treat every image
- * source, prg and d64 alike, the same way.
- */
-function resolveImageSync(ref: ImageRef, manifestPath: string): Resolved {
-  const manifest = readManifest(manifestPath);
-  if (!manifest) return { ok: false, reason: "no-manifest", error: `no manifest at ${manifestPath}` };
-  const entry = manifest[ref.sha1];
-  if (!entry) return { ok: false, reason: "unknown-sha1", error: `no manifest entry for sha1 ${ref.sha1}` };
-  if (!existsSync(entry.path))
-    return { ok: false, reason: "image-changed", error: `manifest image missing: ${entry.path}` };
-  const actual = sha1Of(entry.path);
+// --- resolution --------------------------------------------------------------
+
+function resolveInWorkDir(ref: ImageRef, entry: ManifestEntry, kind: "prg" | "d64", work: string): Resolved {
+  const copy = path.join(work, "image" + path.extname(entry.path).toLowerCase());
+  try {
+    copyFileSync(entry.path, copy);
+  } catch (e) {
+    return {
+      ok: false,
+      reason: "image-changed",
+      error: `could not copy ${entry.path}: ${(e as Error).message}`,
+    };
+  }
+  // Hash the copy, not entry.path: this is the run's own bytes from here on,
+  // immune to whatever happens to the original after the copy completed.
+  const actual = sha1Of(copy);
   if (actual !== ref.sha1)
     return {
       ok: false,
       reason: "image-changed",
       error: `${entry.path} is now sha1 ${actual}, manifest says ${ref.sha1}`,
     };
+  if (kind === "prg") return finish(copy, work, { kind: "prg", imageSha1: ref.sha1 });
+  if (!ref.file)
+    return { ok: false, reason: "no-file", error: "a D64 image needs image.file (a program name)" };
+  return extractFromD64(copy, ref.file, work, ref.sha1);
+}
+
+function resolveImageSync(ref: ImageRef, manifestPath: string): Resolved {
+  const manifest = readManifest(manifestPath);
+  if (!manifest) return { ok: false, reason: "no-manifest", error: `no manifest at ${manifestPath}` };
+  const entry = manifest[ref.sha1];
+  if (!entry) return { ok: false, reason: "unknown-sha1", error: `no manifest entry for sha1 ${ref.sha1}` };
   const kind = classify(entry.path);
   if (!kind) return { ok: false, reason: "not-prg", error: `${entry.path} is neither a .d64 nor a .prg` };
 
   const work = mkdtempSync(path.join(tmpdir(), "re-image-"));
-  const copy = path.join(work, "image" + path.extname(entry.path).toLowerCase());
-  copyFileSync(entry.path, copy);
-
-  if (kind === "prg") return finish(copy, work, { kind: "prg", imageSha1: ref.sha1 });
-
-  if (!ref.file) {
+  try {
+    const result = resolveInWorkDir(ref, entry, kind, work);
+    if (!result.ok) rmSync(work, { recursive: true, force: true });
+    return result;
+  } catch (e) {
     rmSync(work, { recursive: true, force: true });
-    return { ok: false, reason: "no-file", error: "a D64 image needs image.file (a program name)" };
+    throw e;
   }
-  const r = extractFromD64(copy, ref.file, work, ref.sha1);
-  if (!r.ok) rmSync(work, { recursive: true, force: true });
-  return r;
 }
 
+/**
+ * Deferred to a microtask (never runs resolveImageSync in the caller's own
+ * stack frame) so a filesystem error the caller did not anticipate becomes
+ * a rejected promise, never a synchronous throw out of an async-contracted
+ * function.
+ */
 export function resolveImage(ref: ImageRef, manifestPath = "data/games/manifest.json"): Promise<Resolved> {
-  return Promise.resolve(resolveImageSync(ref, manifestPath));
+  return Promise.resolve().then(() => resolveImageSync(ref, manifestPath));
 }
