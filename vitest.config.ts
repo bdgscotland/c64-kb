@@ -19,6 +19,7 @@ const UNIT = [
   "test/machine-variants.test.ts",
   "test/plan-budget.test.ts",
   "test/report-gap.test.ts",
+  "test/runs-manifest.test.ts",
 ];
 
 // Tests call clean()/deleteBySource() on whatever they connect to. Point

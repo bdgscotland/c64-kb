@@ -209,8 +209,7 @@ loopC2:
     bne loopC2
     sei
 
-    lda bad_free
-    and #$f0                    // shown rounded down to 16: the exact count moves by one between runs
+    lda bad_free                // exact; it depends on VICE's random seed (see the page)
     sta zp_ptr
     lda bad_free + 1
     sta zp_ptr + 1
@@ -597,7 +596,7 @@ labels:
     .text "SETTLE P2>P1 (UP TO 32) 8 PHASES X 65:"
     .byte 0
     .byte 14, 0
-    .text "IRQ LIVE 2000, BAD DOWN TO 16:"
+    .text "IRQ LIVE 2000, BAD:"
     .byte 0
     .byte 15, 0
     .text "SEI GUARDED 2000, BAD:"
@@ -626,8 +625,8 @@ buf:         .fill NSAMPLES, 0
 java -jar $KICKASS_JAR paddle-read.asm -o paddle-read.prg
 ```
 
-KickAssembler 5.25 produces a 2,476-byte PRG; the code segment runs
-`$0900` to `$11AA`, most of it the two unrolled samplers.
+KickAssembler 5.25 produces a 2,463-byte PRG; the code segment runs
+`$0900` to `$119D`, most of it the two unrolled samplers.
 
 Pinned VICE run (both models, `docs/recipes/runs.json`):
 
@@ -635,7 +634,7 @@ Pinned VICE run (both models, `docs/recipes/runs.json`):
 GSETTINGS_SCHEMA_DIR=/opt/homebrew/share/glib-2.0/schemas \
 x64sc -default -warp +sound +autostart-delay-random -autostartprgmode 1 \
       -limitcycles 8000000 -controlport1device 3 -controlport2device 2 \
-      -exitscreenshot paddle-read.png -autostart paddle-read.prg
+      -seed 1 -exitscreenshot paddle-read.png -autostart paddle-read.prg
 ```
 
 Add `-model ntsc` for the second picture. `-controlport1device 3` is
@@ -643,6 +642,17 @@ VICE's 1351 mouse on port 1, `-controlport2device 2` its paddles on
 port 2 (the numbers are from `x64sc -help`, VICE 3.10). With paddles on
 both ports, or on one, every select reads `$FF` and nothing can be
 measured; that run was made and is why the 1351 is there.
+
+`-seed 1` fixes VICE's random number generator. VICE adds random noise
+to every pot read (`makepotval` and `makebadpotval` in `src/sid/sid.c`,
+VICE 3.10 source) and seeds the generator from the wall clock in whole
+seconds (`lib_init` in `src/lib.c`). Without `-seed`, row 14 changes from
+run to run: 44 to 60 over 36 seeds on the two models (measured). Runs
+started in the same second share a seed and agree, which is why
+parallel runs looked stable and serial ones did not. With `-seed 1` eight
+runs per model, four in parallel and four in series, gave identical
+bytes (measured in VICE x64sc 3.10). A run without `-seed` still passes;
+only the row 14 figure moves.
 
 ## Expected output
 
@@ -657,7 +667,7 @@ row  5  SEL C0 BOTH : X=40 Y=40
 row  7  BUTTONS DC00=80 DC01=FF (BITS 2,3)
 row  9  SETTLE P2>P1 (UP TO 32) 8 PHASES X 65:
 row 10  0480 0480 0544 0480 0480 0544 0480 0480
-row 14  IRQ LIVE 2000, BAD DOWN TO 16: 00048
+row 14  IRQ LIVE 2000, BAD:            00056
 row 15  SEI GUARDED 2000, BAD:         00000
 row 18  RESULT: PASS
 ```
@@ -667,16 +677,18 @@ and `paddle-read-ntsc.png` (NTSC, 384 by 247) were each produced twice
 by the pinned command with identical bytes, and decoded by matching
 every 8 by 8 cell against `chargen-901225-01.bin` (measured in VICE
 x64sc 3.10, rung 1). On NTSC row 10 reads
-`0480 0480 0480 0544 0480 0480 0544 0480`; every other row is the same.
+`0480 0480 0480 0544 0480 0480 0544 0480` and row 14 reads `00052`;
+every other row is the same.
 
 What each line shows:
 
 - Rows 2 to 5: the four select patterns. `$40` (bit 6) reads port 1, the
   1351, as `$40`/`$40`; `$80` (bit 7) reads port 2, the paddles at rest,
   as `$FE`; no port selected reads `$FE`; both bits set reads the 1351
-  again. All four values are shown with bit 0 cleared: VICE's 1351
-  flickers bit 0 of its pot value between runs, so `$41` and `$40` are
-  the same reading, and the display masks it so two runs match. `$FE`
+  again. All four values are shown with bit 0 cleared: VICE adds a
+  random 0 or 1 to a 1351's pot value (`makepotval`, see Build), so
+  `$41` and `$40` are the same reading, and the display masks it so the
+  picture does not depend on the seed. `$FE`
   on the screen is `$FF` on the bus. The both-bits case is VICE's
   arbitration and says nothing about the hardware.
 - Row 7: with port 2 selected, `$DC00` reads back `$80` (the select bits
@@ -701,9 +713,12 @@ What each line shows:
   In the runs that did print them, the settled value was present from
   read 59, cycle 476, at phase 0 on both models.
 - Rows 14 and 15: 2,000 passes of select port 2, wait about 530 cycles,
-  read, with the KERNAL IRQ enabled: 48 or more reads (the exact count
-  was 53 to 59 across runs, shown rounded down to 16) returned something
-  other than port 2's value. The loop takes about 1.1 million cycles,
+  read, with the KERNAL IRQ enabled: 56 reads on PAL and 52 on NTSC
+  returned something other than port 2's value (44 to 60 across seeds).
+  An earlier version printed the count rounded down to 16, on the
+  belief that it moved by one between runs; it moved by up to 16, so
+  the rounded figure still changed (48 or 32 in eight runs) and flaked
+  the pinned picture. The count is now exact and the seed is pinned. The loop takes about 1.1 million cycles,
   56 PAL frames, so that is about one bad read per jiffy interrupt: the
   scan leaves `$DC00` at `$7F`, port 1 selected. The same 2,000 passes
   under `SEI` return port 2's value every time.
