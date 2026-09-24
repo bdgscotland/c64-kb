@@ -5,7 +5,26 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 825, schema 39, tools 2.14.0, package 0.27.0.
+Data 826, schema 39, tools 2.14.0, package 0.27.0.
+
+**Read the error channel first, close it last; tech-tech's cycles; a
+compatibility census; diary facts (data 826; #93, #99, #55, #24).**
+Six listings read a file before the drive's status; each now reads
+status first and the file only on `00`. The #14 pitfall's own fix was
+wrong for an existing file: it closed channel 15 before the read, which
+closes every file on the drive, and high-score-persist read back 0
+bytes (ST `$42`). Channel 15 is now opened after the file and closed
+last; 244 runs (0-60 frames of wait, fresh disk and disk with the file,
+PAL and NTSC) hung at none. The scaffold's first status-first build hit
+the old-CIA EOI hang on NTSC in its save; sprites are now off around
+the game-over disk calls. tech-tech's sweep put the row-counter reset
+one cycle high: a store trace puts it on cycle 13, not 14 (NTSC line
+116 lands on 13 in most frames while the wave moves, #100). A census of
+52 visual techniques (1,326 pairs) is in docs/superpowers/specs; the
+tools pass vector_balls_sprites + fli_image although FLI holds every
+cycle of lines 45-251. Design pages cite the Morpheus, Mayhem and
+Paradroid diaries by issue and page; Braybrook allocated sprites up to
+24 under a safe limit of 32 (the page said he capped at 24).
 
 **Seven application techniques (data 825; #19 group A).** Oscar64
 recipes, each run on PAL and NTSC, self-checking and CIA-timed, each
