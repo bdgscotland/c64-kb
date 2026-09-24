@@ -213,8 +213,9 @@ function holdsWholeLines(cost: BudgetCost | undefined): boolean {
  * whose conditions say the screen was on counts: one that says nothing is
  * charged. A band charge is whole lines, stalls and all.
  */
+// A figure of zero cycles holds no work for a badline to stretch (#35: ram_under_kernal).
 function includesDisplayStalls(c: BudgetContributor): boolean {
-  if (c.charge === "band") return true;
+  if (c.charge === "band" || c.high === 0) return true;
   return measuredScreenOn(c);
 }
 
@@ -476,7 +477,9 @@ function budgetPhase(inp: PhaseInputs): PhaseBudget {
   const worst_only = contributors
     .filter(
       (c) =>
-        c.charge === "cycles_per_frame" && byName.get(c.name)?.cost?.cycles_per_frame_typical === undefined,
+        c.charge === "cycles_per_frame" &&
+        c.high > 0 &&
+        byName.get(c.name)?.cost?.cycles_per_frame_typical === undefined,
     )
     .map((c) => c.name);
   const low = contributors.reduce((s, c) => s + c.low, 0);

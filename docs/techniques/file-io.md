@@ -28,6 +28,16 @@ real time. The recipe below spends 4,846,078 cycles on the drive for a
 32-byte write, a 32-byte read and two status reads, about 4.9 s at PAL
 speed (measured with a CIA2 timer inside the program; rung 1).
 
+The KERNAL's serial routines also take two units while they run, and
+every technique below claims them as `shares`: the serial bus (`$DD00`
+bits 3-5) and CIA1 timer B, which times each byte's handshake. A
+`claims-watch.ts` store trace (VICE x64sc, `--all-ram`) counted, from
+ROM, 314 stores to `$DC07`/`$DC0F` and 2,514 to `$DD00` in the
+KickAssembler round trip below, and 8,438 and 63,448 in
+`recipes/oscar64/load-asset-runtime.md`, whose LOAD is received at
+`$EE22`. A program that keeps its own use of timer B loses it across
+any disk call (`hardware/kernal-routines-reference.md`, "CIA1 timer B").
+
 ---
 
 ## kernal_file_write_seq — Write a sequential file with OPEN/CHKOUT/CHROUT
@@ -36,6 +46,8 @@ speed (measured with a CIA2 timer inside the program; rung 1).
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CLRCHN, CLOSE
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
 
 ### Why
 
@@ -189,6 +201,8 @@ afterwards was not measured here. Two ways round it:
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** SETLFS, SETNAM, OPEN, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
 
 ### Why
 
@@ -314,6 +328,8 @@ interaction with file I/O".
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** SETLFS, SETNAM, OPEN, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
 
 ### Why
 
@@ -740,6 +756,8 @@ a raster IRQ misses most frames during it
 **Region:** both
 **Uses registers:** (none)
 **Uses kernal:** SETLFS, SETNAM, LOAD, SETMSG
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
 
 ### Why
 

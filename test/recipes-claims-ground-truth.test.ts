@@ -85,6 +85,53 @@ describe("recipes against their own technique sets", () => {
     expect((kernal.data[0] as { n: number }).n).toBeGreaterThan(0);
   });
 
+  // #35: the claims watch found these gaps in VICE store traces.
+  it("states the claims the claims watch measured (#35)", async () => {
+    const named = [
+      "soft_scroll_v",
+      "char_scroll_buffer_v",
+      "sid_voice_setup",
+      "kernal_file_write_seq",
+      "kernal_file_read_seq",
+      "kernal_load_to_address",
+    ];
+    const rows = await f.roQuery(
+      `MATCH (t:Technique) WHERE t.name IN $named RETURN t.name AS name, t.claims_stated AS stated ORDER BY name`,
+      { named },
+    );
+    const stated = rows.data as { name: string; stated: string | null }[];
+    expect(stated.filter((r) => r.stated == null).map((r) => r.name)).toEqual([]);
+    expect(stated.length).toBe(named.length);
+    for (const recipe of [
+      "recipes/kickassembler/sprite-multiplex-game.md",
+      "recipes/kickassembler/scroll-panel-split.md",
+    ])
+      expect(recipeSets.get(recipe)).toContain("ram_under_kernal");
+  });
+
+  it("reports a KERNAL disk call against a technique that owns CIA1 timer B (#35)", async () => {
+    await f.addTechnique({
+      name: "timer_b_owner_35",
+      title: "timer_b_owner_35",
+      category: "cpu",
+      complexity: "low",
+      claims_stated: "stated",
+      claims_basis: "derived-listing",
+    });
+    await f.linkClaims({
+      owner: "timer_b_owner_35",
+      ownerKind: "Technique",
+      unit: "cia1_timer_b",
+      mode: "owns",
+      basis: "derived-listing",
+    });
+    for (const disk of ["kernal_file_write_seq", "kernal_file_read_seq", "kernal_load_to_address"]) {
+      const { conflicts } = (await checkCompatibility([disk, "timer_b_owner_35"])).structured;
+      const hit = conflicts.find((c) => c.shared.includes("cia1_timer_b"));
+      expect(hit?.kind, disk).toBe("unit_shared");
+    }
+  });
+
   it("no recipe's technique set has a hard conflict of any kind", async () => {
     const failures: string[] = [];
     for (const [recipe, techniques] of [...recipeSets].sort()) {

@@ -3,7 +3,7 @@ recipe: sprite-multiplex-game
 toolchain: kickassembler
 output_format: PRG
 region: both
-techniques: [sprite_multiplex_game]
+techniques: [sprite_multiplex_game, ram_under_kernal]
 file_formats: [PRG]
 uses_registers: [D000, D001, D010, D011, D012, D015, D017, D019, D01A, D01B, D01C, D01D, D020, D021, D027, DC0D, DD04, DD05, DD06, DD07, DD0D, DD0E, DD0F]
 uses_kernal: []
@@ -28,6 +28,10 @@ sort, build and IRQs with the two CIA2 timers and prints them in the top
 four text rows, with a count of the times and frames the late guard fired.
 Use it as the display half of a game with more than eight moving objects.
 The technique is `sprite_multiplex_game` in `docs/techniques/sprite.md`.
+It banks the KERNAL out and puts its IRQ and NMI handlers in `$FFFE` and
+`$FFFA`, which is `ram_under_kernal` (`docs/techniques/memory-banking.md`).
+An earlier version's `techniques:` omitted `ram_under_kernal`; the
+`scripts/claims-watch.ts` store trace found the `$FFFE`/`$FFFA` writes (#35).
 
 Verified in VICE x64sc 3.10 on PAL and NTSC, measured with PIL: every one
 of the 24 actors shows in its own column in both pinned shots and all 16

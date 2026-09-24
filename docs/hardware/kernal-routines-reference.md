@@ -189,6 +189,27 @@ No jump-table routine but RAMTAS, and neither service, may write $02-$8F, $B2-$B
 
 The walk covers the KERNAL, not BASIC, which uses much of `$02-$8F`.
 
+### CIA1 timer B
+
+The serial routines time each byte's handshake with CIA1 timer B, in
+one-shot mode. The sender writes `$DC07` and `$DC0F` at `$ED94`/`$ED99`,
+the receiver at `$EE22`/`$EE27` (ROM bytes `8D 07 DC`, `8D 0F DC`). A
+walk of the 901227-03 image from each jump-table slot (the walker in
+`scripts/lib/kernal-walk.ts`) reaches the sender from LISTEN, TALK,
+SECOND, TKSA, IECIN, IECOUT, UNTLK, UNLSN, OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN,
+CHRIN, CHROUT, GETIN, CLALL, STOP, LOAD and SAVE, and the receiver from
+IECIN, CHRIN, GETIN and LOAD. The tape code writes timer B too
+(`$F93D-$F945`, `$FBB1-$FBBC`), and IOINIT stops it (`$FDB6`).
+
+Measured with `scripts/claims-watch.ts` in VICE x64sc: the KickAssembler
+file round trip (`recipes/kickassembler/file-io-roundtrip.md`) made 314
+ROM stores to timer B; `recipes/oscar64/load-asset-runtime.md`, a SAVE
+and a LOAD of 2,050 bytes, made 8,438. A program that uses timer B
+itself (a second tick, a timed NMI) must reload it after every disk
+call. The KERNAL leaves bit 1 of the `$DC0D` mask clear. A program that
+sets it would also take an interrupt from each one-shot the KERNAL
+starts (from the CIA's behaviour, not measured here).
+
 ### Sources
 
 - *Commodore 64 Programmer's Reference Guide* (1982), Appendix B — KERNAL ROM machine language subroutines
