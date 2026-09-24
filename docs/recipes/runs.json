@@ -915,6 +915,18 @@
       "ntsc": "screenshots/two-player-ntsc.png"
     }
   },
+  "oscar64/fighter-opponent": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fighter-opponent.png",
+      "ntsc": "screenshots/fighter-opponent-ntsc.png"
+    }
+  },
   "oscar64/flip-screen-rooms": {
     "cycles": 34000000,
     "models": [

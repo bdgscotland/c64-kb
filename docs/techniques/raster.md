@@ -921,6 +921,13 @@ The $D018 write is the most timing-sensitive of the three, and its two halves be
 **Cost:** bytes_code=339
 **Cost basis:** derived-listing
 **Cost measured on:** oscar64-pal-ntsc-detect (whole PRG: the 341-byte file less its load address, built with Oscar64 here)
+**Claims:** none
+**Claims basis:** measured-vice
+
+Store trace of `recipes/oscar64/pal-ntsc-detect.md` (`scripts/claims-watch.ts`,
+PAL): the measurement reads `$D011` and `$D012` and stores to no
+HardwareUnit; the recipe's other stores are screen, colour RAM and the
+border colour.
 
 The Cost line carries no cycle figure. The durations under "Why it works" (3,575 to 23,172 cycles on PAL) were measured on the hardware page's KickAssembler listing, which is no recipe, so they stay in the prose. An earlier graph gave this card the fire effect's frame cost (27,301 cycles, measured on kickassembler-fire-effect); ingest now warns when a Cost line names a recipe that does not realise its technique.
 
@@ -986,6 +993,16 @@ None per line. The routine runs once, with interrupts disabled, and holds the CP
 **Cost:** bytes_code=985
 **Cost basis:** arithmetic
 **Cost measured on:** oscar64-frame-sync-loop (bytes are the whole PRG)
+**Claims:** vic_raster_irq (shares)
+**Claims basis:** measured-vice
+
+Store trace of `recipes/oscar64/frame-sync-loop.md` (`scripts/claims-watch.ts`,
+PAL): Oscar64's `rasterirq`, which runs the tick, is the program's only
+writer of `$D011`, `$D012`, `$D019` and `$D01A`. The tick is one slot at the sync line and can be
+one entry in another effect's chain, so it shares the compare rather
+than owning it. The `$0314` store in the trace is the recipe's choice of
+entry (Oscar64's `rirq_init_kernal`); the spin-only variation writes
+none of these.
 
 ### Why
 

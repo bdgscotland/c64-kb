@@ -1133,6 +1133,15 @@ at most 16,061 each, and the next-hop pass 105,602.
 **Cost:** cycles_per_frame=65, bytes_data=24
 **Cost basis:** measured-vice
 **Cost measured on:** oscar64-two-player (the per-frame port read; the swap runs once per death)
+**Claims:** cia1_port_a (shares), cia1_port_b (reads)
+**Claims basis:** measured-vice
+
+Store trace of `recipes/oscar64/two-player.md` (`scripts/claims-watch.ts`,
+PAL, 8,000,000 cycles): the program's only CIA1 store is `$FF` to `$DC00`
+in `read_ports`, once a frame under a held-off interrupt, so it shares
+port A with the keyboard scan that owns it; port B is read only. The
+trace's sprite and CIA2 timer A stores are the recipe's display and
+timing harness, not this technique's.
 
 ### Why
 

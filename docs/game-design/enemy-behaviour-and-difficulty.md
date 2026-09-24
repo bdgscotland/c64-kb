@@ -8,7 +8,8 @@ jump table sit below this page, in the "Enemy / actor state machines" section of
 pattern here says which path, at what speed, and why the player believes it.
 
 Sources are named in prose and on each Sources line; a number from a source is that person's
-number. Nothing on this page was measured in VICE.
+number. Only the fighter opponent's recipe was run in VICE (`fighter_opponent_tables`); an
+earlier version said nothing on this page was.
 
 ---
 
@@ -206,6 +207,136 @@ placed against. A dive faster than the player's shot cannot be hit. A spawn scri
 steering its enemies competes with the actors' own state machines.
 
 Related: `../techniques/logic.md` (`wave_director`, `object_pool`), `../recipes/oscar64/wave-director.md`, `../recipes/oscar64/simple-shmup.md`, `./c64-game-archetypes.md` (`vertical_shmup`, `horizontal_shmup`).
+
+---
+
+## fighter_opponent_tables — A one-on-one opponent: reaction delay, range keeping, guard and feint from tables
+
+**Kind:** behaviour
+**Applies to:** sports
+**Realised by:** lfsr_random, per_frame_hitbox, oscar64/fighter-opponent, oscar64/lfsr-random
+**Sources:** Chris Crawford, The Art of Computer Game Design (1984); the shape below is this page's own, run in `recipes/oscar64/fighter-opponent.md`
+
+**Checks:**
+
+- Start a player attack and find no opponent reaction to it until the level's delay in frames has passed.
+- Hold the player still at far range and find every opponent choice a step or a rare guard or feint, never an attack.
+- Stand close and find the opponent's steps all move away from the player; stand far and find them all move closer.
+- Let the opponent feint while the player guards and find its next action an attack, taken without a random roll.
+- Start any opponent action and find no new decision until that action's frame count has run out.
+- Replay a bout with the same seed and player input and find every choice the same.
+
+### Why
+
+A duel has one opponent, so Crawford's vast-resources answer (many enemies, little intelligence)
+is not available. The opponent has to be the difficulty, and his test applies directly:
+reasonable, no obviously stupid move, yet unpredictable. A fighter's computer opponent has one
+unfair advantage the player lacks, which is that it can read the player's joystick on the frame
+it moves. An opponent that answers every attack on its first frame is unbeatable and reads as
+cheating. The design problem is to throw that advantage away in a controlled amount, and the
+amount is the difficulty.
+
+### The shape
+
+Three tables and one rule, all measured in `recipes/oscar64/fighter-opponent.md`.
+
+The reaction delay. Every frame, write the player's action (idle, forward, back, attack, guard)
+into a 32-byte ring; the opponent reads the entry `delay` frames old. The level table is the
+delay: 20, 14, 9 and 5 frames in the recipe. The recipe's attack is 12 frames with its blade out
+on frames 4 to 6. At 20 the opponent sees it start after it has ended; at 5 it sees it in the
+recovery, in time to punish it or to guard the next one, but not to guard the blade it saw. A
+guard up in time for that blade comes from a row, not from seeing the swing: seen forward at
+close range, the recipe guards 80 times in 256. One byte per level, and the rest of the opponent
+is the same code at every level.
+
+The range bands. Sort the distance into close (a blade can land), mid and far (nothing reaches).
+The band and the seen action choose a row.
+
+The choice rows. One row per (seen action, band), three thresholds out of 256 for attack, guard
+and feint; a random byte (`lfsr_random`) at or above the third is a step. The recipe's rows: seen
+attack at close range guards 170 times in 256; seen idle at close range attacks 150; far rows
+never attack. Tendencies are the table, and a different opponent is a different table.
+
+Range keeping. A step moves toward a preferred distance, in or out, for a fixed number of
+frames. That one rule makes the opponent close in on a retreating player and back off from a
+crowding one.
+
+The feint. A feint is a short wind-up with no blade. It sets a flag: if the next decision sees
+the player guarding, the opponent attacks without rolling, because the guard it baited is still
+up or just dropping. With the 20-frame delay the flag found a guard 0 times in 6 feints; with 5
+frames, 2 in 5 (the recipe's bouts, measured).
+
+Commitment. An action runs its full length before the next decision. The opponent cannot cancel
+an attack into a guard, which is the player's rule too, and it cannot flicker between choices
+from frame to frame.
+
+Cost, measured in the recipe (Oscar64 -O2, screen blanked, the same on PAL and NTSC): one
+opponent frame is 120 cycles on average and 295 at worst, the worst being a decision frame.
+
+### What breaks when it is skipped
+
+No delay: the opponent guards every attack on its first frame and the player learns that attacking
+is pointless. Delay by skipping decisions (decide every n frames) instead of a delay line: the
+opponent still sees the present, only less often, and a lucky frame answers at once. No commitment:
+the opponent turns an attack into a guard on the frame the player swings. No random roll: the same
+answer to the same move, and the player finds the one sequence that always wins.
+
+Related: `./game-design-patterns.md` ("Path-based vs reactive AI"), `./c64-game-archetypes.md`
+(`sports`), `difficulty_ramp` on this page (the delay is the level table), `fighter_guard_state`
+below.
+
+---
+
+## fighter_guard_state — The guard: which box it replaces and how a guarded hit resolves
+
+**Kind:** structure
+**Applies to:** sports, beat_em_up
+**Realised by:** per_frame_hitbox, oscar64/per-frame-hitbox, oscar64/fighter-opponent
+**Sources:** this page's own rule, run in `recipes/oscar64/fighter-opponent.md`
+
+**Checks:**
+
+- On a guard frame, find the defender's box list holds a guard box and no body box.
+- Land a blade on a guarding defender and find its hit points unchanged and both fighters moved apart.
+- Land a blade on an idle defender and find the hit counted once for the swing, however many active frames overlap.
+- Land a blade from behind on a defender guarding forward and find it counted as a hit.
+
+### Why
+
+A guard changes what a blade meets, so it belongs in the boxes, not in a flag the damage code
+checks afterwards. A flag tested after the overlap has to be tested in every place that deals
+damage; a box is tested once, by the same pair test as every other contact.
+
+### The shape
+
+The guard frame replaces the body box. Where a normal frame emits a body box in the body group,
+a guard frame emits a guard box in a guard group, over the part of the body the guard covers;
+the recipe's standing guard covers the whole body width. A blade's pair mask includes both groups.
+Because the body box is absent while the guard box is present, a blade meets one or the other and
+the resolution is the group of the box it met: guard, blocked; body, a hit.
+
+A blocked blade does no damage. Both fighters are pushed apart (3 pixels in the recipe, against 6
+for a hit), the defender stays in its guard to the end of the guard's frames, and the attacker's
+blade is spent: a per-swing flag ends the blade box after its first contact, so one swing resolves
+once whether it met a guard or a body.
+
+Height and facing are more boxes, not more rules. A high and a low guard are two guard boxes over
+two parts of the body, and a low blade passes over a high guard's box to reach the body box under
+it; the full test is `per_frame_hitbox`'s four compares. A guard covers the front only: a guard
+box offset forward from the anchor leaves the back of the body box in place, so a blow from behind
+lands. The recipe has one floor and one facing each way, tests X only, and does not show either.
+
+Cost, measured in the recipe: resolving both fighters' blades against body or guard boxes is 41
+cycles on average and 364 at worst, the worst being a hit with its push-apart.
+
+### What breaks when it is skipped
+
+A guard as a flag checked after damage: a new damage source (a projectile, a throw) forgets the
+check and hits through the guard. No per-swing flag: a three-frame blade blocked on its first frame
+lands on its second, after the pushback. No pushback on a block: the attacker stays in range and
+the blocked swing is followed by a free one.
+
+Related: `../techniques/sprite.md` (`per_frame_hitbox`), `fighter_opponent_tables` above.
 
 ---
 
