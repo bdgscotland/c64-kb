@@ -585,7 +585,7 @@ lda #$ac / sta seed+1 / ok:` (rung 3, not timed).
 
 **Severity:** high
 **Region:** both
-**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit, game_tree_search, bresenham_line, solid_vector_3d, voxel_landscape, car_contact_response, lane_pursuit_ai, add_sub_16bit
+**Triggered by techniques:** compare_16bit_and_signed, fixed_point_8_8, tile_grid_collision, slope_collision, nav_area_pathfinding, atan2_8bit, game_tree_search, bresenham_line, solid_vector_3d, voxel_landscape, car_contact_response, lane_pursuit_ai, add_sub_16bit, byte_list_sort
 **Mitigated by techniques:** compare_16bit_and_signed
 
 ### Symptom
@@ -653,6 +653,9 @@ the `BVC` is taken, 14 when it falls through into the `EOR`), against
   velocities in the high byte, the place this bites first
 - Recipe `docs/recipes/kickassembler/compare-16bit-signed.md` — the
   sweep that counts the 16,384 misses
+- Recipe `docs/recipes/kickassembler/sort-bytes.md` — an insertion
+  sort with this compare leaves 7 of 63 neighbours out of order in 64
+  random signed keys; with `EOR #$80`, none (`byte_list_sort`)
 
 ---
 

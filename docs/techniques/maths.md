@@ -1250,6 +1250,129 @@ under 100 (rung 3).
 - `recipes/kickassembler/random-range.md`: the three ways over a whole
   LFSR period for `n = 6` and `n = 100`, counted and timed.
 
+## byte_list_sort — Sort a list of byte keys: insertion sort and counting sort
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Cost:** cycles_per_frame=9042
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-sort-bytes (one insertion sort of 32 random keys with their indexes; screen blanked)
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+A game sorts short lists often: objects by Y for a multiplexer or for
+drawing order, a high-score table, the enemies nearest the player.
+The keys are usually bytes and each carries an index back to its
+object. Two sorts cover nearly every case: insertion sort for short or
+nearly sorted lists, and a counting sort for long ones.
+`sprite_multiplex_24` and `sprite_multiplex_game` in `sprite.md` sort
+by Y in their own ways; this entry is the general routine.
+
+### How
+
+**Insertion sort, in place.** Take each key from the second on, move
+the larger keys before it up one place, and drop it into the gap. The
+index is moved with its key.
+
+```asm
+isort:  ldx #1                   // KEY at $4001: KEY-1,Y stays in one page
+outer:  lda KEY,x
+        sta kt
+        lda IDX,x
+        sta it
+        txa
+        tay
+inner:  lda KEY-1,y
+        cmp kt
+        bcc place                // smaller: stop
+        beq place                // equal: stop, so the sort is stable
+        sta KEY,y                // larger: move it up
+        lda IDX-1,y
+        sta IDX,y
+        dey
+        bne inner
+place:  lda kt
+        sta KEY,y
+        lda it
+        sta IDX,y
+        inx
+        cpx nn
+        bne outer
+        rts
+```
+
+**Counting sort, for byte keys.** Count the keys into 256 buckets, turn
+the counts into each bucket's first position, then walk the list in
+order and put each entry at its bucket's next position in an output
+list. The listing is `recipes/kickassembler/sort-bytes.md`.
+
+### Why it works
+
+Insertion sort keeps the part of the list before the current key in
+order, and moves a key only past strictly greater ones, so equal keys
+keep their order: the sort is stable. Its cost is set by how far the
+keys move, 31 cycles a place in the listing above: close to linear on
+a list that is almost in order, the square of the length on a reversed
+one.
+
+Counting sort never compares two keys. Its two passes over the 256
+buckets cost the same whatever the list, and each key costs the same
+70 cycles; walking the input in order makes it stable.
+
+Both were checked in VICE x64sc 3.10 against a Python stable sort on
+lists of 8 to 255 keys, random, sorted and reversed, with every index
+in the right place (`recipes/kickassembler/sort-bytes.md`).
+
+Signed keys need a signed compare. Flipping bit 7 of both sides with
+`EOR #$80` and comparing unsigned is exact. `SEC / SBC` with `BMI` as
+"less than" is not: on 64 random signed keys it left 7 neighbours out
+of order, because the subtraction overflows when the keys are far
+apart with opposite signs (`pitfalls/cpu.md`,
+`signed_compare_bmi_overflow`).
+
+### Variations
+
+- **Sort indexes only.** Keep the keys where they are and sort a list
+  of indexes by `key[index]`: one indirection per compare, but the
+  objects' tables never move (rung 3).
+- **Carry the order between frames.** A multiplexer that keeps last
+  frame's order and re-sorts it with insertion sort pays close to the
+  sorted-list cost when the objects move little.
+- **Word keys.** Compare the high bytes, and the low bytes only on a
+  tie; a counting sort on words becomes two passes, low byte then high
+  (radix sort), each stable (rung 3, not measured here).
+
+### Cycle budget
+
+Measured with the CIA2 timer A / B cascade, one call, net of `JSR` /
+`RTS`, screen blanked, PAL and NTSC alike (rung 1); each figure equals
+the instruction-table count for its list:
+
+| Keys | Insertion, random | Insertion, sorted | Insertion, reversed | Counting |
+|---|---|---|---|---|
+| 8 | 774 | 407 | 1,191 | 7,224 |
+| 16 | 2,511 | 871 | 4,411 | 7,784 |
+| 32 | 9,042 | 1,799 | 16,803 | 8,904 |
+| 64 | 23,837 | 3,655 | 65,395 | 11,144 |
+| 128 | 136,121 | 7,367 | 257,811 | 15,624 |
+| 255 | 526,186 | 14,733 | 1,015,620 | 24,514 |
+
+Counting sort is `70n + 6,664` whatever the order and needs 1,024 bytes
+of buckets and output; it is the cheaper from 32 keys up on these
+lists. The random lists come from one LFSR step per key and are partly
+in order, so shuffled keys cost insertion sort more than the random
+column shows. The `**Cost:**` line carries the 32-key insertion sort,
+once a frame.
+
+### Recipes
+
+- `recipes/kickassembler/sort-bytes.md`: both sorts on six lengths and
+  three orders, timed and checked against a Python model, and the two
+  signed compares.
+
 ## compare_16bit_and_signed — 16-bit, signed and ranged compares
 
 **Complexity:** low

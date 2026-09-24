@@ -40,7 +40,7 @@ there and what is not; "missing" means no entry.
 | 11 | Random numbers in a range, even distribution (maths) | covered | `maths.md` `random_in_range`; `random-range.md` |
 | 12 | Hex and decimal number printing (maths, I/O) | covered | `text.md` `decimal_print`; `oscar64/print-number.md` |
 | 13 | BCD score counters (game) | covered | `text.md` `high_score_table_insert`; `high-score-insert.md` |
-| 14 | Sorting a list (maths) | partial | sprite sorts in `sprite.md` `sprite_multiplex_24` and `sprite_multiplex_game`; no general sort entry |
+| 14 | Sorting a list (maths) | covered | `maths.md` `byte_list_sort`; `sort-bytes.md`; sprite sorts in `sprite.md` `sprite_multiplex_24` and `sprite_multiplex_game` |
 | 15 | KERNAL floating point from assembly (maths) | covered | `maths.md` `basic_rom_float_calls`; `basic-float-calls.md` |
 | 16 | Memory clear and fill (CPU) | covered | `cpu-cycle-tricks.md` `memory_fill_copy`; `base-routines.md` |
 | 17 | Memory move, overlapping (CPU) | covered | `cpu-cycle-tricks.md` `memory_fill_copy`; `base-routines.md` |
@@ -69,7 +69,8 @@ there and what is not; "missing" means no entry.
 | 40 | Music player call from an IRQ (SID) | covered | `music-sid.md` `sid_play_routine_pattern`; `music-player.md` |
 
 Totals when recorded: 33 covered, 1 partial, 6 missing. Issue #89 has
-since moved rows 4, 5 and 11 to covered.
+since moved rows 4, 5 and 11 from missing, and row 14 from partial, to
+covered.
 
 ## Missing and partial
 
