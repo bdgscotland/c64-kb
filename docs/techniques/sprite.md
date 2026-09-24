@@ -1842,7 +1842,7 @@ sizes (256 + 256 + 8 x 64), run-time RAM outside the built segments; the
 **Uses kernal:** (none)
 **Cost:** cycles_per_frame=3693
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-per-frame-hitbox (eight boxes, 28 pairs)
+**Cost measured on:** oscar64-per-frame-hitbox (eight boxes, 28 pairs of which the masks leave 10; 1,834 to test plus 1,859 to emit, from a build without the demo's pair counters and halved-X arrays; the recipe as shipped prints COLLIDE MAX 2,037 and EMIT MAX 2,148, which include them; in the vertical blank, PAL)
 
 ### Why
 
