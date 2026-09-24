@@ -1635,6 +1635,18 @@
       "ntsc": "screenshots/plasma-ntsc.png"
     }
   },
+  "kickassembler/luminance-dissolve": {
+    "cycles": 4500000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/luminance-dissolve.png",
+      "ntsc": "screenshots/luminance-dissolve-ntsc.png"
+    }
+  },
   "kickassembler/dypp-sprite-scroller": {
     "cycles": 10000000,
     "models": [

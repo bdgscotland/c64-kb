@@ -1374,6 +1374,27 @@ and the set-indexed table holds it on all 150 lines of the display band
 with all four sprites showing. The stall lengths themselves are inferred
 from the border and the VIC page's statements, not timed per line.
 
+The recipe's sixteen-entry table covers only the sets four sprites can
+form. A five-part KickAssembler demo built from the KB ran eight sprites
+in the band, extended the table to all 256 sets by the same span rule,
+then traced every `DEC` over 884 frames: 55 frames read one to eight
+cycles short, every one on a set with a gap of exactly two, {0,3}, {3,6}
+and {4,7}. Between two five-cycle fetch windows that do not touch, BA
+rises for one cycle and the CPU gets it back, so the span rule is one
+cycle high for such a set. The table is now built from the UNION of the
+five-cycle BA windows of the sprites in the set, less the `DEC`'s two
+write cycles when sprite 0 is in it, and the band read a constant 9,540
+cycles in 793 of 793 PAL frames with eight sprites and 9,840 in 420 of
+420 NTSC frames with five. The four-sprite design never forms a two-gap
+set, so the recipe's sixteen entries stand. Two things were not
+established there: two-gap sets three apart in the ring, {1,4} and
+{2,5}, read +6 and +5 in two frames of 792 rather than -1, their single
+free cycle evidently meeting one of the loop's writes, and the demo
+designed them out (every set consecutive sprites, three at most); and on
+NTSC a set first fetched at or after the line wrap, {4,5} in the first
+layout, cost one cycle less at one alignment only, which is why that
+build runs five sprites on NTSC, whose sets all measured exact.
+
 ### Cycle budget
 
 PAL: 63 cycles on every line of the band, all of them; NTSC 65, with the
@@ -1389,7 +1410,10 @@ write does nothing: the visible open band is 51 to 200.
 **All eight sprites.** The tables become eight bits wide and the largest
 stall 19 cycles (the VIC page's measured figure), more than the six-`NOP`
 slide can give back on a sprite-free line unless the loop's other work
-moves out of it. Not built.
+moves out of it. Built on PAL in the demo described under "Why it works":
+its Y layout keeps every set to three consecutive sprites, so the largest
+stall stays inside the slide, and the band held 9,540 cycles in 793 of
+793 frames; the NTSC build of the same part runs five sprites.
 
 **Multiplexing in the border.** `sprite_multiplex_8` re-arms Y and
 pointers between bands; inside a DYSP band those writes must fall

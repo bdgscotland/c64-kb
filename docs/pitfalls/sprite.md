@@ -1006,3 +1006,88 @@ enables them, or the first figures carry DMA that play never has.
 - Game design: `game_state_machine` in `game-design/game-structure.md`:
   the entry-routine table this baseline belongs at the top of, and the
   acceptance checks that read `$D015` on a state's first frame
+
+---
+
+## sprite_pointers_written_before_screen_fill — Sprite pointers stored before a screen-RAM fill are overwritten by it, because $07F8 to $07FF are the last eight bytes of the screen page
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D018, D015
+**Triggered by techniques:** sprite_sine_chain, fire_effect, sprite_multiplex_24
+
+### Symptom
+
+The sprites are enabled, their X and Y registers hold the right values,
+their colours are set, and nothing appears; or every sprite shows the
+same wrong shape. In a five-part KickAssembler demo built from the KB
+the fire part gained a six-sprite chain above the flames, its setup
+wrote the six pointers and then filled the screen, and the first shot
+had no sprites at all. Storing the pointers after the fill put all six
+on the next shot.
+
+### Mechanism
+
+The eight sprite pointers are not registers: they are the last eight
+bytes of the 1 KB video matrix, screen base plus `$03F8` to `$03FF`, so
+`$07F8` to `$07FF` for the default screen at `$0400`. A fill that clears
+the whole page, 1,024 bytes by four indexed passes of 256, writes them;
+a fill of exactly 1,000 cells does not. The fill byte becomes every
+sprite's block number: `$20` (space) points all eight at block 32,
+`$0800`; `$00` points them at the zero page, whose bytes are the CPU's
+own workspace and rarely make a visible shape. The VIC reads a pointer
+on the sprite's p-access on every line the sprite is fetched, so the
+shape changes the moment the fill passes, and an effect that repaints
+its whole screen page every frame undoes the pointers every frame. The
+same eight bytes move with `$D018` and with the VIC bank
+(`vic_bank_visibility_collision` in `pitfalls/banking.md`).
+
+### Fix
+
+Write the pointers as the last step of setup, after every fill that
+touches the screen page, or fill 1,000 cells and leave the page's tail
+alone. In an effect that redraws the whole page each frame, either
+bound the redraw at 1,000 cells or store the pointers again at the end
+of each pass. A fill loop of four 256-byte passes is the usual culprit;
+its fourth pass ends at `$07FF`.
+
+### Worked example
+
+```text
+// Wrong order: the fill's fourth pass (X from 0 to 255 at $0700) runs
+// over $07F8-$07FF and every pointer becomes the fill byte.
+    lda #SHAPE_BLOCK
+    sta $07f8            // ... and the other five
+    jsr fill_screen      // 4 x 256 bytes from $0400: clobbers the pointers
+
+// Right order: fill first, then point. Or fill 1,000 cells:
+    jsr fill_screen
+    ldx #5
+    lda #SHAPE_BLOCK
+!:  sta $07f8,x
+    dex
+    bpl !-
+
+// A 1,000-cell fill that never reaches the pointers:
+    ldx #0
+!:  sta $0400,x
+    sta $0500,x
+    sta $0600,x
+    cpx #232             // 1000 - 768: the fourth page stops at $07E7
+    bcs !+
+    sta $0700,x
+!:  inx
+    bne !--
+```
+
+### Cross-references
+
+- `sprite_registers_persist_across_state_change` above: a state's setup
+  must own everything the sprites read, and the pointers are the part
+  that lives in RAM.
+- `vic_bank_visibility_collision` in `pitfalls/banking.md`: where the
+  pointers are once the screen or the bank moves.
+- Technique: `sprite_sine_chain` in `techniques/sprite.md`: the chain
+  the demo lost.
+- Technique: `fire_effect` in `techniques/effects-vector-3d.md`: the
+  screen fill that ran over them.

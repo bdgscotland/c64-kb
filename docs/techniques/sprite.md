@@ -259,6 +259,35 @@ hardware sprites), hardware priority is fixed: sprite 0 is always in front of
 sprite 1. Design the sort order so that in areas of overlap, the intended
 top-priority sprite ends up in a lower-numbered hardware slot.
 
+**Variation: fixed reposition rows.** Measured in a five-part
+KickAssembler demo built from the KB: 24 balls on a ring over a 16-band
+`$D021` gradient, in a part that shares one KERNAL-vectored dispatcher
+with a sequencer and a music player. Per-frame reuse entries in that
+table lost a frame whenever two were armed under about four lines apart
+(`irq_table_rebuilt_per_frame_loses_close_entries` in
+`pitfalls/raster-and-badline.md`), so the rows are assembled fixed: nine
+reposition rows twenty lines apart, 62 to 222, beside the part's own rows
+at 20, 249 and 252. One handler serves every row and takes, from a
+running index, every entry whose due line is before the row's line plus
+two; an entry is due at its slot's previous occupant's Y + 22, so it runs
+at most eight lines late against a 31-line margin. The layout is proved
+at assembly time: over all 256 offsets of the ring's Y table, the ball
+eight places down in Y order sits at least 50 lines (22 + 20 + 8) under
+its predecessor; the shipped tables give 53, and the latest due line is
+213 against a limit of 223. Fewer rows fail the proof, at 25 lines apart
+the latest write lands within two lines of its ball; seventeen rows ten
+apart would admit a flatter ring at about 600 more cycles a frame. The
+schedule (hardware sprite k mod 8 to ball k in Y order, entries grouped
+by line) is built one frame ahead and triple-buffered, current, published
+and building, because with two halves the build straddled the top row
+once the main loop's phase moved, and the picture froze. Cost per frame,
+CIA-timed with the rows' interrupts and the main loop's sort, projection
+and build (projection on even frames, build on odd): PAL worst 8,294 and
+median 6,339, NTSC worst 9,176 and median 7,835, for 24 balls with the
+gradient; the demo's end screen later read PAL 8,332 and NTSC 9,126
+worst. Ball Y stays at or above 36: at 28 the PAL frame showed the
+sprite's rows ghosted at 256 + Y.
+
 **Cross-reference:** `recipes/kickassembler/sprite-multiplex-24.md` is the
 fixed three-band variant (the "Fixed three-pass" option above) in
 KickAssembler: one raster IRQ above each band rewrites all eight hardware

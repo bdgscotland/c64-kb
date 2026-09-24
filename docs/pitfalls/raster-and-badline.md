@@ -734,6 +734,345 @@ visible, so it plants the pattern deliberately.
 
 ---
 
+## charset_glyph_255_shows_in_fli_bug_columns — A table whose tail reaches glyph 255 of the character set is drawn in the three FLI-bug columns of every forced-badline line
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D011, D018
+**Triggered by techniques:** tech_tech_wobbler, fli_image, afli_image, plasma
+
+### Symptom
+
+In a text-mode effect that forces a badline on every line of a band, the
+three leftmost columns of the band carry thin light stripes, often
+diagonal, instead of the plain colour the FLI bug normally leaves there.
+They appear after a table or colour map is added somewhere else in the
+program, and go away when it is shortened. In a five-part KickAssembler
+demo built from the KB the plasma's 256-entry colour map was placed at
+`$3F00` in VIC bank 0 and first ran to `$3FFE`; the tech-tech band under
+the logo then showed light diagonal stripes in columns 0 to 2 of every
+band line. After the map was cut short, a fade that rewrote it in
+32-entry slices up to entry 254 brought the stripes back for the length
+of the fade.
+
+### Mechanism
+
+A badline forced on cycle 15 or later skips the c-accesses for the
+columns whose slot has passed, and those columns read `$FF` from the
+video matrix (`fli_image`, "Why it works"). In text mode a matrix byte of
+`$FF` sends the g-access to glyph 255 of the character set, the eight
+bytes at the charset base plus `$07F8` to `$07FF`. With the font at
+`$3800` that is `$3FF8` to `$3FFF`, the top of bank 0, and the last of
+the eight is the byte `idle_fetch_byte_shows_in_gaps` is about. The
+glyph's set bits are drawn as ink in those three columns on every
+forced-badline line, so whatever table ends in those eight bytes draws
+its tail across the band. The colour map reached `$3FFE` and so wrote
+seven of the eight rows of the glyph; the stripes were the map's values
+read as pixel rows. Which colour the FLI columns paint that ink in text
+mode was not established in the demo; the stripes read as light.
+
+### Fix
+
+Treat the last glyph of the character set as owned, like the idle byte,
+and keep every table short of it. The demo capped the plasma's sine at
+119 so the map ends at `$3F77`, well short of `$3FF8`; its setup zeroes
+the eight bytes `$3FF8` to `$3FFF`; and the fade that walks the map in
+32-entry slices stops at entry 238. Make the assembler catch growth:
+reserve the eight bytes as an explicit block, or `.errorif` any table
+that shares the page. Repeat the zeroing whenever the VIC bank changes;
+the address moves with it.
+
+### Worked example
+
+```text
+// Bank 0, font at $3800: glyph 255 is $3FF8-$3FFF. Own it at start-up.
+    ldx #7
+    lda #0
+!:  sta $3ff8,x
+    dex
+    bpl !-
+
+// A page-aligned table at $3F00 must end below $3FF8. The plasma's sine
+// tops out at 119, so the map has 120 entries and ends at $3F77.
+    * = $3f00
+cmap:   .fill 120, palette_for(i)
+    .errorif * > $3ff8, "table reaches glyph 255"
+
+// A fade that rewrites the map in slices must stop short as well:
+// the demo's stops at entry 238, not 254.
+```
+
+### Cross-references
+
+- `idle_fetch_byte_shows_in_gaps` above: the same eight bytes' last one
+  drawn on idle lines; this entry is the display-line case, where a
+  forced badline draws all eight.
+- Technique: `fli_image` in `techniques/bitmap-modes.md`, "Why it works":
+  the skipped c-accesses that read `$FF`.
+- Technique: `tech_tech_wobbler` in `techniques/effects-vector-3d.md`:
+  the forced-badline band the stripes appeared in.
+- Technique: `plasma` in `techniques/effects-vector-3d.md`: the colour
+  map that grew into the glyph.
+- Hardware: `hardware/vic-ii-reference.md`, the FLI note under the
+  badline section: "first three columns show grey".
+
+---
+
+## sei_in_main_spans_band_entry_line — A SEI in the main loop that spans the band interrupt's line delays the sync, and the first display line falls as a real badline
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011, D012
+**Triggered by techniques:** double_irq, sideborder_open, dysp_side_border_sprites, badline_synchronization
+
+### Symptom
+
+A side-border band that is cycle-exact in most frames loses its border,
+or its CIA bracket jumps, in a few frames a second with no pattern in
+the picture. In a five-part KickAssembler demo built from the KB the
+DYSP band's per-frame cycle count, a constant 9,540 on PAL, read +26 to
++40 in 12 frames of 884 traced. The fault appeared when the main loop
+grew: its table build had come to end near line 45, and it took the new
+table under `SEI`.
+
+### Mechanism
+
+The band's entry is a `double_irq` at line 45 to 49: the first interrupt
+lands with jitter, the second is taken from a known instruction, and the
+loop then rewrites YSCROLL on every line from 51 down so that no line of
+the band is a badline (`sideborder_open`). An interrupt that arrives
+while the CPU has I set is not lost, it is held until `CLI`, and a `SEI`
+in the main loop that happens to span line 45 holds the first interrupt
+past it. The second interrupt then syncs late, the YSCROLL rewrite
+starts late, and line 51, where the display begins with YSCROLL 3 still
+in `$D011`, is a badline: the VIC takes its 40 to 43 cycles
+(`badline_cycle_loss`) and the loop's next `DEC $D016` is off cycle 56.
+The demo's notes read the +26 to +40 as one badline; why the bracket
+sees less than the full 40 to 43 was not established. The frames hit are
+those in which the main loop's end drifted onto the entry line, which is
+why the fault looked random.
+
+### Fix
+
+Never hold `SEI` in the main loop across a line the band's entry
+interrupt needs. Either move the critical section into an interrupt
+that already runs at a safe line, or guard it with a raster read and
+skip the section when the beam is near the entry. The demo did both in
+turn: first the table adopt moved into the handler at line 236, and
+after the main loop grew again it adopts under `SEI` only when `$D012`
+is outside 38 to 52, 223 to 227 and 251 to 255, with the line-28 handler
+as the fallback. Re-measured, the band read 9,540 in 793 of 793 PAL
+frames and 9,840 in 420 of 420 NTSC frames.
+
+### Worked example
+
+```text
+// Main loop, before taking the new table: adopt only when the raster
+// is clear of the band entry (45-49), the bottom handler and the frame
+// wrap. Otherwise leave tab_ready set and let the line-28 handler do it.
+adopt_if_clear:
+    lda $d012
+    cmp #38
+    bcc !ok+
+    cmp #53
+    bcc !skip+          // 38..52: the entry's lines, do not hold SEI here
+    cmp #223
+    bcc !ok+
+    cmp #228
+    bcc !skip+          // 223..227
+    cmp #251
+    bcc !ok+
+!skip:
+    rts                 // the handler at 28 adopts on the next frame
+!ok:
+    sei
+    jsr adopt_table     // the critical section, well under a line
+    cli
+    rts
+```
+
+### Cross-references
+
+- `badline_cycle_loss` above: the 40 to 43 cycles line 51 costs once
+  the YSCROLL rewrite is late.
+- `raster_irq_first_line_jitter` above: why the entry is a double
+  interrupt in the first place; a held interrupt defeats the second half.
+- Technique: `double_irq` and `sideborder_open` in `techniques/raster.md`:
+  the entry and the per-line YSCROLL rewrite.
+- Technique: `dysp_side_border_sprites` in `techniques/raster.md`: the
+  band measured here, 9,540 PAL and 9,840 NTSC a frame.
+
+---
+
+## raster_poll_equality_misses_under_dispatch_latency — A `CMP $D012 / BNE` poll for a run's first line, entered through a dispatcher a hundred cycles late, misses the line and spins a whole frame
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D012
+**Triggered by techniques:** raster_bars, irq_chain_table, topbottom_border_open
+
+### Symptom
+
+Raster bars or a border-opening run scheduled from a table-driven
+interrupt dispatcher show up one frame in two or three, and every other
+effect in the chain, the music included, slows with them. In a five-part
+KickAssembler demo built from the KB three polled runs were entered from
+dispatcher entries at lines 28, 205 and 244; traced at the dispatcher's
+jump, the bottom and open runs each spun a whole frame, "the cycle took
+three frames and the band ran once in three". The same runs also stopped
+one line short, so a `$D011` restore written for line 252 never ran.
+
+### Mechanism
+
+A KERNAL-vectored dispatcher takes the interrupt at the entry's line,
+saves the registers, acknowledges `$D019`, reads its table and jumps to
+the handler: about 100 cycles here, more than one raster line (63 PAL,
+65 NTSC). A poll for the run's first line written as an equality,
+`lda $d012 / cmp #line / bne`, therefore starts after that line has gone
+by. The raster compare register only equals that value again in the next
+frame, and the handler spins there with interrupts held, so every entry
+behind it, including the sequencer's frame tick, is a frame late. The
+exit test had the same shape: a loop that leaves on equality with its
+last line leaves one line early when the count and the line are off by
+one, and the restore on 252 was never reached.
+
+### Fix
+
+Poll with a greater-or-equal test and give the entry two lines of lead:
+`lda $d012 / cmp #first / bcc` waits when the beam is still above the
+line and passes at once when the dispatcher was late. Count the lines of
+the run rather than testing the exit line for equality. Re-measured after
+the change, the dispatch cycle was exactly 19,656 cycles a frame on PAL,
+every entry on its line. Keep the compare inside one half of the frame;
+across line 255 the value wraps (`d012_wrap_around`) and a `>=` on the
+low byte alone inverts.
+
+### Worked example
+
+```text
+// Dispatcher entry armed at FIRST - 2. The handler lands about 100
+// cycles after the interrupt, one to two lines late. Wait for the line
+// with >=, so a late arrival falls straight through.
+bar_run:
+    ldx #0
+!wait:
+    lda $d012
+    cmp #FIRST
+    bcc !wait-          // still above FIRST: keep polling
+!line:
+    lda gradient,x
+    sta $d020
+    sta $d021
+    // ... pad to one line ...
+    inx
+    cpx #LINES          // count the lines; do not test $D012 for the last
+    bne !line-
+    rts
+
+// The fault, for contrast: `cmp #FIRST / bne !wait-` never passes if
+// FIRST went by during dispatch, and the handler holds the frame.
+```
+
+### Cross-references
+
+- `d012_wrap_around` above: the compare is nine bits; a `>=` on the low
+  byte is only safe inside one half of the frame.
+- `raster_irq_first_line_jitter` above: the latency that makes the
+  equality miss is the same jitter, made larger by the dispatcher.
+- Technique: `irq_chain_table` in `techniques/raster.md`: the
+  table-driven dispatcher whose latency this is.
+- Technique: `raster_bars` in `techniques/raster.md`: the polled run.
+
+---
+
+## irq_table_rebuilt_per_frame_loses_close_entries — A dispatcher table rebuilt every frame from the main loop loses a frame for any two entries armed under about four lines apart
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D012
+**Triggered by techniques:** irq_chain_table, sprite_multiplex_24, sprite_multiplex_game
+
+### Symptom
+
+A sprite multiplexer that writes its reposition interrupts as per-frame
+entries in a shared dispatcher table shows torn or missing sprites
+wherever two logical sprites are close in Y, and the entries behind
+them, a sequencer's line-255 tick among them, arrive a frame late. In a
+five-part KickAssembler demo built from the KB the first design of the
+24-ball part put one reposition entry at each ball's previous Y + 22 and
+rebuilt the table at the top of the main loop. Its notes: rows under
+about four lines apart lost a whole frame, the sequential walk delayed
+every row behind them including the sequencer's 255, and because the
+main loop ran at about raster line 90 (later on NTSC) a rebuild there
+skipped the rows already passed in every frame. The design was abandoned.
+
+### Mechanism
+
+A table-driven dispatcher walks its entries in order and arms the raster
+compare for entry n + 1 only when handler n returns, and the compare
+fires only at the start of a line. Interrupt entry, register save,
+acknowledge, table lookup and return cost about 100 cycles around the
+handler's own work, so when two entries lie fewer than about four lines
+apart the second's line has already passed by the time it is armed. The
+compare is next met a frame later, and every entry behind it in the walk
+waits with it. The per-frame rebuild adds a second fault of its own: the
+table is replaced at whatever line the main loop has reached, and an
+entry for a line already past in the current frame is not armed until
+the next. Together they cost the multiplexer a frame in every row where
+two balls sat close, which is the common case in a ring.
+
+### Fix
+
+Assemble the rows fixed and further apart than the dispatcher's
+latency, and let one handler take every entry due by its row from a
+running index (the "fixed reposition rows" variation of
+`sprite_multiplex_24`). The demo's rows sit twenty lines apart, each
+entry is due at its predecessor's Y + 22, so an entry runs at most eight
+lines late against a 31-line margin, and a compile-time proof holds the
+Y gap between a ball and the one eight places above it at 50 lines or
+more over all 256 offsets (the shipped minimum is 53). The schedule is
+triple-buffered so the build never straddles the row that publishes it.
+Measured per frame with 24 balls and a 16-band gradient: PAL worst
+8,294, NTSC worst 9,176. If entries must change per frame, arm them from
+a handler that runs before the first of them, never from the main loop
+at an unknown line.
+
+### Worked example
+
+```text
+// One handler serves every fixed reposition row. Entries are sorted by
+// due line; take every entry due before this row's line + 2.
+rp_run:
+    ldy rp_idx
+!next:
+    lda sched_due,y
+    cmp row_limit           // the row's stub stores its line + 2 here
+    bcs !done+
+    ldx sched_slot,y        // hardware sprite times two
+    lda sched_y,y
+    sta $d001,x
+    lda sched_x,y
+    sta $d000,x
+    iny
+    bne !next-
+!done:
+    sty rp_idx
+    rts
+```
+
+### Cross-references
+
+- `raster_poll_equality_misses_under_dispatch_latency` above: the same
+  dispatcher latency, seen by a polled run instead of a table walk.
+- `sprite_dma_overflow` in `pitfalls/sprite.md`: what a slot re-armed
+  after its line has passed looks like on screen.
+- Technique: `irq_chain_table` in `techniques/raster.md`: the
+  dispatcher.
+- Technique: `sprite_multiplex_24` in `techniques/sprite.md`, "Variation:
+  fixed reposition rows": the design that replaced the per-frame table.
+
+---
+
 ## badline_every_line_block_length — A loop that forces a badline on every line breaks when its block is not exactly the free cycles
 
 **Severity:** high

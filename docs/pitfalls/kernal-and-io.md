@@ -2394,3 +2394,86 @@ file.
 - `techniques/file-io.md`, `kernal_file_write_seq` and
   `disk_copy_block_commands`.
 - `recipes/kickassembler/disk-copier.md`: the images decoded.
+
+
+## cycle_limit_lands_before_the_grading_frame — A test's `-limitcycles` that ends before the program's grading frame reads as a pass, or as a black picture, and has measured nothing
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** frame_sync_loop, raster_profile_bars, pal_ntsc_detection
+
+### Symptom
+
+An exit screenshot taken under a cycle limit copied from another test
+shows the effect still running with no verdict on the border, or a
+black screen, and an expect file that only checks for the absence of a
+red border, or for black, passes. In a five-part KickAssembler demo
+built from the KB every part's standalone test grades at frame 300 and
+freezes; the tests were run at `-limitcycles 7000000`, a figure carried
+over from a recipe. The fire part's shot at that limit showed the
+palette before its first switch and a border still black, and the notes
+of two parts record the same finding: the program starts near 3.0M
+cycles in this VICE, so 7,000,000 was frame 200 for every part's test,
+while the grades landed at 8.95M and 8.98M cycles and the frozen frame
+the PAL/NTSC "same" comparison needs was past 9M.
+
+### Mechanism
+
+`-limitcycles` counts from power-on, not from the program's first
+instruction. With `-autostartprgmode 1` the program is injected after
+the KERNAL reset and BASIC's cold start, so its frame 0 sits near 3.0M
+cycles, and frame N is near 3.0M + N x 19,656 on PAL or 3.0M + N x
+17,095 on NTSC: a frame-300 grade is about 8.9M PAL and 8.1M NTSC by
+that arithmetic, which is where the two parts measured theirs. A limit
+below the grade is a picture of the running effect, not of its verdict,
+and any check phrased as an absence, no red border, a black rectangle,
+is satisfied by a program that has not graded yet, and equally by one
+that has crashed to a blank screen. Because the two models put a
+different number of cycles in a frame, one limit can be past the grade
+on NTSC and short of it on PAL.
+
+### Fix
+
+Derive the limit from the grading frame and the measured start offset,
+not from another test, and make the picture independent of the limit:
+freeze the effect after the verdict so every limit past the grade gives
+the same shot, and put a positive check in the expect file, a verdict
+glyph, a frame counter or CIA-timed words on a screen row, that a
+mid-run shot cannot satisfy. The demo's tests moved to 9,500,000 (the
+fire part) and 10,000,000 (the ball part), their expect notes say so,
+and each test stops its effect after grading; the fire part had to
+freeze its sprite chain as well, because the stub leaves interrupts on
+and the chain's phase otherwise depended on the cycle limit.
+
+### Worked example
+
+```text
+// Choose the limit from the frame, not the other way round.
+//   start offset (measured once, this VICE, autostartprgmode 1): ~3.0M
+//   PAL:  3.0M + 300 x 19,656 = 8.9M   -> -limitcycles 10000000
+//   NTSC: 3.0M + 300 x 17,095 = 8.1M   -> the same limit is past both
+//
+// In the program: grade, then freeze, so the shot is the grading frame
+// whatever the limit.
+grade:
+    jsr selfcheck          // sets the verdict colour on $D020
+    lda #0
+    sta effect_running     // main does nothing from here
+    sei                    // and the effect's interrupts stop moving it
+    jmp *
+
+// In the expect file: a fact only the graded frame has, alongside the
+// border colour. A frame counter on row 24, a glyph the verdict draws,
+// or the CIA-timed worst/typical words the test prints at the grade.
+```
+
+### Cross-references
+
+- `krnio_save_leaves_splat_file` above: the same shape of error, the
+  emulator stopped before the work it was asked about had finished.
+- `pal_ntsc_tempo_mismatch` in `pitfalls/region-timing.md`: 19,656
+  against 17,095 cycles a frame, which is why one limit is two frames.
+- Technique: `frame_sync_loop` in `techniques/raster.md`: the frame
+  count the grade is pinned to.
+- Technique: `raster_profile_bars` in `techniques/raster.md`: the
+  CIA-timed words a graded frame can print as its positive check.
