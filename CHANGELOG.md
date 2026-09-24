@@ -5,7 +5,22 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 782, schema 31, tools 2.5.0, package 0.18.0.
+Data 783, schema 31, tools 2.6.0, package 0.19.0.
+
+**Compatibility, budget, briefing and lint answers that misled the
+starter builders (tools 2.6.0, package 0.19.0, data 783; #29, part of #41).**
+`check_compatibility` no longer reports a hard conflict between a
+technique and one on its own REQUIRES chain (the FLI, side-border, DYSP
+and tech-tech recipes gave 11 false hard conflicts; now none, checked
+against the real pages by a new test), refuses unknown technique names
+(verdict `unknown_technique`, new `not_found[]`), and no longer suggests
+an `irq_chain_table` that makes the verdict worse. `plan_budget` applies
+one multi-frame threshold to both models and says "over the frame by X"
+instead of "passes". Briefings refuse an unknown archetype, list every
+conflict with its severity, name the brief words behind each proposal,
+and propose file, animation, frame-sync and region techniques from the
+brief's words. `techniques-for --register` accepts any spelling of a
+register. The lint's raster-poll rule no longer fires on a multiplexer.
 
 **sprite_multiplex_game has a measured typical frame (data 781; #33).**
 A CIA1 probe across the sort, the build and every IRQ, over 1,867 PAL and
