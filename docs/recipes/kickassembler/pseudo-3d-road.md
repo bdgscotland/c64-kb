@@ -873,7 +873,11 @@ STA $D016, every frame of the 21,100,000-cycle run).**
 | STA $D016 writes on | cycle 4 of line 100+j, every j, every frame | cycle 4 of line 100+j, every j, every frame |
 | Loop span | first LDA on cycle 60 of line 99; `fine_done` on cycle 63 of line 199, after a 3-cycle JMP: 6,300 cycles of loop | first LDA on cycle 62 of line 99; `fine_done` on cycle 62 of line 199: 6,500 cycles |
 
-Cycle numbers count from 1, so the monitor's CYC column plus one; on this
+Cycle numbers are Bauer's, 1 to 63 (`runtime/vice-reference.md`, "What
+the CYC column counts"): the store trace prints the write's cycle as 4
+itself, and an exec trace prints an instruction's first cycle one lower
+(the `LDA` on 60 printed 59). An earlier version said every figure was
+the monitor's column plus one, which holds only for exec traces. On this
 scale the badline stall starts on cycle 12.
 
 **Which write cycles work.** Moving ENTRY_PAD moves every write by the same

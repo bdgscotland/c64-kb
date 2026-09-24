@@ -393,8 +393,10 @@ takes 30,000 cycles one frame and 2,000 the next, the play routine fires in
 the same window of each frame.
 
 `play` is called on line 255. Measured with a VICE monitor tracepoint on
-`$1003`, PAL and NTSC: every call starts on line 255, between cycles 32
-and 38. `rirq_set(0, 0, ...)` asks for row 0, but the engine arms `$D012`
+`$1003`, PAL and NTSC: every call starts on line 255, between cycles 33
+and 39 (Bauer's numbering; the exec trace prints 32 to 38, which an
+earlier version quoted: `runtime/vice-reference.md`, "What the CYC column
+counts"). `rirq_set(0, 0, ...)` asks for row 0, but the engine arms `$D012`
 at row - 1, which wraps to 255, and its check that the row has been reached
 (`$D012` above the row) is already true there, so the "one below" rule of
 `stable-raster-irq.md` does not apply to row 0. (An earlier version said

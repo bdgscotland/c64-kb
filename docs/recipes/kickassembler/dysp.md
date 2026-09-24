@@ -45,7 +45,8 @@ byte-identical across two runs.
 // dysp.asm
 // DYSP: four sprites at different, moving Y positions inside the opened
 // right side border. One write per line opens the border: DEC $D016 with
-// its new value written on cycle 56 (PAL) or 57 (NTSC), as in
+// its new value written on cycle 56 on both models (an earlier version
+// said 57 on NTSC; the store trace prints 56 there too), as in
 // sideborder-open.asm. Sprite DMA then stalls the CPU for a length that
 // depends on WHICH sprites are fetched on that line, so the loop reads a
 // per-line delay from a table rebuilt every frame from the sprites' Y
@@ -552,10 +553,12 @@ border stayed closed until the first sprite line, whose stall moved the
 loop to 56; the sideborder recipe tolerated 41 to 45 because all its
 lines had the stall, and this one has lines without it. On NTSC with
 `ENTRYPADN` 45 every `DEC` reports 56 and every `INC` 40, 2,737 of
-2,737; with 44 the sprite-free lines reported 55 and were closed. The
-monitor's cycle numbers for the two models were not reconciled against
-each other here; what is established is that the value it reports as
-56 opens the border on both.
+2,737; with 44 the sprite-free lines reported 55 and were closed. A
+store trace prints the write's cycle in Bauer's numbering on both
+models (`runtime/vice-reference.md`, "What the CYC column counts",
+measured for issue #82), so the write that opens the border is cycle 56
+on PAL and on NTSC. An earlier version left the two models' numbers
+unreconciled.
 
 **Cycles.** The band is 161 lines of 63 wall cycles on PAL (arithmetic:
 10,143 cycles), 65 on NTSC; the code in each line is 51 cycles plus the
@@ -664,8 +667,5 @@ amplitude 128 about 128); the largest Y is 170 and the smallest 40.
 - Eight sprites. The tables are four bits wide; with eight the largest
   stall is 19 and the slide would need to be longer than the sprite-free
   line's spare cycles allow without moving other work out of the loop.
-- The two monitors' cycle numbering. "56" is what VICE reports for the
-  write that opens the border on both models; whether that is the 6567's
-  cycle 56 or 57 in the datasheet's numbering was not settled.
 - Sets with a gap of two or more sprites, where BA rises between the
   groups; the four sprites here never form one.

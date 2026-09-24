@@ -47,17 +47,23 @@ set) and sets the top of the screen (the sky, the road screen's $D018).
 irq_top at line 103 arms line 105 and waits in NOPs; the IRQ at 105 lands
 on a NOP, so it is 0 or 1 cycle late, and two $D012 reads straddling the
 change to line 106 take that cycle out (c64-kb double_irq). The sync then
-jumps into the road copy on display, whose first block starts on cycle 1
-of line 107 and checks that the IRQ came on line 105.
+jumps into the road copy on display, whose first block starts on cycle 2
+of line 107 and checks that the IRQ came on line 105. Cycles here are
+Bauer's, 1 to 63 (c64-kb `docs/runtime/vice-reference.md`, "What the CYC
+column counts"); an earlier version counted the block's first cycle as
+cycle 1 and gave the block's stores one cycle lower.
 
 Each road line 107-202 is one 64-byte block. A normal line's block stores
-$D016 (written on cycle 6) and $D021 (cycle 12), then branches into a slide
+$D016 (written on cycle 7) and $D021 (cycle 13), then branches into a slide
 of `CMP #$C9` bytes (`C9 C9 ... C5 EA`): entered R bytes from its end it
 takes R + 1 cycles, so a patched branch operand pads the line to exactly 63
 cycles (65 on NTSC). A badline's block stores $D016 only: the VIC holds the
 bus from cycle 12 to 54, and that line shows the colour of the line above.
-Line 203's block sets the panel's $D018 (cycle 6) and $D016 (cycle 12);
-$D021 follows after the VIC's fetch, over row 19's solid characters.
+Line 203's block sets the panel's $D018 (cycle 7) and $D016. Line 203 is
+a badline and the `STA $D016` reads on cycle 12, so the write waits for
+the stall and lands on cycle 56 (VICE store trace, both models; an
+earlier version said cycle 12). $D021 follows after the VIC's fetch,
+over row 19's solid characters.
 
 The main loop runs one game step when the tick moves (input, cars, the
 panel, sound) and in the time between builds the next picture, a piece at
@@ -89,7 +95,7 @@ that shows each line's cycle in the picture, is c64-kb's
 ## The road's timing
 
 Measured with the PROBE build (`make build/racing-probe.prg`, KickAssembler
-`-define PROBE`): every normal block stores a yellow $D021 on cycle 18, and
+`-define PROBE`): every normal block stores a yellow $D021 on cycle 19, and
 VICE x64sc 3.10 shows it from screenshot x 49 (a grey dot on x 48 on PAL, the
 8565's). Shots at eight cycle counts a model, the race running and three
 sprites moving:

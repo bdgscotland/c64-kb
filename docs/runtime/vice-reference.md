@@ -1185,7 +1185,9 @@ Error parsing command-line options, bailing out. For help use '-help'
 ```
 
 The first line is the checkpoint number, its kind and address, then the
-raster line and the cycle within it, each as decimal/hex. The second is
+raster line and the cycle within it, each as decimal/hex (0-based, and
+what it counts depends on the checkpoint: "What the CYC column counts"
+below). The second is
 the instruction about to execute, not yet executed: memory space and PC,
 opcode bytes, the disassembly with labels substituted, the registers, the
 flags as `NV-BDIZC` with a letter for set and `.` for clear, and the
@@ -1308,6 +1310,108 @@ not.
 The stopwatch counts only while the machine runs. Twenty seconds of real
 time at the prompt left it at `2970383`; `r` before and after read the
 same line.
+
+### What the CYC column counts
+
+This knowledge base numbers the cycles of a raster line 1 to 63 (65 on
+the 6567R8) as Bauer's VIC-II article does: `$D012` changes on cycle 1,
+a badline's BA falls on 12, its c-accesses run 15 to 54
+(`hardware/vic-ii-reference.md`). The monitor prints 0 to 62 (0 to 64),
+and what one of its numbers means depends on the checkpoint:
+
+| Monitor output | Its CYC is | Bauer's cycle |
+|---|---|---|
+| exec checkpoint, `step`, `r` (an instruction about to run) | the instruction's first cycle, the opcode fetch | CYC + 1; its k-th cycle is CYC + k |
+| store checkpoint (`watch store`, `tr store`) | one past the store's write cycle: the line is printed after the instruction ends | the write's cycle is CYC as printed |
+
+So for an `STA $D020` traced on exec at CYC 60 the write is Bauer's
+cycle 64, which is cycle 1 of the next line, and the store trace prints
+that line with CYC 1. A store trace's CYC 0 is the previous line's last
+cycle (63, or 65), with the next line's number in the LIN column.
+Before issue #82, pages quoted three numberings: the store trace as
+printed, the exec CYC as printed, and the exec CYC plus one.
+
+Measured 2026-09-24 in VICE x64sc 3.10, PAL (`-default`) and NTSC
+(`-model ntsc`), the same result on both:
+
+- **Exec against store.** `STA $02` traced both ways: exec at CYC 49,
+  stopwatch 3299989; store at CYC 52, stopwatch 3299992. The
+  instruction takes 3 cycles and writes on its third, so the store line
+  is printed one cycle after the write. The source agrees: a store
+  watchpoint is queued during the access and checked after the
+  instruction (`monitor_watch_push_store_addr`, `src/monitor/monitor.c`).
+- **The `$D012` edge.** `LDA $D012 : STA $02 : JMP` with DEN clear
+  (no badline), exec trace on the `STA`, which gives the `LDA`'s read
+  cycle as its CYC − 1: 25,477 reads on PAL over all 63 CYC values,
+  57,197 on NTSC. Every read on CYC 0 returned the new line and every
+  read on CYC 62 (64) the old one. Bauer puts the increment on cycle 1.
+- **The badline stall.** A slide of `NOP`s with DEN set, exec trace on
+  every `NOP`: a `NOP` that started on CYC 10 held its second read and
+  the next instruction started on CYC 55; one that started on CYC 11
+  held its opcode read and the next started on 56; one that started on
+  CYC 9 or earlier ran in 2 cycles. Reads are held from CYC 11 to 53
+  and the first free read is on 54, which is Bauer's cycles 12 to 54
+  and 55. PAL and NTSC give the same numbers.
+
+The monitor takes CYC from the CPU clock modulo the line length
+(`machine_get_line_cycle`, `src/c64/c64.c`), not from the VIC-II, which
+is why it had to be tied to the chip by measurement. VICE's own VIC-II
+log (for example the `VSP Bug: ... Cycle: 24` line of `-VICIIvspbug`)
+prints `vicii.raster_cycle`, a table index that is Bauer's cycle minus
+one (`VICII_PAL_CYCLE(c) = c - 1`, `src/viciisc/viciitypes.h`; not
+checked against the monitor beyond that).
+
+**Where a store shows in the exit screenshot.** A loop exactly one line
+long locks to the raster, so each of its stores lands on the same cycle
+of every line. DEN is set only on lines 49 to 52, never on line 48, so
+there is no badline and the open display shows `$D021`:
+
+```asm
+BasicUpstart2(start)
+.var ntsc = cmdLineVars.get("NTSC") != null
+* = $0810
+start:  sei
+        lda #$7f
+        sta $dc0d
+        lda $dc0d
+        lda #0
+        sta $3fff           // the idle fetch: background only
+        sta $d015
+        jmp loop
+* = $0a00
+loop:   ldx $d012           // 4
+        lda dentab,x        // 4
+        sta $d011           // 4: DEN on lines 49-52 only
+        lda #2
+        sta $d020           // red border
+        lda #6
+        sta $d021           // blue background
+        .fill 6, $ea
+        lda #0
+        sta $d020           // black border
+        .fill 6, $ea
+        lda #1
+        sta $d021           // white background
+        .if (ntsc) { nop }
+        jmp loop            // 63 cycles, 65 with the NTSC NOP
+* = $0b00
+dentab: .fill 256, (i >= 49 && i <= 52) ? $1b : $0b
+```
+
+Every row of the picture had the same colour edges. A store the trace
+prints as CYC `c` shows its new colour from screenshot x = 8c − 103,
+border and background alike. On PAL the 8565 first draws one light grey
+pixel at 8c − 104; the NTSC picture has none. Pairs measured, with
+different lock phases (set by a delay loop before `jmp loop`, not shown):
+
+| Model | Store-trace CYC → first pixel x |
+|---|---|
+| PAL | 30 → 137, 48 → 281, 50 → 297, 29 → 129, 56 → 345 |
+| NTSC | 22 → 73, 46 → 265, 28 → 121 |
+
+Stores on other cycles fall in the horizontal blank or beyond x 383.
+`recipes/kickassembler/road-sprite-lines.md` found the same line: its
+probe traced on 15 shows from x 17.
 
 ### Memory dump and save
 
