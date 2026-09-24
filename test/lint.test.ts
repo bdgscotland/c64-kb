@@ -388,3 +388,72 @@ describe("lintSource on the pages of issue #28", () => {
     ]);
   });
 });
+
+// Issue #24's lint item: pitfalls/sprite.md sprite_registers_persist_across_state_change.
+describe("d015_merged_across_states", () => {
+  const rule = (src: string, language: "asm" | "c") =>
+    lintSource(src, { language })
+      .filter((x) => x.rule === "d015_merged_across_states")
+      .map((x) => x.line);
+
+  it("reports the merge when $D015 is also written elsewhere (asm)", () => {
+    const src = [
+      "title_enter:",
+      "        lda #$01",
+      "        sta $d015",
+      "        rts",
+      "play_enter:",
+      "        lda $d015",
+      "        ora #$02",
+      "        sta $d015",
+      "        rts",
+    ].join("\n");
+    expect(rule(src, "asm")).toEqual([8]);
+  });
+
+  it("is quiet when every state writes its whole mask, or the merge is the only write (asm)", () => {
+    expect(rule("        lda #$01\n        sta $d015\n        lda #0\n        sta $d015\n", "asm")).toEqual(
+      [],
+    );
+    expect(rule("        lda $d015\n        ora #$02\n        sta $d015\n", "asm")).toEqual([]);
+    expect(
+      rule(
+        "        lda $d015\n        lda mask\n        ora #2\n        sta $d015\n        stx $d015\n",
+        "asm",
+      ),
+    ).toEqual([]);
+  });
+
+  it("reports a compound assignment to vic.spr_enable beside another write (C)", () => {
+    const src =
+      "void title(void) {\n    vic.spr_enable = 0;\n}\nvoid play(void) {\n    vic.spr_enable |= 1;\n}\n";
+    expect(rule(src, "c")).toEqual([5]);
+    expect(
+      rule("void play(void) {\n    vic.spr_enable = vic.spr_enable | 1;\n    vic.spr_enable = 0;\n}\n", "c"),
+    ).toEqual([2]);
+  });
+
+  it("is quiet on a per-frame cull of a variable bit (lane-pursuit.md)", () => {
+    const src =
+      "void place(char n) {\n    char bit = 1 << n;\n    vic.spr_enable &= ~bit;\n    vic.spr_enable |= bit;\n}\nvoid title(void) {\n    vic.spr_enable = 0;\n}\n";
+    expect(rule(src, "c")).toEqual([]);
+    expect(
+      rule(
+        "        lda $d015\n        ora bits\n        sta $d015\n        lda #0\n        sta $d015\n",
+        "asm",
+      ),
+    ).toEqual([]);
+  });
+
+  it("is quiet on a lone merge and on plain writes (C)", () => {
+    expect(rule("void play(void) {\n    vic.spr_enable |= 1;\n}\n", "c")).toEqual([]);
+    expect(rule("void a(void) {\n    vic.spr_enable = 0;\n    vic.spr_enable = mask;\n}\n", "c")).toEqual([]);
+  });
+
+  it("finds the bad play-state setup on the pitfall page", () => {
+    const page = fs.readFileSync(path.join(here, "../docs/pitfalls/sprite.md"), "utf-8");
+    const start = page.indexOf("## sprite_registers_persist_across_state_change");
+    const section = page.slice(start, page.indexOf("\n## ", start + 10));
+    expect(rule(section, "asm").length).toBeGreaterThan(0);
+  });
+});

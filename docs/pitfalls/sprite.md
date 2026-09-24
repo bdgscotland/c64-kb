@@ -861,6 +861,11 @@ discard the result to clear the latches. Only then set the state's own
 pointers, positions and colours. A state that uses no sprites calls the
 same routine with a mask of zero. Do not `ORA` and `AND` a state's bits
 into `$D015`; a state owns the whole register while it runs.
+`c64_lint_source` reports that merge as `d015_merged_across_states`: a
+constant ORed or ANDed into `$D015` (or `vic.spr_enable |= 1` in C) in a
+file that writes the register somewhere else too. A merge of a variable
+bit, the per-frame cull of `recipes/oscar64/lane-pursuit.md`, is not
+reported.
 
 Sprite colours and the shared multicolours are not in the list because a
 sprite that is not enabled shows none of them, but a state that reuses a
