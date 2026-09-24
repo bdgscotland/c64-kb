@@ -148,6 +148,27 @@ each device on it answers to its own number. A run that sets
 `-drive8type` to anything but 1542 is refused by verify:recipes, because
 this section would no longer describe it.
 
+## 1581 as drive 8
+
+**Device:** `disk_1581`
+**Device kind:** storage
+**Device port:** serial
+**VICE attach:** disk d81
+**Claims:** serial_bus (shares)
+**Claims basis:** measured-vice
+
+Commodore's 3.5-inch drive, 80 tracks of 40 256-byte sectors, 3,160
+blocks free on a fresh disk. A runs.json `"disk"` with `"type": "d81"`
+formats a fresh D81 with `c1541 -format NAME,ID d81` and attaches it
+with `-8 image -drive8type 1581`; `src/drive/drive.h` defines
+`DRIVE_TYPE_1581` as 1581 (VICE 3.10), and the drive runs VICE's
+`dos1581-318045-02.bin`. `kickassembler/d81-partition` is the recipe
+whose run attaches it. A run that sets `-drive8type` itself with a D81 is
+refused: the verifier sets it. The 1581's DOS answers the same channel-15
+commands as the 1541's plus the `/` partition family
+(`../formats/iec-disk-reference.md`, "1581 partitions and
+sub-directories").
+
 ## REU 1750 (512 KB)
 
 **Device:** `reu_1750`

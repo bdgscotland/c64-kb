@@ -11,14 +11,26 @@ import { SINGLE_SOCKET_PORTS, type Device } from "../../src/graph/extract/device
 /** The parts of a pinned run that attach hardware. */
 export interface RunAttach {
   flags: readonly string[];
-  disk?: unknown;
+  /** Drive 8's fresh disk; `type` absent is a D64. */
+  disk?: { name: string; type?: "d64" | "d81" | undefined } | undefined;
+  /** Drive 9's fresh D64 (a second 1541-II). */
+  disk9?: { name: string } | undefined;
   cartridge?: unknown;
 }
 
 // x64sc options that attach a device. One in a run's flags that no device
 // section's flags line accounts for means the page describes a machine the
 // run is not.
-const ATTACH_OPTIONS = ["-controlport1device", "-controlport2device", "-userportdevice", "-reu", "-georam"];
+// A second drive goes through runs.json "disk9", never through flags.
+const ATTACH_OPTIONS = [
+  "-controlport1device",
+  "-controlport2device",
+  "-userportdevice",
+  "-reu",
+  "-georam",
+  "-9",
+  "-drive9type",
+];
 const DRIVE_TYPE_1541_II = "1542";
 
 /** Index of `seq` as a contiguous run inside `flags`, or -1. */
@@ -43,15 +55,25 @@ function impliedDevices(
       if (at === -1) continue;
       names.push(d.name);
       for (let j = 0; j < a.flags.length; j++) covered.add(at + j);
-    } else if (a.how === "disk" && run.disk !== undefined) names.push(d.name);
+    } else if (a.how === "disk" && diskImageAt(run, a.unit) === a.image) names.push(d.name);
   }
   return { names, covered };
+}
+
+/** The image the run puts in drive 8 or 9, or undefined when it attaches none there. */
+function diskImageAt(run: RunAttach, unit: 8 | 9): "d64" | "d81" | undefined {
+  if (unit === 9) return run.disk9 === undefined ? undefined : "d64";
+  return run.disk === undefined ? undefined : (run.disk.type ?? "d64");
 }
 
 function driveTypeProblem(run: RunAttach): string[] {
   const i = run.flags.indexOf("-drive8type");
   if (run.disk === undefined || i === -1) return [];
   const type = run.flags[i + 1];
+  if (run.disk.type === "d81")
+    return [
+      `the run's disk is a D81 and the verifier sets -drive8type 1581 itself; drop -drive8type ${type ?? ""}`,
+    ];
   return type === DRIVE_TYPE_1541_II
     ? []
     : [`the run sets -drive8type ${type ?? "(nothing)"}; only 1542 (disk_1541_ii) has a device section`];

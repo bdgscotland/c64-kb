@@ -32,6 +32,7 @@ describe("the devices page", () => {
       "light_pen_port_1",
       "four_player_adapter_cga",
       "disk_1541_ii",
+      "disk_1581",
       "reu_1750",
       "easyflash",
       "magic_desk",
@@ -100,7 +101,10 @@ describe("device sections the parser refuses", () => {
       how: "flags",
       flags: ["-reu", "-reusize", "512"],
     });
-    expect(parseViceAttach("disk")).toEqual({ how: "disk" });
+    expect(parseViceAttach("disk")).toEqual({ how: "disk", unit: 8, image: "d64" });
+    expect(parseViceAttach("disk d81")).toEqual({ how: "disk", unit: 8, image: "d81" });
+    expect(parseViceAttach("`disk 9`")).toEqual({ how: "disk", unit: 9, image: "d64" });
+    expect(parseViceAttach("disk 10")).toBeNull();
     expect(parseViceAttach("crt 19")).toEqual({ how: "crt", type: 19 });
     expect(parseViceAttach("flags")).toBeNull();
   });
@@ -139,6 +143,19 @@ describe("checkRunDevices", () => {
     expect(checkRunDevices(["easyflash"], { flags: [], cartridge: { file: "x.crt" } }, devices)).toEqual([]);
     // A default device needs no option in the run.
     expect(checkRunDevices(["joystick_port_2"], { flags: [] }, devices)).toEqual([]);
+  });
+
+  it("tells a D64, a D81 and a second drive apart", () => {
+    const d81 = { flags: [], disk: { name: "P,81", type: "d81" as const } };
+    expect(checkRunDevices(["disk_1581"], d81, devices)).toEqual([]);
+    expect(checkRunDevices(["disk_1541_ii"], d81, devices)).toEqual([
+      "the run attaches disk_1581, but devices does not list it",
+      "devices lists disk_1541_ii, but the run does not attach it (disk)",
+    ]);
+    expect(checkRunDevices(["disk_1581"], { ...d81, flags: ["-drive8type", "1581"] }, devices)[0]).toMatch(
+      /verifier sets -drive8type 1581 itself/,
+    );
+    expect(checkRunDevices([], { flags: ["-9", "x.d64"] }, devices)[0]).toMatch(/-9 x.d64 matches no device/);
   });
 
   it("fails a run that attaches what the page does not list", () => {

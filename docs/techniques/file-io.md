@@ -1508,3 +1508,75 @@ one copy.
 ### Recipes
 
 - `recipes/kickassembler/tape-turbo-loader.md` (the TAP-writing script, the loader, the checksum verdict, bytes per second and pulse ranges on both models, and the run with VICE's tape wobble left on)
+
+## d81_partition_subdirectory — Allocate a 1581 partition with "/0:", select it and format it as a sub-directory
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** SETLFS, SETNAM, OPEN, CHKOUT, CHROUT, CHKIN, CHRIN, READST, CLRCHN, CLOSE
+**Requires:** error_channel_check
+**Claims:** serial_bus (shares), cia1_timer_b (shares)
+**Claims basis:** measured-vice
+**Consumes formats:** D81
+
+### Why
+
+A 1581 disk holds 3,160 free blocks and one root directory. A game or
+tool that wants its own directory on the disk, its files invisible to a
+plain `$` listing and its space safe from what is written beside it,
+can put them in a partition used as a sub-directory. The 1581's DOS does
+this with channel-15 commands from a stock machine: no drive code, no
+host tool.
+
+### How
+
+1. Open channel 15 on the drive, bare, and keep it open.
+2. Allocate: send `/0:NAME,` followed by four raw bytes (start track,
+   start sector, block count low, block count high) and `,C`. For a
+   sub-directory the start sector is 0, the count a multiple of 40 and
+   at least 120, and the run must not touch track 40 (1581 User's Guide,
+   section 6.8). Read the status: `00`.
+3. Select: send `/0:NAME`. Read the status and go on only if it begins
+   `02` (`02, SELECTED PARTITION,<first track>,<last track>`).
+4. Format the partition: `N0:name,id`. It writes a header, two BAM
+   sectors and a directory on the partition's first track.
+5. Use the drive as usual: OPEN, CHROUT, LOAD, SAVE and the directory
+   now work inside the partition.
+6. Send `/` to return to the root.
+
+### Why it works
+
+The partition is a CBM file (type `$85`) whose blocks the root BAM marks
+used as one run, so nothing written in the root can land in it. After a
+select the DOS takes its header, BAM and directory from the partition's
+first track, in track 40's layout, and the partition's own BAM marks
+every other track full, so nothing written inside can land outside.
+Measured on the image the recipe's run leaves (VICE x64sc 3.10, 1581
+DOS 318045-02, rung 1): the root entry `85 14 00 50 41 52 54 31`, the
+partition header at 20/0 naming `SUB` and `S1`, its BAM at 20/1 and 20/2
+with tracks 20 to 22 at 36, 39 and 40 free and track 1 at 0, and the
+file `HELLO` at 21/0. The byte-by-byte table is in the recipe.
+
+The select is the only step that checks the rules: a 20-block partition
+from 25/0 allocated with `00, OK` and was refused at the select with
+`77,SELECTED PARTITION ILLEGAL,00,00`; an allocation over track 40 was
+refused at once with `67,ILLEGAL TRACK OR SECTOR,40,00` (measured, PAL).
+A select that fails leaves the previous area selected, so the `N0:` of
+step 4 then formats that area instead: the root, the whole disk
+(measured; `pitfalls/kernal-and-io.md`,
+`n0_after_failed_partition_select_formats_disk`).
+
+### Variations
+
+- **A partition that is not a sub-directory.** Any contiguous run the
+  root BAM does not hold can be allocated as a CBM file, for instance to
+  keep a block range for direct-access data, and the guide says VALIDATE
+  skips CBM entries so it stays allocated. Not measured here.
+- **Sub-directories inside a sub-directory.** The guide allows them one
+  level at a time (`/0:PART2`, then `/0:PART21`); there is no command to
+  go up one level, only `/` to the root. Not measured here.
+
+### Recipes
+
+- `recipes/kickassembler/d81-partition.md` (allocation, select, format, a file written and read inside, `/`, the same file not found from the root, and the image decoded; PAL and NTSC)

@@ -2185,5 +2185,21 @@
       "pal": "screenshots/agsp.png",
       "ntsc": "screenshots/agsp-ntsc.png"
     }
+  },
+  "kickassembler/d81-partition": {
+    "cycles": 30000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/d81-partition.png",
+      "ntsc": "screenshots/d81-partition-ntsc.png"
+    },
+    "disk": {
+      "name": "PARTS,81",
+      "type": "d81"
+    }
   }
 }

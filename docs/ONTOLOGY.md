@@ -328,7 +328,7 @@ can two listings' hardware be attached together?"
 | title | string | The H2 text |
 | kind | string | input, storage, memory or cartridge |
 | port | string | control_1, control_2, user, expansion or serial; every port but serial has one socket |
-| vice_attach | string | How x64sc attaches it: "default", "flags <options>", "disk" or "crt <CRT hardware type>" |
+| vice_attach | string | How x64sc attaches it: "default", "flags <options>", "disk" (drive 8, D64), "disk d81" (drive 8, a 1581), "disk 9" (drive 9, D64) or "crt <CRT hardware type>" |
 | source_doc | string | The page that defines it |
 | claims_stated | string? | "stated" or "none"; absent when the section has no usable Claims line (unknown) |
 | claims_basis | string? | measured-vice or derived-listing |

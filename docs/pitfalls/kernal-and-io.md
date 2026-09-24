@@ -2152,3 +2152,64 @@ vic.spr_enable = saved_enable;
 - Issue #69: the NTSC hang, the monitor stop at `$EE30`-`$EE3A`, the
   timer B state (`$01FF`, `$DC0F` = `$08`) and the drive's return
   address `$E943`. Reported there, not repeated here.
+
+---
+
+## n0_after_failed_partition_select_formats_disk — On a 1581, a partition select that fails leaves the root selected, and the N0: meant for the partition formats the whole disk
+
+**Severity:** critical
+**Region:** both
+**Triggered by kernal:** CHKOUT, CHROUT
+**Triggered by techniques:** d81_partition_subdirectory
+**Mitigated by techniques:** error_channel_check
+
+Measured in VICE x64sc 3.10 with true drive emulation of a 1581 (DOS
+`318045-02`), on a D81 from `c1541 -format "PARTS,81" d81`; not on a
+real 1581 (rung 1, VICE only).
+
+### Symptom
+
+A program that makes a partition, selects it and formats it as a
+sub-directory finds afterwards that every file on the disk is gone. The
+directory header now carries the name and ID given to the partition's
+`N0:`, and the partition entry itself has vanished.
+
+### Mechanism
+
+The allocation `/0:NAME,<t><s><lo><hi>,C` does not check the four
+sub-directory rules; the select `/0:NAME` does. A 20-block partition at
+25/0 allocated with `00, OK,00,00` and the select answered
+`77,SELECTED PARTITION ILLEGAL,00,00`. The select changes nothing on a
+refusal, so the root stays the working area, and `N0:SUB,S1` then
+answered `00` and wrote a fresh header, BAM and directory on track 40:
+the root header at 40/0 read `SUB`/`S1`, the `SMALL` entry was gone,
+and the root directory held only the `HELLO` file the program wrote
+next, at 39/0, which it then also found from the root (`MATCH=10`
+twice). The 1581 User's Guide says the same in section 6.8: "Make sure
+that you have successfully selected this partition area before
+formatting. If not, the wrong directory area will be reformatted."
+
+### Fix
+
+Read channel 15 after the select and send `N0:` only if the status
+begins `02` (`02, SELECTED PARTITION,<first>,<last>`). The recipe keeps
+the first two characters of every status line and branches on them:
+
+```asm
+    lda code                  // the status line's first two digits
+    cmp #'0'
+    bne refuse
+    lda code+1
+    cmp #'2'
+    bne refuse                // not selected: no N0:
+```
+
+With the check, the same 20-block partition printed `NOT SELECTED: NO
+N0` and the disk kept its root header and the `SMALL` entry (measured).
+
+### Cross-references
+
+- `techniques/file-io.md`, `d81_partition_subdirectory`, and
+  `error_channel_check` for reading the status line.
+- `recipes/kickassembler/d81-partition.md`: the check, the pinned run
+  and the three variants.

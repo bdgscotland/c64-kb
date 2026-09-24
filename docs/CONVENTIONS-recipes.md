@@ -148,7 +148,10 @@ Before a recipe page lands:
    The cycle count, models, extra flags and any fresh disk are pinned per
    recipe in `recipes/runs.json`, and `npm run verify:recipes` re-runs
    every recipe from that manifest and fails on a pixel that differs from
-   the committed PNG. A recipe whose listing builds a cartridge instead of
+   the committed PNG. `"disk": {"name": "NAME,ID"}` is a fresh D64 in
+   drive 8; `"type": "d81"` in it makes a fresh D81 in a 1581 instead,
+   and `"disk9": {"name": "NAME,ID"}` adds a fresh D64 in a 1541-II as
+   drive 9. A recipe whose listing builds a cartridge instead of
    a PRG is pinned with a `"cartridge"` key: `{"file": "x.crt", "write":
    true, "runs": 2}`. The verifier takes `x.crt` from the build's work
    directory (a KickAssembler listing writes it with `outBin`), boots a

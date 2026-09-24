@@ -7,8 +7,8 @@
  * routines it names in `uses_kernal:`.
  *
  * Each run uses the recipe's runs.json entry: its cycles, its `flags`
- * (controller ports, an REU, a key buffer) and its `disk` (a fresh D64
- * formatted with c1541). PAL only. A recipe runs.json marks `skip` or runs
+ * (controller ports, an REU, a key buffer) and its `disk` and `disk9` (fresh
+ * D64 or D81 images formatted with c1541). PAL only. A recipe runs.json marks `skip` or runs
  * from a cartridge is listed as not run.
  *
  * Usage:
@@ -48,7 +48,8 @@ const { values: opt } = parseArgs({
 const EntrySchema = z.object({
   cycles: z.number().optional(),
   flags: z.array(z.string()).optional(),
-  disk: z.object({ name: z.string() }).optional(),
+  disk: z.object({ name: z.string(), type: z.enum(["d64", "d81"]).optional() }).optional(),
+  disk9: z.object({ name: z.string() }).optional(),
   cartridge: z.object({ file: z.string() }).loose().optional(),
   skip: z.string().optional(),
 });
@@ -98,11 +99,33 @@ function assemble(md: string, work: string, stem: string): string | { error: str
   return r.status === 0 ? prg : { error: `build failed: ${errorLines(r.stdout + r.stderr)}` };
 }
 
-function formatDisk(work: string, name: string): string | { error: string } {
+function formatDisk(work: string, name: string, type = "d64", file = "disk"): string | { error: string } {
   if (!tools.c1541) return { error: "c1541 not found" };
-  const d64 = join(work, "disk.d64");
-  const r = spawnSync(tools.c1541, ["-format", name, "d64", d64], { encoding: "utf8" });
-  return r.status === 0 && existsSync(d64) ? d64 : { error: `c1541 -format failed: ${r.stderr}` };
+  const img = join(work, `${file}.${type}`);
+  const r = spawnSync(tools.c1541, ["-format", name, type, img], { encoding: "utf8" });
+  return r.status === 0 && existsSync(img) ? img : { error: `c1541 -format failed: ${r.stderr}` };
+}
+
+/**
+ * claims-watch arguments for the run's disks. A D64 in drive 8 goes through
+ * --disk; a D81 (claims-watch takes only a D64 there) and drive 9's D64 go
+ * through --vice-arg with the drive types verify:recipes sets.
+ */
+function diskWatchArgs(work: string, e: Entry): string[] | { error: string } {
+  const out: string[] = [];
+  if (e.disk) {
+    const d = formatDisk(work, e.disk.name, e.disk.type ?? "d64");
+    if (typeof d !== "string") return d;
+    if (e.disk.type === "d81")
+      out.push("--vice-arg=-8", `--vice-arg=${d}`, "--vice-arg=-drive8type", "--vice-arg=1581");
+    else out.push("--disk", d);
+  }
+  if (e.disk9) {
+    const d = formatDisk(work, e.disk9.name, "d64", "disk9");
+    if (typeof d !== "string") return d;
+    out.push("--vice-arg=-9", `--vice-arg=${d}`, "--vice-arg=-drive9type", "--vice-arg=1542");
+  }
+  return out;
 }
 
 function watch(args: string[]): Promise<{ status: number | null; out: string }> {
@@ -128,10 +151,9 @@ async function runRecipe(md: string): Promise<Outcome> {
   try {
     const prg = assemble(md, work, stem);
     if (typeof prg !== "string") return { rel, verdict: "fail", detail: prg.error };
-    const disk = e.disk ? formatDisk(work, e.disk.name) : undefined;
-    if (disk !== undefined && typeof disk !== "string") return { rel, verdict: "fail", detail: disk.error };
-    const args = [prg, "--recipe", md, "--cycles", String(e.cycles ?? 8000000)];
-    if (disk) args.push("--disk", disk);
+    const disk = diskWatchArgs(work, e);
+    if (!Array.isArray(disk)) return { rel, verdict: "fail", detail: disk.error };
+    const args = [prg, "--recipe", md, "--cycles", String(e.cycles ?? 8000000), ...disk];
     for (const f of e.flags ?? []) args.push(`--vice-arg=${f}`);
     if (opt.report) args.push("--json", join(opt.report, `${stem}.json`));
     const r = await watch(args);
