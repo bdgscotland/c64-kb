@@ -4,6 +4,11 @@
   "inject": [
     { "at_pc": "$0FB5", "after_hits": 1000, "set": { "a": "$6F" }, "why": "title waits for fire: CMP #$6F at $0FB5" }
   ],
-  "in_play": { "check": "exec", "pc": "$4134", "after_clock": 36000000 },
+  "in_play": {
+    "check": "exec",
+    "pc": "$0FEB",
+    "after_clock": 0,
+    "why": "the title's exit (target of the BEQ at $0FB7): ran once, at clock 35,080,026, only with fire injected; $4134 is no check, it already runs on the title from clock 15,243,156"
+  },
   "limitcycles": 60000000
 }

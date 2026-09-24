@@ -40,6 +40,7 @@ import {
   withImage,
   type Refusal,
   type SessionResult,
+  type Staged,
 } from "./re-session.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
@@ -245,12 +246,9 @@ function prgSource(prg: string, args: SourceArgs): Source {
   };
 }
 
-function sessionSource(
-  prg: string,
-  l: { session: Session; name: string; shot: string },
-  image: SessionResult["image"],
-): Source {
+function sessionSource(staged: Staged, l: { session: Session; name: string; shot: string }): Source {
   const { session: s, name } = l;
+  const { prg, image } = staged;
   const shot = screenshotPath(l.shot);
   const entry = readPrg(readFileSync(prg)).sys ?? null;
   const pending: string[] = [];
@@ -259,7 +257,7 @@ function sessionSource(
     trace: async (c) => {
       const m = sessionScript(s);
       m.add(c);
-      const p = await sessionPass(prg, s, m, shot);
+      const p = await sessionPass(staged, s, m, shot);
       if (p.play_clock === null) throw new NotInPlay(notInPlay(s, shot));
       pending.splice(0, pending.length, ...p.unknowns);
       return { hits: p.hits, start: p.play_clock, entry };
@@ -292,7 +290,7 @@ async function withSource<T>(
   if (args.session !== undefined) {
     const l = sessionOf(args.session, tool);
     if (!l.ok) return l;
-    return withImage(l.session, manifestPath, (prg, image) => guarded(sessionSource(prg, l, image)));
+    return withImage(l.session, manifestPath, (staged) => guarded(sessionSource(staged, l)));
   }
   const prg = allowedPrg(args.prg_path ?? "");
   if (!prg) return { ok: false, error: `not an allowed .prg: ${args.prg_path}`, reason: "path" };

@@ -6,6 +6,7 @@
  * play. Games that wait for fire could not be reached headless before this
  * (Commando's title polls $DC00 at $0FB2 and compares at $0FB5).
  */
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +22,7 @@ import {
   type MonitorScript,
   type Session,
 } from "../re/session.ts";
-import { runBatch, ViceBatchError } from "../services/vice-batch.ts";
+import { runBatch, ViceBatchError, type BatchRun } from "../services/vice-batch.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const SESSIONS_DIR = "docs/game-design/studies/sessions";
@@ -48,11 +49,35 @@ export function loadSession(p: string): { ok: true; session: Session; name: stri
   return { ok: true, session: parsed.data, name: path.basename(abs, ".json") };
 }
 
-/** Exit screenshots of session runs go under data/re/ (gitignored), never docs/. */
+/**
+ * Exit screenshots of session runs go under data/re/ (gitignored), never
+ * docs/, each under a name no other run takes (time and a random tag), so
+ * two runs of one session never overwrite each other's screen.
+ */
 function screenshotPath(name: string): string {
   const dir = path.join(repoRoot, "data", "re");
   mkdirSync(dir, { recursive: true });
-  return path.join(dir, `${name}.png`);
+  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
+  return path.join(dir, `${name}-${stamp}-${randomBytes(3).toString("hex")}.png`);
+}
+
+/** What a session runs: the PRG and, for a D64 image, the working copy of the disk as drive 8. */
+export interface Staged {
+  prg: string;
+  disk?: string;
+  image: SessionResult["image"];
+}
+
+/** The batch run of one session pass: a D64's copy is attached so a game that loads more files finds them. */
+export function batchOf(staged: Staged, s: Session, script: MonitorScript, screenshot: string): BatchRun {
+  return {
+    prg: staged.prg,
+    monCommands: script.text(),
+    cycles: s.limitcycles,
+    model: s.machine.model,
+    ...(staged.disk !== undefined ? { disk: staged.disk } : {}),
+    args: ["-exitscreenshot", screenshot],
+  };
 }
 
 interface Injected {
@@ -83,18 +108,12 @@ function injectionsOf(all: Hit[], s: Session): Injected[] {
  * the in-play PC must not stand in for it); the analysis gets toolHits.
  */
 export async function sessionPass(
-  prg: string,
+  staged: Staged,
   s: Session,
   script: MonitorScript,
   screenshot: string,
 ): Promise<SessionPass> {
-  const run = await runBatch({
-    prg,
-    monCommands: script.text(),
-    cycles: s.limitcycles,
-    model: s.machine.model,
-    args: ["-exitscreenshot", screenshot],
-  });
+  const run = await runBatch(batchOf(staged, s, script, screenshot));
   try {
     const all: Hit[] = [];
     for await (const h of readHits(run.log)) all.push(h);
@@ -138,6 +157,8 @@ export interface SessionResult {
   play_clock: number;
   /** Frames since power-on, counted from raster line 0 (VICE's clock 0 is line 0 cycle 0: its reset stop logs clock 6 at line 0, cycle 6). */
   play_frame: number;
+  /** True when the image is a D64 and its working copy was drive 8. */
+  disk: boolean;
   injections: Injected[];
   screenshot: string;
   unknowns: string[];
@@ -150,7 +171,7 @@ export interface SessionResult {
 export async function withImage<T>(
   s: Session,
   manifestPath: string | undefined,
-  run: (prg: string, image: SessionResult["image"]) => Promise<T | Refusal>,
+  run: (staged: Staged) => Promise<T | Refusal>,
 ): Promise<T | Refusal> {
   const r = await resolveImage(
     { sha1: s.image.sha1, ...(s.image.file !== undefined ? { file: s.image.file } : {}) },
@@ -158,7 +179,9 @@ export async function withImage<T>(
   );
   if (!r.ok) return { ok: false, reason: r.reason, error: r.error };
   try {
-    return await run(r.prg, r.image);
+    // resolveImage keeps its copy of the image in the work directory as image.d64.
+    const disk = r.image.kind === "d64" ? path.join(r.work, "image.d64") : undefined;
+    return await run({ prg: r.prg, image: r.image, ...(disk !== undefined ? { disk } : {}) });
   } catch (e) {
     return viceRefusal(e);
   } finally {
@@ -172,16 +195,17 @@ export async function runSession(
   name: string,
   manifestPath?: string,
 ): Promise<{ ok: true; result: SessionResult } | Refusal> {
-  return withImage(s, manifestPath, async (prg, image) => {
+  return withImage(s, manifestPath, async (staged) => {
     const shot = screenshotPath(`session-${name}`);
-    const p = await sessionPass(prg, s, sessionScript(s), shot);
+    const p = await sessionPass(staged, s, sessionScript(s), shot);
     if (p.play_clock === null) return notInPlay(s, shot);
     const timing = REGION_TIMING[videoRegion(s.machine.model)];
     return {
       ok: true as const,
       result: {
         session: name,
-        image,
+        image: staged.image,
+        disk: staged.disk !== undefined,
         model: s.machine.model,
         cycles: s.limitcycles,
         play_clock: p.play_clock,

@@ -55,6 +55,7 @@ export const SessionSchema = z.object({
     check: z.literal("exec"),
     pc: z.string().regex(HEX_ADDR),
     after_clock: z.number().int().min(0),
+    why: z.string().optional(),
   }),
   limitcycles: z.number().int().min(100_000).max(200_000_000),
 });

@@ -288,12 +288,19 @@ this step.
 ```json
 {
   "image": { "sha1": "b2ca4794…", "kind": "d64", "file": "commando", "title": "Commando", "release": "c64hq" },
-  "machine": { "model": "c64c" },
+  "machine": { "model": "pal" },
   "inject": [ { "at_pc": "$0FB5", "after_hits": 1000, "set": { "a": "$6F" }, "why": "title waits for fire: CMP #$6F" } ],
-  "in_play": { "check": "exec", "pc": "$4134", "after_clock": 36000000 },
+  "in_play": { "check": "exec", "pc": "$0FEB", "after_clock": 0, "why": "the title's exit" },
   "limitcycles": 60000000
 }
 ```
+
+`pal` is VICE `-default`, the C64C; an earlier version of this example
+said `c64c`. The in-play check is the title's exit at `$0FEB` (the target
+of the `BEQ` at `$0FB7`), which ran once, at clock 35,080,026, and only
+when fire was injected; an earlier version of this example checked
+`$4134` after clock 36,000,000, which a run with no injection also passes,
+because `$4134` already runs on the title from clock 15,243,156.
 
 `hits` are decimal in the file and written to the monitor as hex (VICE
 reads monitor numbers as hex: `ignore 1 1000` skips 4,096 hits).

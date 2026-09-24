@@ -16,10 +16,10 @@ import {
   sessionScript,
   type Session,
 } from "../src/re/session.ts";
-import { loadSession, reSession, runSession } from "../src/tools/re-session.ts";
+import { batchOf, loadSession, reSession, runSession, screenshotPath } from "../src/tools/re-session.ts";
 import { reFrameProfile, reIrqChain } from "../src/tools/re.ts";
 import { resolveX64sc } from "../src/services/vice-bin.ts";
-import { findToolchains } from "../scripts/lib/toolchains.ts";
+import { findC1541, findToolchains } from "../scripts/lib/toolchains.ts";
 
 const base = {
   image: {
@@ -281,6 +281,80 @@ describe.skipIf(!canRun)("c64_re_session in VICE, on a title that waits for fire
   }, 180_000);
 });
 
+describe.skipIf(!canRun)("the fixture's title exit is play only after fire", () => {
+  const f = canRun ? fixture() : { manifest: "", sha1: "" };
+  const exit = (inject: unknown[]) =>
+    SessionSchema.parse({
+      ...fixtureSession(f.sha1, inject),
+      in_play: { check: "exec", pc: "$0817", after_clock: 0 },
+    });
+  it("is not reached without the injection: not-in-play", async () => {
+    expect(await runSession(exit([]), "t", f.manifest)).toMatchObject({ ok: false, reason: "not-in-play" });
+  }, 120_000);
+  it("is reached 4 cycles after the injection fires (CMP 2, BNE not taken 2)", async () => {
+    const r = await runSession(exit([FIRE]), "t", f.manifest);
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (r.ok) expect(r.result.play_clock - (r.result.injections[0]?.fired_at_clock ?? 0)).toBe(4);
+  }, 120_000);
+});
+
+const c1541 = findC1541();
+
+describe.skipIf(!canRun || c1541 === null)("a D64 session", () => {
+  it("reads the file from the disk, attaches the disk's working copy as drive 8, and reaches play", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "re-session-d64-"));
+    copyFileSync(join(import.meta.dirname, "fixtures", "re", "title-fire.asm"), join(dir, "t.asm"));
+    const java = spawnSync(tools.java ?? "java", ["-jar", tools.kickass ?? "", "t.asm", "-o", "t.prg"], {
+      cwd: dir,
+    });
+    expect(java.status).toBe(0);
+    const disk = join(dir, "x.d64");
+    const fmt = spawnSync(c1541 ?? "c1541", [
+      "-format",
+      "test,01",
+      "d64",
+      disk,
+      "-write",
+      join(dir, "t.prg"),
+      "prog",
+    ]);
+    expect(fmt.status).toBe(0);
+    const sha1 = createHash("sha1").update(readFileSync(disk)).digest("hex");
+    const manifest = join(dir, "manifest.json");
+    writeFileSync(manifest, JSON.stringify({ [sha1]: { path: disk, title: "t" } }));
+    const s = SessionSchema.parse({
+      ...fixtureSession(sha1, [FIRE]),
+      image: { sha1, kind: "d64", file: "prog", title: "t" },
+    });
+    const r = await runSession(s, "t-d64", manifest);
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (r.ok) expect(r.result.disk).toBe(true);
+  }, 120_000);
+});
+
+describe("batch run and screenshot names", () => {
+  const s = fixtureSession("0".repeat(40), [FIRE]);
+  const image = { sha1: "0".repeat(40), kind: "d64" as const, file: "prog", fileSha1: "1".repeat(40) };
+  it("attaches a D64's working copy as drive 8, and no disk for a PRG", () => {
+    const m = sessionScript(s);
+    expect(batchOf({ prg: "/w/p.prg", disk: "/w/image.d64", image }, s, m, "/s.png")).toMatchObject({
+      prg: "/w/p.prg",
+      disk: "/w/image.d64",
+      cycles: 4_000_000,
+      args: ["-exitscreenshot", "/s.png"],
+    });
+    expect(batchOf({ prg: "/w/p.prg", image: { ...image, kind: "prg" } }, s, m, "/s.png")).not.toHaveProperty(
+      "disk",
+    );
+  });
+  it("gives every run's exit screenshot its own name under data/re/", () => {
+    const a = screenshotPath("session-t");
+    const b = screenshotPath("session-t");
+    expect(a).not.toBe(b);
+    expect(a).toMatch(/[/\\]data[/\\]re[/\\]session-t-.+\.png$/);
+  });
+});
+
 describe.skipIf(!canRun)("c64_re_frame_profile with a session", () => {
   const f = canRun ? fixture() : { manifest: "", sha1: "" };
   it("times the handler's LDA #1 / STA $D019 (2 + 4 cycles) from the in-play clock", async () => {
@@ -324,11 +398,19 @@ const hasCommando =
   canRun && existsSync(commando.b2ca47949468c3d1790dfe8b2fc9b54cb9638c3f?.path ?? "/nonexistent");
 
 describe.skipIf(!hasCommando)("the Commando session (the maintainer's image; skips without it)", () => {
-  it("fires at $0FB5 and reaches $4134 after clock 36,000,000", async () => {
+  it("fires at $0FB5 and leaves the title through $0FEB, with the D64 as drive 8", async () => {
     const r = await reSession({ session: "docs/game-design/studies/sessions/commando.json" });
     expect(r.ok, JSON.stringify(r)).toBe(true);
     if (!r.ok) return;
-    expect(r.result.injections[0]?.fired_at_clock).not.toBeNull();
-    expect(r.result.play_clock).toBeGreaterThanOrEqual(36_000_000);
+    const fired = r.result.injections[0]?.fired_at_clock ?? 0;
+    expect(fired).toBeGreaterThan(0);
+    expect(r.result.play_clock).toBeGreaterThan(fired);
+    expect(r.result.disk).toBe(true);
+  }, 240_000);
+  it("without the injection the title never exits: not-in-play", async () => {
+    const l = loadSession("docs/game-design/studies/sessions/commando.json");
+    if (!l.ok) throw new Error(l.error);
+    const r = await runSession({ ...l.session, inject: [] }, "commando-noinject");
+    expect(r).toMatchObject({ ok: false, reason: "not-in-play", clock: 60_000_000 });
   }, 240_000);
 });

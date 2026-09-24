@@ -233,6 +233,7 @@ describe("RE tool replies carry the whole result", () => {
         file: "commando",
         fileSha1: "0c19",
       },
+      disk: true,
       model: "pal" as const,
       cycles: 60_000_000,
       play_clock: 36_000_100,
