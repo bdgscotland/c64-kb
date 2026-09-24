@@ -2284,5 +2284,8 @@
   },
   "kickassembler/tapecart-boot": {
     "skip": "boots only through VICE's tapecart (-tapeport1device 6 -tcrt) from the TCRT the listing writes and a typed LOAD; the verifier autostarts the PRG and has no key for a TCRT. The page's pictures are under docs/figures and its Build section gives the exact command"
+  },
+  "kickassembler/easyflash-eapi": {
+    "skip": "the listing leaves the EAPI slot at 00:1:1800 empty; the driver is added by a build step outside the listing (ACME and the page's patch script), which the verifier has no key for. The pictures are under docs/figures and the Build section gives the exact commands"
   }
 }

@@ -162,6 +162,8 @@ describe("listing scan over the real recipe pages", () => {
       "recipes/kickassembler/bitfire-dd00-bank.md",
       "recipes/kickassembler/bitfire-level-stream.md",
       "recipes/kickassembler/crt-banked.md",
+      // Not runnable by claims-recipes (the driver is patched in outside the listing), so no claims: key.
+      "recipes/kickassembler/easyflash-eapi.md",
       "recipes/kickassembler/easyflash-save.md",
       "recipes/kickassembler/sparkle-dd02-bank.md",
       "recipes/kickassembler/tape-turbo-loader.md",
