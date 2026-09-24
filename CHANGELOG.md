@@ -5,7 +5,22 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 831, schema 39, tools 2.15.0, package 0.28.0.
+Data 832, schema 39, tools 2.15.0, package 0.28.0.
+
+**The fighter patterns resolve as techniques; harness zero page (data
+832; #113, #114, #115).** `technique-lookup fighter_opponent_tables`
+and `fighter_guard_state` said not found although the sections existed
+on the enemy-behaviour page; TOURNEY's plan concluded from that there
+was no duel-opponent page. Both are now technique entries (logic.md,
+sprite.md) with the recipe's Cost figures and the recipe in their
+frontmatter. The harness said Oscar64's zero page is `$02-$52`; that is
+its register block, and its saved temporaries grow from `$53` with the
+program (`make zp` and `make claims` measure it); eight starter copies
+still said `$02-$52`. The platformer's claims are right for the
+platformer, and its Makefile now says what a derived project must
+rewrite. The enemy-behaviour page gives both opponent-step figures: the
+recipe's 295 cycles (measured) and TOURNEY's 652-702 (reported, not
+measured here).
 
 **Double-IRQ sync constants checked frame by frame (data 831; #111).**
 dysp's NTSC padding (12) let the second interrupt enter on cycle 38 in
