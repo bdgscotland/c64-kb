@@ -1064,14 +1064,24 @@ KERNAL leaves free-running for its jiffy interrupt. Read it as a 16-bit
 value and XOR it into the seed. Read at a fixed point after boot it is
 as reproducible as the SID read (the recipe prints `$251C` on PAL every
 run); read at a moment the player chose it is a good seed.
+`recipes/kickassembler/lfsr-seed-cia.md` seeds from it with no SID
+access at all: the frame count the title waited in the high byte and
+timer A's low byte below, so two presses on different frames within 256
+frames always differ (all 256 candidates distinct, PAL and NTSC). With
+VICE's random autostart delay standing in for a variable start, ten runs
+per model gave 8 different low bytes on PAL and 7 on NTSC; with a fixed
+start the seed repeats (rung 1). Combining the frame count with the
+whole 16-bit timer value instead, by adding or XORing, left 254 and
+255 of 256 candidates distinct in that recipe's earlier builds.
 
 Seeding from player input. Step the LFSR once per frame, or count
 frames, while the title screen waits for the first fire press
 (`joystick_edge_detect` in `techniques/input.md` gives the press). The
 count of frames the player took is the seed, and the timer read at that
-moment adds sixteen bits of sub-frame phase. The recipe cannot show this
-because a headless run has no player; the text here is the design, not
-a measurement.
+moment adds sub-frame phase. `lfsr-seed-cia.md` builds this title loop;
+a headless run has no player, so it always takes the seed at its
+300-frame timeout, and the press itself is the design, not a
+measurement.
 
 The all-zero state. A Galois LFSR maps state 0 to state 0: nothing falls
 out, nothing is XORed in, and every output is zero for ever. Check the
@@ -1143,6 +1153,9 @@ and the bytes `derived-listing` on their own line.
   checksum and histogram self-check, timing.
 - `recipes/oscar64/lfsr-random-seed2.md`: the same listing with a
   fixed seed, to show a different seed gives a different picture.
+- `recipes/kickassembler/lfsr-seed-cia.md`: a seed from the frame count
+  and CIA1 timer A with no SID access, its claims measured
+  (`cia1_port_a` only, for the input poll).
 
 The checksum fold in those pages is `chk = ((chk ^ value) * 5 + 1) &
 0xFFFF`, folded from state 1 round the whole cycle so the expected

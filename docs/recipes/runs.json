@@ -2289,5 +2289,16 @@
     "disk": {
       "name": "TEST,01"
     }
+  },
+  "kickassembler/lfsr-seed-cia": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/lfsr-seed-cia.png",
+      "ntsc": "screenshots/lfsr-seed-cia-ntsc.png"
+    }
   }
 }
