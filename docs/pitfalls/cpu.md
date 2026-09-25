@@ -1180,3 +1180,44 @@ wait2:
   it was measured
 - Pitfall `signed_compare_bmi_overflow` in this file: the other way a
   multi-byte compare goes wrong
+
+---
+
+## bpl_countdown_index_above_127 — A countdown loop closed with BPL runs once when its index starts above 127
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** kefrens_bars, sprite_stretcher_d017
+
+### Symptom
+
+A table that a routine fills every frame stays at whatever it held
+before. In the c64-kb demo's part 8 a 180-entry table of per-line sprite
+masks read all zero at every interrupt, the sprites never repeated a
+row, and a store trace on one entry showed the fill's `sta` executing
+once per build.
+
+### Mechanism
+
+`BPL` tests the N flag, bit 7 of the result. `LDX #179 / ... / DEX /
+BPL loop` sees `DEX` leave `$B2`, whose bit 7 is set, and falls through
+after the first pass. The loop is correct for any start up to 127 and
+silently wrong above it, and a fill that begins at the top of a table
+more than 128 entries long starts above it.
+
+### Fix
+
+Close the loop on a value the flags can carry: `DEX / CPX #$FF / BNE
+loop` for a countdown to zero inclusive, or count with `BNE` from the
+length down to one and index with an offset. When the body steps X
+through the accumulator (`TXA / SEC / SBC #4 / TAX / BCS loop` for a
+four-way unrolled fill), reload the value to store at the top of the
+loop: the second build of the same fill stored the index instead of the
+constant.
+
+### Cross-references
+
+- `signed_compare_bmi_overflow` above: the other reading of the N flag
+  as a sign that goes wrong past 127.
+
+---

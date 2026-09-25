@@ -1137,7 +1137,22 @@ self-modified operands cuts the per-pixel cost; not measured here.
 
 **Chunky modes.** The same stepping can feed a screen-matrix framebuffer
 (`chunky_4x4_fli_mode`) instead of a charset, 80 × 50 pixels of 16
-colours; not measured here.
+colours; not measured here. Measured in another form, the c64-kb demo's part
+10 (VICE 3.10, PAL and NTSC, a Python model of the arithmetic agreeing on
+every chunk checked): a 4 by 4 pixel chunk is one sample, a character
+holds a 2 by 2 block of chunks, and a 256-character set (every
+four-colour combination of four chunks) makes the screen matrix the
+framebuffer: 256 samples and 64 screen codes for a 64 by 64 window. The
+coordinates run in 4.4 fixed point, one byte each, whose wrap at 256 is
+the 16-texel period, so no mask. One sample costs 44 cycles (two 8-bit
+adds, a four-bit shift, an or, a lookup in a texture table stored
+pre-shifted to its bit position), a character 195, half the window about
+7,000: the step is rendered in two halves on consecutive frames, so no
+call runs past a frame, and the picture moves at one step every two
+frames against the recipe's one in twenty. The texture is swapped by
+rebuilding the two lookup tables a quarter a frame; the 64 codes go to
+the screen from an interrupt below the window once the buffer is
+complete.
 
 **Aspect.** Multicolour pixels are two hires pixels wide; halving the
 horizontal step (du, dv per pixel doubled) draws the texture square.

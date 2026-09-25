@@ -1748,6 +1748,28 @@ same block) or run the stretch below the display with the lower border
 opened (`topbottom_border_open`), where there are no badlines. Not
 built here; the pinned picture is the eight-line staircase.
 
+**Variable height per sprite, measured.** The c64-kb demo's part 8 (VICE
+3.10, PAL and NTSC; parked over its background, see the FLD entry in
+`techniques/raster.md`) stretched three sprites side by side, each to a
+height of its own from a sine, with one clear-then-set pair a line from
+a loop and no stable raster, and measured what the recipe could not.
+With three sprites on the line the CPU is held from cycle 55 to cycle 1
+of the next line, nine cycles, so a pass of 54 cycles (56 on NTSC)
+repeats once a line. The pair written on line k sets the flip-flop the
+VIC samples at cycle 16 of k + 1 and decides the row fetched for k + 2,
+so every advance shows two lines after the line that decides it. A clear
+landing at cycle 19 and a set at 27 repeat the row: the window's lower
+edge, arithmetic above, holds there. A pass exactly the free window long
+keeps whatever phase its entry gave it and walks one cycle a line
+whenever a write cycle sits in the stalled window, since writes proceed
+and reads stop, so a phase with a read at 55 is the stable one. Rows 0 to
+3 and 18 to 20 of each sprite left blank take up the lines a shorter
+stretch does not need, so all three sprites keep their DMA, and the stall
+the loop is timed on, to the end of the band. The per-line advance table
+was built in the main loop and double-buffered: on NTSC the build did
+not finish before the band's interrupt, and a band that read a
+half-built table ran 256 passes into the next frame.
+
 ### Pitfalls
 
 - `raster_irq_first_line_jitter` (`docs/pitfalls/raster-and-badline.md`):

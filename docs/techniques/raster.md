@@ -600,6 +600,19 @@ Given a value that is safe for the next line, the write itself may land anywhere
 
 **Border stripes.** With the top and bottom borders open (`topbottom_border_open`) the same idle fetch draws `$3FFF` there too; the byte can be changed per line for a cheap full-height pattern.
 
+**What an FLD line shows, measured once and not explained.** An FLD band
+in the c64-kb demo's part 8 (VICE 3.10, the PAL 8565 model and NTSC)
+whose per-line code read a byte at cycle 52 showed that byte's low
+nibble as a full-width colour from x = 320 to the same point on the next
+line, with the PAL model's grey pixel at the change, while `$D021` read 0
+in a register dump taken inside the band and the idle byte at the bank's
+`$3FFF` was 0. Removing the band's `$D021` store changed nothing;
+replacing the read with `ldy #2 / nop` painted the band colour 12, the
+low nibble of the `jmp` opcode fetched at cycle 53. Whether real hardware
+does this was not established. Do not read a colour off an FLD region
+and call it the background register without a dump;
+`idle_fetch_byte_shows_in_gaps` is the pitfall's usual form.
+
 ### Cycle budget
 
 The CPU is held for every line of the gap: the loop's work is 35 cycles per line (the six-instruction YSCROLL update, the counter and the branch) and the rest is spent polling for the next line, so the technique costs the whole line, 63 cycles on PAL and 65 on NTSC, for N lines. Measured in VICE x64sc 3.10 with CIA2 timer A from just before the first write to the end of the loop: 1,131 cycles for 18 lines on PAL (62.8 a line) and 1,423 cycles for 22 lines on NTSC (64.7 a line); the start and stop follow `$D012` polls, so the figure is within a poll's seven cycles of N times the line. The Cost line states 40 lines, the recipe's largest N. The double IRQ that enters the loop is the two slots.
@@ -885,6 +898,21 @@ on PAL. Not measured here.
 **Colour per column.** Colour RAM of the buffer row gives each column its
 own colour for every line of the band; multicolour gives three colours
 per byte. The recipe uses one multicolour bar byte.
+
+**One stamp a line, several bars.** Line k stamps bar (k and 7): eight
+bars, each moving every eighth line, from the one `sta abs,y` a line, with
+the byte per line an immediate in the unrolled block (`lda #` in place of
+two cycles of padding, the block length unchanged). Measured in the
+c64-kb demo's part 6 (VICE 3.10, PAL and NTSC): eight one-byte bars on
+steep sines read as a forest of thin columns; four two-byte bars, the
+halves stamped on consecutive lines at adjacent columns from a position
+table with pos + 8 in the odd entries, read as bars. Bracket 10,204
+cycles PAL and 10,472 NTSC: the band (128 blocks, 8,062 and 8,318) plus
+a 128-entry position rebuild of about 1,700 in the main loop. The band
+was put on text row 5 (lines 91 to 219) so that `$D021` stripes fill the
+blank rows above and below without a border write, and PAL was told from
+NTSC by a CIA-timed frame length rather than an RST8 poll
+(`pal_ntsc_detection`, Variations).
 
 ### Cycle budget
 
@@ -1732,7 +1760,13 @@ The frame is the same length however the routine is entered, so the answer does 
 
 ### Variations
 
-**Time a frame with a CIA timer.** Start a CIA timer at one raster line 0 and read it at the next: about 19,656 cycles on PAL (312 × 63), 17,095 on the 6567R8 (263 × 65), 16,768 on the 6567R56A (262 × 64) (arithmetic from the settled constants; this variant was not run here). `hardware/pal-ntsc-reference.md` Method 1 lists it. It yields the cycle count, which the raster method does not, at the cost of a CIA timer, more code and a threshold to choose. On a stock machine the raster band is the shorter read.
+**Time a frame with a CIA timer.** Start a CIA timer at one raster line 0 and read it at the next: about 19,656 cycles on PAL (312 × 63), 17,095 on the 6567R8 (263 × 65), 16,768 on the 6567R56A (262 × 64) (arithmetic from the settled constants; this variant was not run here). `hardware/pal-ntsc-reference.md` Method 1 lists it. It yields the cycle count, which the raster method does not, at the cost of a CIA timer, more code and a threshold to choose. On a stock machine the raster band is the shorter read. Measured form in the c64-kb demo (parts 6 and 8, VICE 3.10): CIA 1
+timer A started continuous from `$FFFF` at one pass of raster line 100
+and read at the next, with interrupts left on, reads `$B3xx` on PAL and
+`$BDxx` on NTSC; the high byte against `$B8` tells them apart, and the
+music keeps playing through the measurement, where an RST8 poll under
+`SEI` had cost it one or two frames at every part change (a trace of the
+music call showed one to four lost calls at each join).
 
 **Store, do not repeat.** Take the measurement once, before interrupts are installed, into a byte the rest of the program branches on: the music tick (`pal_ntsc_tempo_mismatch`), CIA reloads (`cia_timer_phi2_difference`), raster tables (`raster_line_count_difference`). Nothing about the chip changes later.
 
@@ -2183,7 +2217,9 @@ so every band in the recipe begins one line below its table entry, part-way
 across. The picture agrees: on line 41, which is all border, the new colour
 begins at x = 305 in the PAL PNG (x = 304 is one light grey pixel, VICE's
 rendering of the VIC's grey dot on a colour-register write, not examined
-further here) and at x = 281 on NTSC, and lines 132 and 261 show the change
+further here; the c64-kb demo's part 8 saw the same single pixel at every
+`$D021` change, at the change's own x, on the PAL 8565 model and never on
+NTSC) and at x = 281 on NTSC, and lines 132 and 261 show the change
 in the right border and not the left. With the KERNAL out (the variant
 below) the same write lands at x = 169 on PAL, 136 pixels or 17 cycles
 earlier, against 16 from the listing: the 29-cycle KERNAL dispatcher

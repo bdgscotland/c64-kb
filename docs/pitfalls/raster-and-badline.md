@@ -985,6 +985,91 @@ bar_run:
 
 ---
 
+## irq_row_armed_after_beam_passed — A dispatcher that arms the next raster row only when the current handler returns loses the whole chain for a frame when that handler returns below the row
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D012
+**Triggered by techniques:** irq_chain_table, linecrunch, fld_flexible_line_distance, sprite_multiplex_24
+
+### Symptom
+
+An effect near the bottom of the screen stutters at some phases of its
+own motion and not others, and the music stalls with it. A linecrunch
+part in a twelve-part KickAssembler trackmo built from the KB lost 89
+whole frames of its 825 ("the bounce squash is slow and stalls the music
+and jittery"), in runs of one to three, periodic with its 128-frame
+state. A trace of the music call with the current part number attached
+showed gaps of exactly two frames; a second trace of the dispatcher's
+arming routine with the part's zero page attached showed the lost frame
+was always the one whose bottom write fell one or two lines below the
+next dispatcher row: 175 or 176 under a row at 176, 191 to 193 under
+192, and so on to 240.
+
+### Mechanism
+
+A table-driven dispatcher (`irq_chain_table`) arms the next entry's line
+in `$D012` after the current handler returns. A handler that polls for a
+line and writes there runs until that line; when the line it waits for
+sits just under the next table row, the handler returns after the beam
+has passed that row. The compare written into `$D012` cannot fire until
+the beam reaches the row in the next frame, so nothing else in the chain
+runs for the rest of this frame: not the later rows, and not the
+sequencer's line-255 entry that plays the music and calls the part's
+main. The same race hides in the simple case of the last row before
+line 255 (`irq_table_rebuilt_per_frame_loses_close_entries` describes a
+multiplexer meeting it), where the KB's demo sequencer already ran the
+line-255 entry by hand when its store landed past the line; the general
+form went unnoticed until a part's own poll produced it.
+
+### Fix
+
+After arming a row, compare the beam with it and run the entry at once
+when the beam is already past: read `$D019` (a pending compare means the
+store fired), then compare bit 7 of `$D011` with the row's ninth bit and
+`$D012` with its low byte. A row at or below the beam is ahead; one above
+it has gone. Never for the first row after line 255, which belongs to the
+next frame. A write of the current line to `$D012` still fires (measured
+on the line-255 case), so equality counts as ahead. Re-measured with the
+same music trace after the change, the part lost one call in 788, at its
+first frame. The handler side of the fix is to keep a polled line at
+least two lines above the next row, which the part's design should
+state; the dispatcher side is what protects every part.
+
+### Worked example
+
+```text
+// After jsr arm_next (which stored the row's line into $D012 and its
+// ninth bit into $D011): X = the table index just armed.
+    cpx #0
+    beq exit                 // the wrap row is next frame's
+    lda $d019
+    and #$01
+    bne exit                 // the compare fired: pending
+    lda $d011
+    and #$80
+    cmp row_bit7,x
+    bcc exit                 // beam page below the row's page: ahead
+    bne run_now              // beam page above: the row has gone
+    lda row_line,x
+    cmp $d012
+    bcs exit                 // row at or after the beam: ahead
+run_now:
+    jmp dispatch_body        // the handler, the advance, the arm, this check again
+```
+
+### Cross-references
+
+- `raster_poll_equality_misses_under_dispatch_latency` above: the other
+  way a polled run and a dispatcher lose a frame; there the poll misses
+  its line, here the poll ends below the next row.
+- `irq_table_rebuilt_per_frame_loses_close_entries` below: the same race
+  at close rows, met by a multiplexer.
+- Technique: `irq_chain_table` in `techniques/raster.md`: the dispatcher
+  whose arming this is.
+
+---
+
 ## irq_table_rebuilt_per_frame_loses_close_entries — A dispatcher table rebuilt every frame from the main loop loses a frame for any two entries armed under about four lines apart
 
 **Severity:** high
