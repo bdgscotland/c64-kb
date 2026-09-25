@@ -1070,6 +1070,93 @@ run_now:
 
 ---
 
+## d012_poll_cannot_enter_badline_under_sprites — A $D012 poll run once a line under fetching sprites is held straight through a badline and exits on the line after the one it waited for
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D012, D011
+**Triggered by techniques:** sprite_stretcher_d017, raster_bars, badline_synchronization
+
+### Symptom
+
+A per-line effect that enters every line by polling `$D012` (read the
+line, compare until it changes) works on every line but one in eight:
+on the line after each badline its writes are missing, and everything
+written for that line lands one line late, or a whole line of the
+pattern is skipped. In the c64-kb demo's sprite stretcher (VICE 3.10,
+PAL and NTSC) the store trace showed the badline's colour store and the
+next line's write pair both absent, the pair after them landing at
+cycles 39 and 48 instead of 25 and 34, and one line in eight of the bar
+pattern doubled.
+
+### Mechanism
+
+A badline halts the CPU's reads from cycle 12 to 54; with sprites
+fetching, BA falls again at 55 and holds every read to cycle 1 of the
+next line. A poll that finishes its work on the line before the badline
+and reads `$D012` after that line's cycle 11 is held through both, and
+the read completes on the line AFTER the badline, which is the value it
+takes as its baseline. The compare loop then waits for that value to
+change, one more line on. The 6510 stops on the first read cycle while
+BA is low and lets a write cycle through, so any instruction that has a
+read left is stopped there; a store whose reads are done before 12
+lands its write, and a store whose last read falls on 12 or later has
+its write pushed to 55 or beyond, into the visible right edge. With no
+sprites fetching the second hold is absent and the baseline read
+completes at 55 with the badline's own number, so the same code behaves
+differently as sprites finish their rows.
+
+### Fix
+
+Do not poll into a badline. Give the badline its writes from the line
+before it, with every read of the storing instruction done before cycle
+12 (a store timed to land at 57 or later on that line, or at 2 to 5 of
+the badline when the sprite stall releases, both in the horizontal
+blank); compute the number of the line after the badline ahead of time
+(the pass on the line before has a delay slot for it); and wait for that
+line by number, `cpx $d012 / bne`, whose first read is held through the
+badline and the sprites and whose exit is within the first cycles of the
+line wanted. A cycle-stream model (every CPU cycle a read except a
+store's last; reads stall, writes proceed) over the poll's phase and
+each set of sprites still fetching picks the delays; the demo's is
+`plan/stretch_cycles.py` in its repository, and the 151-frame trace
+matched it.
+
+### Worked example
+
+```text
+// Y = the band index of this line; the badline is the next line.
+        tya                          // in the pass's delay slot
+        clc
+        adc #BAND_TOP + 2
+        sta tgt                      // the number of the line after the badline
+        ...                          // the pass's $D017 pair, the index on
+        iny
+        lda (barptr), y              // A = the colour of the line after
+        nop
+        nop
+        nop
+        bit $ea                      // seven cycles: the store lands at 57+ here
+        stx $d021                    //   or at 2 to 5 of the badline
+        ldx tgt
+!:      cpx $d012                    // held 12 to 54, then to the next line's 1
+        bne !-                       // exits within the wanted line's first cycles
+        sta $d021                    // by cycle 15, in the blank
+```
+
+### Cross-references
+
+- `badline_cycle_loss` above: the halt this rides on, and its 12 to 54
+  extent.
+- `vic_bus_takeover_on_dma` above: the sprite stall that follows it in
+  the same line.
+- `raster_poll_equality_misses_under_dispatch_latency` above: the other
+  way a `$D012` poll loses a line, at a dispatcher's entry.
+- Technique: `sprite_stretcher_d017` in `techniques/sprite.md`, the
+  variation over the badlines.
+
+---
+
 ## irq_table_rebuilt_per_frame_loses_close_entries — A dispatcher table rebuilt every frame from the main loop loses a frame for any two entries armed under about four lines apart
 
 **Severity:** high

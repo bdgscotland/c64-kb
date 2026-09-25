@@ -614,6 +614,28 @@ The stable raster entry is needed once, at the top: after that the natural badli
 
 **Sprite overlay on FLI**: sprites are not affected by $D018 changes. Sprites render normally on top of or behind the FLI bitmap according to $D01B priority bits. A FLI background can therefore coexist with sprite-based characters.
 
+**Hires FLI, four pages, no sprites, every line forced, measured.** The
+c64-kb demo's title part (VICE 3.10, PAL and NTSC) shows a hires bitmap
+with two colours per 8 by 2 block from four 1 KB screen pages (page =
+line pair and 3), forcing the badline on every line from 52 to 251 and
+changing `$D018` every second line; the same block shape as the recipe
+(`$D018`, then `$D011` = $38 or the line and 7, the store on the trace's
+cycle 14) with 11 cycles of padding on PAL and 13 on NTSC. The converter's
+picture and the emulated screen agree pixel for pixel over display lines
+0 to 197 on both models; lines 249 and 250 cannot be badlines and repeat
+the previous pair. The entry was swept with a `$D011` store trace: one
+cycle early on the first forced line resets the row counter, one cycle
+late adds a fourth grey column (the `mid_row_badline_write_off_by_one`
+table again). Cost from CIA1 timer A over the handler and main: 12,841
+cycles a frame on PAL, constant; 13,231 on NTSC. Columns 0 to 2 are the
+FLI bug's light grey in hires as in multicolour. Not established: a first
+build of the same part forced the badline only every second line and
+drew wrong bitmap rows in the last lines of every character row from
+display line 34 on, yet `ufli_sprite_underlay` forces every second line
+(the row's third, fifth and seventh, the natural badline at RC 0) and is
+right to the half-cell; which lines the first build forced was not kept,
+so which line set breaks and why is open.
+
 ### Cycle budget (PAL)
 
 FLI on PAL, per display line:

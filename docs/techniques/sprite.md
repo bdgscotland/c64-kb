@@ -1749,8 +1749,9 @@ opened (`topbottom_border_open`), where there are no badlines. Not
 built here; the pinned picture is the eight-line staircase.
 
 **Variable height per sprite, measured.** The c64-kb demo's part 8 (VICE
-3.10, PAL and NTSC; parked over its background, see the FLD entry in
-`techniques/raster.md`) stretched three sprites side by side, each to a
+3.10, PAL and NTSC; first built over an FLD background, see the FLD entry
+in `techniques/raster.md`, then rebuilt over the badlines, the next
+variation) stretched three sprites side by side, each to a
 height of its own from a sine, with one clear-then-set pair a line from
 a loop and no stable raster, and measured what the recipe could not.
 With three sprites on the line the CPU is held from cycle 55 to cycle 1
@@ -1770,6 +1771,35 @@ was built in the main loop and double-buffered: on NTSC the build did
 not finish before the band's interrupt, and a band that read a
 half-built table ran 256 passes into the next frame.
 
+**Over the badlines, with a poll a line, measured.** The same part
+rebuilt (VICE 3.10, PAL and NTSC, 151 traced frames) keeps the text
+screen's badlines and makes them part of the shape instead of moving
+them: a badline forces every sprite's row to advance (no write lands, and
+the flip-flop is inverted at 55 from cleared to set), so a row lasts at
+most eight lines, and the per-frame table spreads each sprite's 21 rows
+over a height of 21 to 91 lines with an accumulator that adds 21 a line,
+asks for one more row on passing the height, and counts the forced
+advance on every line whose index is 1 mod 8 as a row already taken. No
+line is entered by a cycle count: each begins with `lda $d012 / cmp
+$d012 / beq`, whose read straddling cycle 55 is held by the sprite fetch
+to the next line's cycle 1, so the exit read lands at 1 to 7 whether
+three sprites, two, one or none are still fetching (the seven-cycle loop
+puts it there on its own), the bar colour store follows at 7 to 13 in the
+left blank, and the clear and set land at 19 to 25 and 28 to 34. The
+poll cannot enter the badline itself: its reads are held from 12 to 54
+and then by the sprites to the next line's cycle 1, so the first read
+after the line before already sees the line after, and the loop would
+wait a whole extra line (the pitfall
+`d012_poll_cannot_enter_badline_under_sprites`). The block around each
+badline therefore stores the badline's colour from the line before,
+timed to land at 57 or later there or at 2 to 5 of the badline once the
+stall releases, computes the number of the line after into zero page in
+the delay slot of the pass before, and waits for that line by number
+with `cpx $d012`; a cycle-stream sweep over the poll phase and every
+sprite-stall case (reads stall, writes proceed) chose the two delays and
+the trace matched it. Cost: about 11,000 cycles a frame typical on
+either model (96 band lines plus half a table build).
+
 ### Pitfalls
 
 - `raster_irq_first_line_jitter` (`docs/pitfalls/raster-and-badline.md`):
@@ -1777,6 +1807,11 @@ half-built table ran 256 passes into the next frame.
   raster IRQ's 0-to-6 cycle entry jitter is larger than the distance
   from the pinned C=52 to the edge at 55; the double IRQ is what makes
   the write cycle a constant.
+- `d012_poll_cannot_enter_badline_under_sprites`
+  (`docs/pitfalls/raster-and-badline.md`): a `$D012` poll run once a line
+  under fetching sprites is held straight through a badline and exits on
+  the line after the one it wanted; the badline's line is handled from
+  the line before it.
 - `badline_cycle_loss` (`docs/pitfalls/raster-and-badline.md`): the CPU
   is stopped for 48 of the badline's 63 cycles once the sprite's DMA
   follows the character fetch, no write can land in the window, and the
