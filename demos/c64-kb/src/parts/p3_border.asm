@@ -312,6 +312,7 @@
 .label half      = $54              // 0: the next half glyph to enter is a left one
 .label bf_y      = $55              // build_font's row
 .label dst       = $56              // build_font's destination pointer (2 bytes)
+.label bf_buf    = $62              // build_font: one glyph's eight ROM rows ($62-$69)
 .label spr_base  = $58              // 8 bytes, the model's Y bases (prepare copies them)
 .label ta_wait   = $60              // try_adopt waits (1) or defers (0) near a sensitive line
 .label bars_side = $61              // $80: the runs write $D020 too; 0 after selfcheck
@@ -1348,15 +1349,53 @@ br_last:
 br_done:
         rts
 
+try_adopt:
+        lda $d011
+        bmi ta_adopt            // 256 up: the 255 interrupt has fired (main is called on its flag)
+        lda $d012
+        cmp #38
+        bcc ta_adopt
+        cmp #53
+        bcc ta_defer
+        cmp #223
+        bcc ta_adopt
+        cmp #228
+        bcc ta_defer
+        cmp #251
+        bcc ta_adopt
+ta_defer:
+        lda ta_wait             // at main's start: spin until the raster has left the
+        bne try_adopt           // window (at most 15 lines); at its end: leave the
+        lda #1                  // table for the top handler at 28, which is when the
+        sta tab_ready           // band would first see it anyway
+        rts
+ta_adopt:
+        sei
+        jsr adopt
+        cli
+        lda #0
+        sta tab_ready
+        rts
+
+// Each nibble's four pixels doubled to eight.
+dbl_tab:
+        .fill 16, (((i & 8) != 0) ? $c0 : 0) | (((i & 4) != 0) ? $30 : 0) | (((i & 2) != 0) ? $0c : 0) | (((i & 1) != 0) ? $03 : 0)
+
+body_end:
+.errorif body_end > HI_CODE_END, "p3 body overruns $B000"
+
+
+// The font builder sits in the hole after p3's small tables ($5530-$55FF,
+// its own bank-1 region; the entry block starts at $5600), because the
+// $A800 body reached $B000 when the builder
+// grew its per-glyph interrupt window. Bank 1 is visible under every $01.
+* = $5530 "p3 font builder"
 // build_font: the 2x2 charset at BIGFONT from the ROM font's first 64
-// glyphs. Character ROM in with $01 = $32 (I/O out, so interrupts are
-// masked; LORAM clear keeps this body readable), $36 back after. Glyph g
+// glyphs. Character ROM in with $01 = $32 only around each glyph's eight
+// reads (LORAM clear keeps this body readable), $36 back after each. Glyph g
 // becomes codes g (top left), 64 + g (top right), 128 + g (bottom left)
 // and 192 + g (bottom right): each source row doubled in both directions.
 build_font:
-        sei
-        lda #$32
-        sta $01
         lda #0
         sta ptr
         sta dst
@@ -1364,12 +1403,26 @@ build_font:
         sta ptr + 1
         lda #>BIGFONT
         sta dst + 1
-        lda #64
-        sta tmp
 bf_glyph:
+        // The character ROM is in only while this glyph's eight bytes are
+        // copied out (about 100 cycles under sei), so the line-255 interrupt
+        // and the music keep running through the build. The whole build under
+        // sei with I/O out silenced the tune for 110 ms at the part's start.
+        sei
+        lda #$32
+        sta $01
+        ldy #7
+bf_copy:
+        lda (ptr), y
+        sta bf_buf, y
+        dey
+        bpl bf_copy
+        lda #$36
+        sta $01
+        cli
         ldy #7
 bf_row:
-        lda (ptr), y
+        lda bf_buf, y
         pha
         lsr
         lsr
@@ -1401,11 +1454,9 @@ bf_row:
         sta dst
         bcc !+
         inc dst + 1
-!:      dec tmp
+!:      lda ptr + 1             // 64 glyphs read: the pointer has reached $D200
+        cmp #$d2
         bne bf_glyph
-        lda #$36
-        sta $01
-        cli
         rts
 
 // bf_store: A = the doubled byte, Y = the source row. Rows 0 to 3 go to
@@ -1442,39 +1493,6 @@ bf_top:
         ldy bf_y
         rts
 
-try_adopt:
-        lda $d011
-        bmi ta_adopt            // 256 up: the 255 interrupt has fired (main is called on its flag)
-        lda $d012
-        cmp #38
-        bcc ta_adopt
-        cmp #53
-        bcc ta_defer
-        cmp #223
-        bcc ta_adopt
-        cmp #228
-        bcc ta_defer
-        cmp #251
-        bcc ta_adopt
-ta_defer:
-        lda ta_wait             // at main's start: spin until the raster has left the
-        bne try_adopt           // window (at most 15 lines); at its end: leave the
-        lda #1                  // table for the top handler at 28, which is when the
-        sta tab_ready           // band would first see it anyway
-        rts
-ta_adopt:
-        sei
-        jsr adopt
-        cli
-        lda #0
-        sta tab_ready
-        rts
-
-// Each nibble's four pixels doubled to eight.
-dbl_tab:
-        .fill 16, (((i & 8) != 0) ? $c0 : 0) | (((i & 4) != 0) ? $30 : 0) | (((i & 2) != 0) ? $0c : 0) | (((i & 1) != 0) ? $03 : 0)
-
-body_end:
-.errorif body_end > HI_CODE_END, "p3 body overruns $B000"
+.errorif * > $5600, "p3 font builder overruns the entry block at $5600"
 
 }
