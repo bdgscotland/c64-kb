@@ -297,7 +297,7 @@ Related: `../techniques/transitions.md`, `../techniques/scroll.md`,
 
 **Kind:** production
 **Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, action_puzzle, sports, racing, beat_em_up
-**Realised by:** text_input_line, kernal_file_write_seq, kernal_file_read_seq, joystick_edge_detect, decimal_print, colour_cycling, big_font_2x2, oscar64/high-score-persist, oscar64/text-input, kickassembler/big-font-scroller, kickassembler/colour-cycling, attract_mode_input_replay, oscar64/attract-replay, high_score_table_insert, kickassembler/high-score-insert
+**Realised by:** text_input_line, kernal_file_write_seq, kernal_file_read_seq, joystick_edge_detect, decimal_print, colour_cycling, big_font_2x2, oscar64/high-score-persist, oscar64/text-input, kickassembler/big-font-scroller, kickassembler/colour-cycling, attract_mode_input_replay, oscar64/attract-replay, high_score_table_insert, kickassembler/high-score-insert, joystick_name_entry, kickassembler/joystick-name-entry
 **Sources:** Codebase64 guide to programming games (unattributed, wiki); Lasse Öörni, Rant 18, Interaction patterns in Covert Bitops games; Tony Temple, Anatomy of Arcade High Score Tables, The Arcade Blogger, 2021; Andrew Braybrook, Morpheus diary in Zzap!64, 1987
 
 **Checks:**
@@ -345,7 +345,7 @@ screen, and describes a Missile Command default table filled by a staff playoff
 with the lead programmer's initials on top. The checklist:
 
 - A seeded default table, so the first game has something to beat.
-- Three initials, by text_input_line or a joystick letter wheel.
+- Three initials, by text_input_line or a joystick letter wheel (joystick_name_entry).
 - An entry timeout, so an abandoned entry does not hold the machine.
   Temple states none and no period figure was read here; pick one.
 - The table shown in the front end or during attract; Temple's examples

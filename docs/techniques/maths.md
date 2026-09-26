@@ -1854,16 +1854,15 @@ model, rung 3).
 
 ### Variations
 
-- **Sixteen directions, no table, no divide.** The sign bits and the
-  magnitude compare give the octant; one more compare, `min * 2 < max`
-  (a shift and a `CMP`), splits each octant at 26.6 degrees, which is
-  `atan(1/2)`, so the two sectors are 26.6 and 18.4 degrees wide, not
-  equal. An equal split at 22.5 degrees needs `min / max < 0.414`,
-  which `min * 2 + min / 2 < max` gives closely: two shifts, an add and
-  the `CMP`, a few cycles more. Sixteen sectors from three compares,
-  about 40 cycles for the unequal form by the instruction table
-  (rung 3, not measured here), enough for a sprite with sixteen facing
-  frames or a shot that picks one of sixteen velocity pairs.
+- **Sixteen or eight directions, no table, no divide.** The fold and one
+  or two compares on `min` and `max` give a facing directly:
+  `aimed_shot_octant` below, 93 cycles at worst, measured. An earlier
+  version of this bullet said one compare per octant gives sixteen
+  directions in about 40 cycles. That split makes sixteen sectors whose
+  edges are the axes and diagonals, not facings centred on them, so a
+  shot sent along a facing can be off by a whole sector (up to 26.6
+  degrees). Its 22.5-degree form is the eight-direction split, and the
+  40 cycles was an instruction-table estimate.
 - **Smaller table.** Index with `ratio >> 2` for a 64-byte table or
   `ratio >> 3` for 32 bytes; the error grows with the step and was
   not measured here.
@@ -1889,6 +1888,137 @@ routines in one page with an `.assert`.
 - `recipes/kickassembler/sqrt-atan2.md`: the fold, divide and table
   as listed, 36 angle cases over the axes and every octant against a
   Python model, and the worst-case timing sweep over all 65,536 pairs.
+
+## aimed_shot_octant — Aim in 16 or 8 directions from (dx, dy) with two compares, and the 16-entry velocity table
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Claims:** none
+**Claims basis:** derived-listing
+**Alternative to:** atan2_8bit (sixteen or eight facings from compares in 93 cycles and 24 table bytes; a byte angle to one unit needs the divide and a 256-byte table, 381 cycles)
+**Cost:** cycles_per_frame=93, bytes_code=83, bytes_data=56
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+**Cost measured on:** kickassembler-aimed-shot-octant (aim16, one call, worst of all 65,536 pairs, jsr and rts excluded, screen blanked; bytes are aim16, its three tables and the velocity table)
+
+### Why
+
+An enemy that shoots at the player needs one of a few directions, not an
+angle. Its bullet sprite or character has 8 or 16 frames, and its
+velocity comes from a table with one entry per direction. `atan2_8bit`
+gives a byte angle to one unit and then has to be cut down to a facing.
+The fold and one or two compares give the facing directly, in a quarter
+of the time and with no 256-byte table.
+
+### How
+
+The facing is the one `facing_turn_step` (`techniques/input.md`) uses:
+0 up, 4 right, 8 down, 12 left, 22.5 degrees a step, clockwise on a
+screen whose y grows downward. `dx` and `dy` are target minus shooter,
+signed bytes.
+
+1. **Fold.** Take `|dx|` and `|dy|`, and build a 3-bit octant code:
+   bit 2 set if `dx < 0`, bit 1 if `dy < 0`, bit 0 if `|dy| ≥ |dx|`.
+   `min` is the smaller magnitude, `max` the larger.
+2. **Split, sixteen directions.** `min × 5 < max`: the major axis
+   (within 11.3 degrees of it). Else `min × 3 < max × 2`: the in-between
+   facing (11.3 to 33.7 degrees). Else the diagonal. The true boundaries
+   are 11.25 and 33.75 degrees (tan 0.199 and 0.668). The ratios 1/5 and
+   2/3 put them at 11.31 and 33.69.
+3. **Split, eight directions.** `min × 5 < max × 2`: the axis; else the
+   diagonal. The boundary is 21.8 degrees against the true 22.5. The
+   result is the even facings 0 to 14, so the same 16-entry tables serve
+   both.
+4. **Look up.** One 8-byte table per zone, indexed by the octant code,
+   gives the facing: axis `4, 8, 4, 0, 12, 8, 12, 0`, in-between
+   `5, 7, 3, 1, 11, 9, 13, 15`, diagonal `6, 6, 2, 2, 10, 10, 14, 14`.
+5. **Velocity.** `vx = round(S × sin(f × 22.5°))`,
+   `vy = −round(S × cos(f × 22.5°))`, with `S` the speed in sub-pixel
+   units. For `S` = 20 (quarter pixels: 5 pixels a frame on an axis):
+
+| Facing | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| vx | 0 | 8 | 14 | 18 | 20 | 18 | 14 | 8 | 0 | −8 | −14 | −18 | −20 | −18 | −14 | −8 |
+| vy | −20 | −18 | −14 | −8 | 0 | 8 | 14 | 18 | 20 | 18 | 14 | 8 | 0 | −8 | −14 | −18 |
+
+The values were read from the assembled recipe (rung 1). Add them to an
+8.8 or quarter-pixel position each frame (`fixed_point_8_8`).
+
+Every compare fits a byte. `min × 3 < max × 2` is exactly
+`min + floor(min / 2) < max`, and `min × 5 < max × 2` is exactly
+`2 × min + floor(min / 2) < max`. Both were checked for every `min ≤ max ≤ 128`
+(rung 3). `max` is at most 128, so a `min` of 26 or more fails
+`min × 5 < max`, and a `min` of 52 or more fails `min × 5 < max × 2`. Test
+that first and the rest stays below 256.
+
+In `recipes/kickassembler/aimed-shot-octant.md` both routines matched a
+Python model on all 65,536 pairs, by checksum, in VICE x64sc 3.10 on PAL
+and NTSC. `aim16` took 93 cycles at worst and `aim8` 83, `JSR` and `RTS`
+excluded. The model puts `aim16`'s worst error at 11.31 degrees, against
+11.25 for a perfect split; 336 of the 65,535 non-zero pairs get a
+neighbour of the nearest facing. `aim8`'s worst is 23.2 degrees against
+22.5, on 1,032 pairs (rung 3).
+
+### Why it works
+
+`atan2` over the plane is one octant reflected across the axes and the
+diagonal. Inside the octant the direction depends only on `min / max`,
+so a facing boundary is a fixed ratio and one compare finds which side
+of it the offset lies. The octant code carries the reflections, so a
+table lookup replaces the unfold arithmetic.
+
+### Slow shots
+
+Rounding `S × sin` to whole units bends the direction when `S` is small.
+The worst direction error of the rounded table and its speed spread, by
+arithmetic over the sixteen entries (rung 3):
+
+| S | Worst direction error | Speed, slowest to fastest |
+|---|---|---|
+| 4 | 4.1° | 4.00-4.47 |
+| 6 | 4.1° | 5.66-6.32 |
+| 8 | 0.7° | 7.62-8.49 |
+| 16 | 0.7° | 15.56-16.16 |
+| 20 | 1.5° | 19.70-20.00 |
+| 24 | 0.3° | 23.77-24.04 |
+
+For a slow enemy shot, keep eight or more sub-pixel units a step and add
+the velocity every frame. Do not use a whole-pixel table.
+
+### Variations
+
+- **An 8.8 speed.** Store `S × sin` as a signed 8.8 word for speeds that
+  are not whole sub-pixel units. The lookup does not change.
+- **Wider offsets.** Positions more than 127 apart wrap a byte
+  difference, and the fold then answers for the wrong side (the same
+  trap as `atan2_8bit`). Halve both 16-bit differences until they fit:
+  halving both keeps the ratio, so the facing does not change.
+
+### Pitfalls
+
+- `(0, 0)` falls through to the diagonal and returns 6. Do not fire from
+  on top of the target.
+- The octant split is not the same as sixteen sectors from one compare
+  per octant. That gives sectors whose edges are the axes and
+  diagonals, so a facing picked from them is up to 22.5 degrees off
+  (the `atan2_8bit` variation, corrected).
+
+### In the run-and-gun starter
+
+The riflemen in `templates/run-and-gun` (FIREBASE) aim with the
+eight-direction test, written `ay * 2 + (ay >> 1) < ax`, which is exactly
+`min × 5 < max × 2`. They fire at `S` = 6 quarter pixels: 1.5 pixels a
+frame on an axis, 4 + 4 (1.41 pixels) on a diagonal. The soldier's shots
+use the sixteen-entry table above with `S` = 20. Its `make weapons` run
+measured facings 0, 4, 6 and 12 leaving at (0, −20), (20, 0), (14, 14)
+and (−20, 0).
+
+### Recipes
+
+- `recipes/kickassembler/aimed-shot-octant.md`: both routines, 24 cases
+  each against a Python model, a checksum and worst-case timing over all
+  65,536 pairs, and a map of `aim16` around the shooter.
 
 ## procedural_seed_universe — A reproducible galaxy from three 16-bit seeds
 

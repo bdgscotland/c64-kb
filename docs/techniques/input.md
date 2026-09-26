@@ -163,9 +163,11 @@ degrees a step (0 up, 4 right, 8 down, 12 left). Once per frame:
    with `AND #15`, which wraps it both ways with no compare.
 
 The facing then indexes whatever needs an angle: a 16-entry bullet
-velocity table, a gun sprite frame, or (halved) an eight-direction body
-frame. A 180-degree turn takes 8 frames, a 90-degree turn 4, and the
-facing never lags the stick by more than 8 frames.
+velocity table (its values are in `aimed_shot_octant`,
+`techniques/maths.md`; this page's recipe has only the eight-way walk
+steps), a gun sprite frame, or (halved) an eight-direction body frame.
+A 180-degree turn takes 8 frames, a 90-degree turn 4, and the facing
+never lags the stick by more than 8 frames.
 
 In `recipes/kickassembler/facing-turn-step.md` the frame's work (port
 read, decode, move, turn) took at most 93 cycles, `jsr` and `rts`
@@ -384,6 +386,15 @@ keeps the previous scan and reports the newest press in `keyb_key` with
 build 2026-05-19. The library's scan first tests `$DC01` with every
 column driven low and returns early if it reads `$FF`, which is the
 KERNAL's own no-key shortcut.
+
+In your own C the write-then-read order is not safe. Oscar64 can emit the
+`$DC01` load after a later `$DC00` store even though both are `volatile`:
+`cia1.pra = 0x7f; if (!(cia1.prb & 0x10)) ...; cia1.pra = 0xff;` came
+out as the two stores and then the load, so SPACE was never seen
+(`toolchains/oscar64-reference.md`, Pitfalls, "A volatile load can be
+moved past a later volatile store"; measured in the `.asm` at every level
+on the local build, at `-O0` on v1.32.273 and upstream). Put the column
+write and row read in `__asm`, or read the `.asm` listing once.
 
 ### Why it works
 
