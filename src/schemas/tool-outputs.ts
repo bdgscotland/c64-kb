@@ -342,6 +342,14 @@ export const PitfallsForSchema = z.object({
       }),
     )
     .optional(),
+  // A technique's own Pitfalls section on its page (KB-GAPS 19): prose, not
+  // Pitfall nodes, one item per bullet or paragraph. Absent when no page
+  // under techniques/ holds the technique's heading.
+  page_pitfalls: z.object({ source: z.string(), items: z.array(z.string()) }).optional(),
+  // Pitfalls reached through a register the technique uses that name other
+  // techniques as their triggers, none of them this one or one it requires
+  // (KB-GAPS 6); owners are those techniques.
+  left_out: z.array(z.object({ name: z.string(), owners: z.array(z.string()) })).optional(),
 });
 
 export const FailureDiagnoseSchema = z.object({

@@ -24,6 +24,7 @@ const UNIT = [
   "test/lint.test.ts",
   "test/machine-variants.test.ts",
   "test/pitfall-coverage.test.ts",
+  "test/pitfalls-page.test.ts",
   "test/plan-budget.test.ts",
   "test/report-gap.test.ts",
   "test/runs-manifest.test.ts",

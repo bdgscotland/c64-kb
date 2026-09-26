@@ -24,6 +24,8 @@ import {
   edgeTargets,
   enrichPitfall,
   normalizeKey,
+  techniqueExists,
+  withoutOthersPitfalls,
   withPitfallsViaUses,
   type EntityKind,
 } from "./pitfalls/graph.ts";
@@ -31,24 +33,44 @@ import {
   formatFailureDiagnoseText,
   formatPitfallsText,
   formatSearchFallbackText,
+  formatTechniquePitfallsText,
 } from "./pitfalls/format.ts";
+import { techniquePagePitfalls } from "./pitfalls/page.ts";
+import { config } from "../config.ts";
 
 export type PitfallsForResult = { structured: PitfallsForOutput; text: string };
 export type FailureDiagnoseResult = { structured: FailureDiagnoseOutput; text: string };
 
-// Tried in this order; the first kind with any pitfall answers.
+// Tried in this order; the first kind with any pitfall answers. A
+// technique also answers with none, when the graph or a page holds it.
 const KINDS: EntityKind[] = ["Register", "KernalRoutine", "Technique", "LibraryFunction"];
 
-async function pitfallsForKind(topic: string, kind: EntityKind): Promise<PitfallsForOutput["pitfalls"]> {
+type Pitfalls = PitfallsForOutput["pitfalls"];
+type LeftOut = NonNullable<PitfallsForOutput["left_out"]>;
+
+async function pitfallsForKind(
+  topic: string,
+  kind: EntityKind,
+): Promise<{ pitfalls: Pitfalls; leftOut: LeftOut }> {
   const f = await getFalkor();
   const key = normalizeKey(kind, topic);
   const direct = await directPitfalls(f, kind, key);
-  const { rows, viaOf } =
-    kind === "Technique" || kind === "LibraryFunction"
-      ? await withPitfallsViaUses(f, key, direct, kind)
-      : { rows: direct, viaOf: undefined };
+  if (kind !== "Technique" && kind !== "LibraryFunction") {
+    return {
+      pitfalls: await Promise.all(direct.map((row) => enrichPitfall(f, row, undefined))),
+      leftOut: [],
+    };
+  }
+  const viaUses = await withPitfallsViaUses(f, key, direct, kind);
+  // A C function has no REQUIRES and no pitfall of its own; it keeps every
+  // pitfall of what it wraps.
+  const { rows, leftOut } =
+    kind === "Technique"
+      ? await withoutOthersPitfalls(f, key, viaUses.rows, viaUses.viaOf)
+      : { rows: viaUses.rows, leftOut: [] };
   // Enrich each with its full triggered_by and mitigated_by lists.
-  return Promise.all(rows.map((row) => enrichPitfall(f, row, viaOf?.get(row.name))));
+  const pitfalls = await Promise.all(rows.map((row) => enrichPitfall(f, row, viaUses.viaOf.get(row.name))));
+  return { pitfalls, leftOut };
 }
 
 /**
@@ -80,14 +102,48 @@ async function searchFallback(topic: string): Promise<PitfallsForResult> {
   };
 }
 
+/**
+ * A technique answers even with no Pitfall node, when the graph or a page
+ * under techniques/ holds it: "no pitfall names it" is a different answer
+ * from "no such thing" (KB-GAPS 7: checkpoint_respawn and grenade_lob got
+ * the search fallback's BRK and NOP patch pitfalls).
+ */
+async function techniqueAnswer(
+  topic: string,
+  found: { pitfalls: Pitfalls; leftOut: LeftOut },
+): Promise<PitfallsForResult | null> {
+  const key = normalizeKey("Technique", topic);
+  const page = techniquePagePitfalls(config.docs.dir, key);
+  const inGraph = await techniqueExists(await getFalkor(), key);
+  if (found.pitfalls.length === 0 && !page && !inGraph) return null;
+  const structured: PitfallsForOutput = {
+    topic,
+    topic_kind: "Technique",
+    pitfalls: found.pitfalls,
+    ...(page ? { page_pitfalls: page } : {}),
+    ...(found.leftOut.length > 0 ? { left_out: found.leftOut } : {}),
+  };
+  getAnalytics().logQuery({
+    tool: "c64_pitfalls_for",
+    query: topic,
+    resultCount: found.pitfalls.length + (page?.items.length ?? 0),
+  });
+  return { structured, text: formatTechniquePitfallsText(structured, { key, inGraph }) };
+}
+
 export async function pitfallsFor(topic: string): Promise<PitfallsForResult> {
   for (const kind of KINDS) {
-    const pitfalls = await pitfallsForKind(topic, kind);
-    if (pitfalls.length === 0) continue;
-    getAnalytics().logQuery({ tool: "c64_pitfalls_for", query: topic, resultCount: pitfalls.length });
+    const found = await pitfallsForKind(topic, kind);
+    if (kind === "Technique") {
+      const answer = await techniqueAnswer(topic, found);
+      if (answer) return answer;
+      continue;
+    }
+    if (found.pitfalls.length === 0) continue;
+    getAnalytics().logQuery({ tool: "c64_pitfalls_for", query: topic, resultCount: found.pitfalls.length });
     return {
-      structured: { topic, topic_kind: kind, pitfalls },
-      text: formatPitfallsText(topic, kind, pitfalls),
+      structured: { topic, topic_kind: kind, pitfalls: found.pitfalls },
+      text: formatPitfallsText(topic, kind, found.pitfalls),
     };
   }
   return searchFallback(topic);
