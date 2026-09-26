@@ -12,9 +12,14 @@ in this repository (`game-design/reference-game-sources.md`). The page
 holds addresses, raster lines, cycle counts and layouts, never the game's
 code, graphics, music or map bytes.
 
-Rungs: (1) measured in VICE here; (2) two instruments agree; (3)
-arithmetic from measured values; (4) read from the game's code, not seen
-running. "Frame" is one PAL frame, 312 lines × 63 = 19,656 cycles.
+Rungs follow the repository's ladder (CLAUDE.md rule 3): (1) run here in
+VICE; (2) two independent instruments or documents agree; (3) arithmetic
+from stated values; (4) unverifiable here, such as a published interview.
+A claim read from the game's code or tables in a RAM dump, but not
+watched happening in a run, says "(from the game's code, not seen
+running)". Observation IDs (`commando#…`) are entries in
+`game-design/studies/observations/commando.json`. "Frame" is one PAL
+frame, 312 lines × 63 = 19,656 cycles.
 
 ## Commando (Elite, 1985), studied
 
@@ -23,16 +28,17 @@ running. "Frame" is one PAL frame, 312 lines × 63 = 19,656 cycles.
 **Region:** PAL
 **Studied from:** Commando (1985, Chris Butler, Rob Hubbard, Elite); image sha1=b2ca47949468c3d1790dfe8b2fc9b54cb9638c3f; session studies/sessions/commando.json
 **Composes:** vic_bank_select (init), frame_sync_loop, soft_scroll_v, threshold_scroll_v, row_map_redraw, scroll_panel_split, invalid_mode_band, sprite_multiplex_game, sprite_slot_parking, object_pool, wave_director, char_attribute_flags, facing_turn_step, grenade_lob, area_end_gate_wave, sfx_voice_takeover, sid_play_routine_pattern, decimal_print, checkpoint_respawn (transition), high_score_table_insert (transition)
-**IRQ chain:** play pal: $41C5 @ line 30, $4284 @ line 50/60, $4389 @ line 161/198, $4137 @ line 213, $4188 @ line 222 (measured-vice, c64_re_irq_chain on the session over 1264 play frames with no input; the $4389 extremes 161 and 198 from the teardown's 750-frame trace with up held)
-**Memory map:** VIC bank 3; $DD00=$94; screen $E000-$E3E7; charset area 0 $C000-$C7FF; charset area 1 $C800-$CFFF; HUD charset $D000-$D7FF; sprite blocks $E400-$FFBF; blank sprite (block $FF) $FFC0-$FFFF; variables and objects $0400-$0504; code and tables $0850-$44FF; sound $5000-$5FB1; map area 0 $6000-$7E9F; map area 1 $8000-$9D37; free $4500-$4FFF; $01=$36 in play; $D018=$80 in area 0; $D018=$84 in HUD band (measured-vice, c64_re_snapshot at the session's in_play for bank and screen and $01; the teardown's store and memmap traces for the rest)
-**Memory map:** charset area 3 $D800-$DFFF; map area 3 $A000-$BF17 (arithmetic, from the per-area tables in the game's RAM: charset bits = 2 × area at $4258 and the map page table at $3ECE; no run reached area 3)
+**IRQ chain:** play pal: $41C5 @ line 30, $4284 @ line 50/60, $4389 @ line 161/198, $4137 @ line 213, $4188 @ line 222 (measured-vice, obs commando#irq-1-#irq-6 from c64_re_irq_chain on the session, 1264 play frames with no input; the $4389 extremes 161 and 198 from obs commando#frame-2, 750 frames with up held)
+**Memory map:** VIC bank 3; $DD00=$94; screen $E000-$E3E7; charset area 0 $C000-$C7FF; charset area 1 $C800-$CFFF; HUD charset $D000-$D7FF; sprite blocks $E400-$FFBF; blank sprite (block $FF) $FFC0-$FFFF; variables and objects $0400-$0504; code and tables $0850-$44FF; sound $5000-$5FB1; map area 0 $6000-$7E9F; map area 1 $8000-$9D37; charset area 3 $D800-$DFFF; map area 3 $A000-$BD37; free $4500-$4FFF; $01=$36 in play; $D018=$80 in area 0; $D018=$86 in area 3; $D018=$84 in HUD band (measured-vice, obs commando#snap-1 and #mem-1-#mem-5, #map-1 and #area3-1)
 **Diverges from archetype:** extra: vic_bank_select, scroll_panel_split, sid_play_routine_pattern, decimal_print, high_score_table_insert
-**Measured frame:** play pal worst=13664 typical=11524 (measured-vice-study, normal frames: 19656 minus the idle wait measured per frame over 590 standing frames; teardown frame trace)
-**Measured frame:** play pal worst=18797 typical=18004 (measured-vice-study, redraw frames: 19656 minus the idle wait over 77 hard-scroll frames with up held; teardown frame trace)
+**Measured frame:** play pal worst=13664 typical=11524 (measured-vice-study, normal frames only: 19656 minus the idle wait measured per frame over 590 standing frames, obs commando#frame-1 and #frame-3)
+**Measured frame:** play pal worst=18797 typical=18004 (measured-vice-study, redraw frames only: 19656 minus the idle wait over 77 hard-scroll frames with up held, obs commando#frame-1 and #frame-3)
 
-Chris Butler programmed it and Rob Hubbard wrote the music, by Butler's
-Zzap!64 interview (`game-design/production-planning.md`; rung 4 here, since
-the game's RAM holds no credit string). The title `Commando` matches the
+Chris Butler programmed it and Rob Hubbard wrote the music: rung 4, from
+Butler's published Zzap!64 interview as quoted in
+`game-design/production-planning.md`. The game's RAM holds no credit
+string. The two Measured frame lines are one phase split by frame kind:
+the grammar has one `play` phase, so each line's source names its kind. The title `Commando` matches the
 Production that `vertical_shmup`'s reference titles create.
 
 `vertical_run_and_gun` was written from this study, so its fingerprint
@@ -71,18 +77,24 @@ boxes are one per object type, not per animation frame, so
 - Area end: at map row 0 the scroll stops and 20 soldiers come out
   (`$04EF` left to spawn, `$04F4` alive). When both are 0 a script walks
   the player into the gate, an interlude runs ($1240), and the next area
-  starts. Areas run 0, 1, 3 and loop (`$04F3`); index 2 is the interlude.
-- Difficulty is only the enemy fire mask `$0504`: $3F, $1F, then $0F from
-  the third area on.
+  starts. Areas run 0, 1, 3 and loop (`$04F3`); index 2 selects the
+  interlude screen (from the game's code, not seen running).
+- The enemy fire mask `$0504` is read from a table at $3ED2 indexed by
+  `$04F3` AND 7: $3F, $1F, $0F, then $0F for every later index, so from
+  the second loop on it stays $0F (from the game's code, not seen
+  running past loop 2, where $0F was measured). No other use of
+  difficulty was found (from the game's code, not seen running).
 
 ### Object tables
 
 - 16 virtual sprites in parallel 16-byte arrays, $10 apart from $040D:
   X bit 8 ($00/$FF), X, Y (the sort key), priority ($00/$FF, to `$D01B`),
   colour, pointer, dx, dy, type. Display Y is a copy at $04C2. Slot 0 is
-  the player, 1-3 his bullets, 4 his grenade, 5-15 an 11-slot pool for
-  enemies, their shots, explosions and items.
-- Pool slots have aux bytes at $04A1 and $04AC (aim) and an age at $04B7.
+  the player, 1-3 his bullets, 4 his grenade or a fourth bullet (one
+  slot for both: with a grenade in flight at most three bullets fly),
+  5-15 an 11-slot pool for enemies, their shots, explosions and items.
+- Pool slots have an aux byte at $04A1, an aim byte at $04AC (the value a
+  shot's direction is taken from) and an age at $04B7.
   $24B3 dispatches each pool slot through a word table at $24F2 indexed by
   type: 38,244 traced handler entries all matched the table.
 - Every normal frame a Shell sort (gaps 7, 3, 1) orders a 16-byte index
@@ -90,12 +102,15 @@ boxes are one per object type, not per animation frame, so
   It is skipped on the redraw frame, whose multiplex uses the old order.
 - A free slot is parked: pointer $FF (the blank block), X 356, and a fixed
   Y (194, 40 or 30) that sorts it out of the way. The raster code never
-  tests whether a slot is active. There is no flicker and no overload
+  tests whether a slot is active (from the game's code, not seen
+  running). There is no flicker and no overload
   handling: a sprite that misses its hardware slot is not drawn.
 - The move routine copies Y to the display copy before moving slots 1-15,
   so their drawn Y is one frame behind their X; the player's is not.
 - Enemy shots fire only when a shooter's age is a multiple of 64 and the
-  fire mask and a free slot agree: 37 of 37 shots. Player bullets fly 15
+  aim sector and a free slot agree: 37 of 37 shots, all in area 0 with
+  the fire mask at $3F. How the mask changes this in later areas was not
+  measured. Player bullets fly 15
   frames (6 px a frame up, 8 sideways) and are tested on moves 1-14 only.
 - Hit tests are boxes on the X and Y differences, low < d ≤ high: bullet
   (-10, +10] × (-12, +12], grenade blast (-18, +18] × (-22, +22], enemy
@@ -114,23 +129,34 @@ boxes are one per object type, not per animation frame, so
   |---|---|---|---|---|---|
   | 0 | $6000-$7E9F | 196 | $C000 | $0D | 175 |
   | 1 | $8000-$9D37 | 187 | $C800 | $0E | 166 |
-  | 3 | $A000-$BF17 | 199 | $D800 (rung 3) | $0D | 178 |
+  | 3 | $A000-$BD37 | 187 | $D800 | $0D (from the game's code, not seen running) | 166 |
+
+  Rows run from 0 to start row + 20, the rows a player can see from the
+  start (obs commando#map-1, #area3-1). Area 3 was measured by setting
+  `$04F3` to 3 at area start: start row 166, `$D018` = $86, and all 840
+  screen bytes equal the map at $A000 + 166 × 40. An earlier version gave
+  area 3 start row 178, 199 rows and an end of $BF17, from the height of
+  map-like bytes in the slot; those bytes run on past $BD37 but are never
+  shown from the start, and what reads them is not settled.
 
 - Screen rows equal `map + row × 40`, with the row in `$0403` counting down
-  as the player advances (rung 1 in areas 0 and 1).
+  as the player advances (rung 1 in all three areas).
 - Colour RAM is filled once per area with one multicolour value and never
   scrolled.
 - Char attribute table, 256 bytes per area ($17A9, $18A9, $1AA9): bit 0
   blocks walking, bit 1 puts the sprite behind the scenery (`$043D` =
   $FF on 519 of 519 frames where the probe cell had it), bit 2 kills
-  (`$0503` = 2). Area 0 has no bit-2 characters; area 1 has 20, area 3 31.
+  (`$0503` = 2). Area 0 has no bit-2 characters; area 1's table has 20 and
+  area 3's 31 (counted in the tables; deaths measured in area 1 only).
 - The map cell under a pixel is `base + ((Y − $1E)/8 + row) × 40 +
-  (X − $10)/8`, computed at $172F. It ignores the fine scroll. Collision
+  (X − $10)/8`, plus 32 when X bit 8 is set, computed at $172F (from the
+  game's code, not seen running). It ignores the fine scroll. Collision
   reads the map, never the screen: a CPU read of $E000 returns KERNAL ROM.
 - Spawns: a per-area event list of four parallel byte arrays (trigger row,
   descending and $FF-terminated; X; a parameter; a handler index into a
   word table at $1C06), cursor `$04E8`. An event fires when its row equals
-  `$0403`, one per frame. Area 0 has 40 events, area 1 32, area 3 34. A full
+  `$0403`, one per frame. Area 0 has 40 events (measured); area 1's list
+  has 32 and area 3's 34 (counted in the tables). A full
   pool lets an event overwrite a live object. Random side-entry grenadiers
   top up the scroll, about one per 140 scroll frames.
 - Checkpoints: five ascending rows per area (area 0: 19, 61, 97, 131, 175).
@@ -218,29 +244,34 @@ No public disassembly of Commando is known, so no claim here has a rung-2
 check against a source. Gridrunner, whose disassembly is public, is where
 the RE tools are checked against one (issue #61). The teardown notes behind
 this page stay on the maintainer's machine, because they quote a RAM image
-of a commercial game; each figure can be re-measured from the session file
-with the RE tools.
+of a commercial game. The tools' output on the session, and the teardown
+figures the study lines rest on, are in the observations file; anyone
+with the same image can replay them from the session file.
 
-| Claim | Rung | Where measured |
-|---|---|---|
-| Five-part chain, handlers and lines | 2 | `c64_re_irq_chain` on the session (1,264 play frames, no input: $4389 on lines 177-192) and the teardown's monitor trace (750 frames still, 750 walking: $4389 on 161-198) agree |
-| Bank 3, screen $E000, `$01` = $36 at play start | 1 | `c64_re_snapshot` at the session's `in_play` ($0FEB, clock 35,080,026) |
-| `$01` never written in play; `$DD00` written once, $94 | 1 | teardown store traces, 1,910 play frames |
-| Area charsets, HUD charset, `$D018` per band | 1 | teardown `$D018` store trace; HUD row rendered with each charset |
-| Area 3 charset and map | 3 | per-area tables in RAM; area 3 not reached |
-| Free RAM $4500-$4FFF and the rest | 1 | VICE memmap from init to 1,910 play frames |
-| Part costs, frame budget, no dropped frame | 1 | teardown checkpoint trace on every part, 750 + 750 frames |
-| Measured frame figures | 3 | 19,656 minus the measured idle wait per frame |
-| Redraw cost 15,714 and the beam lead | 1 | teardown trace of the copy, entry to RTS |
-| Playfield lines 55-213, band 214-222, HUD 223-230 | 1 | exit screenshots measured with PIL |
-| Object fields, dispatch, sort, parking | 1 | teardown traces and RAM pokes |
-| Hit boxes, shot timing, scores, terrain bits | 1 | poke trials (60) and scripted runs in areas 0 and 1 |
-| Event list, checkpoints, area-end wave | 1 | traces with `$04EF`/`$04F4` poked and deaths at known rows |
-| Sound driver cost, voices, no filter | 1 | SID store trace over 95 M cycles |
-| Load stages and timing | 1 | `c64_re_load_map` and the teardown's stage trace |
-| Credits (Butler, Hubbard) | 4 | Zzap!64 interview quoted in `production-planning.md`; no credit string in RAM |
+| Claim | Rung | Where measured | Observations |
+|---|---|---|---|
+| Five-part chain, handlers and lines | 2 | `c64_re_irq_chain` on the session (1,264 play frames, no input: $4389 on lines 177-192) and a separate monitor trace (750 frames still, 750 walking: $4389 on 161-198) agree | commando#irq-1-#irq-7, #frame-2 |
+| Bank 3, screen $E000, `$01` = $36 at play start | 1 | `c64_re_snapshot` at the session's `in_play` ($0FEB, clock 35,080,026) | commando#snap-1 |
+| `$01` never written in play; `$DD00` written once, $94 | 1 | store traces, 1,910 play frames | commando#mem-1, #mem-2 |
+| Area charsets, HUD charset, `$D018` per band | 1 | `$D018` store trace in area 0; area 3 by setting `$04F3`; HUD row rendered with each charset | commando#mem-3, #area3-1 |
+| Map bases, start rows, rows shown | 1 | screen compared with the map in areas 0, 1 and 3 | commando#map-1, #area3-1 |
+| Free RAM $4500-$4FFF and the rest | 1 | VICE memmap from init to 1,910 play frames | commando#mem-4 |
+| Sprite blocks $90-$FF | 1 | pointer stores over 1,910 frames | commando#mem-5 |
+| Part costs, frame budget, no dropped frame | 1 | checkpoint trace on every part, 750 + 750 frames | commando#frame-1, #frame-2 |
+| Measured frame figures | 3 | 19,656 minus the measured idle wait per frame | commando#frame-3 |
+| Redraw cost 15,714 and the beam lead | 1 | trace of the copy, entry to RTS | commando#frame-4 |
+| Load span, stubs, depack stages, entry $0850 | 1 | `c64_re_load_map` on the session | commando#load-1-#load-3 |
+| Playfield lines 55-213, band 214-222, HUD 223-230 | 1 | exit screenshots measured with PIL | teardown only |
+| Object fields, dispatch, sort, parking | 1 | traces and RAM pokes | teardown only |
+| Hit boxes, shot timing, scores, terrain bits | 1 | poke trials (60) and scripted runs in areas 0 and 1 | teardown only |
+| Event list, checkpoints, area-end wave | 1 | traces with `$04EF`/`$04F4` poked and deaths at known rows | teardown only |
+| Sound driver cost, voices, no filter | 1 | SID store trace over 95 M cycles | teardown only |
+| Credits (Butler, Hubbard) | 4 | Butler's Zzap!64 interview (issue 17, 1986) as quoted in `production-planning.md`; no credit string in RAM | none |
+
+"Teardown only" rows are rung 1 monitor traces whose scripts and logs stay
+local; they have no entry in the observations file yet.
 
 Open, not settled here: what the $4389 part does when its Y-derived line
 is already past; the `$41C5` entries at lines 286-287 in the tool run;
 whether the stale sort on a redraw frame ever shows a sprite in the wrong
-zone; area 3's charset in play; the 6569 (`-model c64`) timings, not run.
+zone; what reads area 3's slot past $BD37; the 6569 (`-model c64`) timings, not run.
