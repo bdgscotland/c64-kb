@@ -14,10 +14,11 @@ back. He walks in eight directions; trees, rocks and sandbag walls stop him,
 and he passes under tree canopies, which draw over him. A three-row panel
 under a black band holds SCORE, LIVES and GRENADES. PAL and NTSC.
 
-This slice is the skeleton: the scroll, the redraw, the band and panel, the
-multiplexer with parked slots, the soldier, the enemies (below, "Enemies")
-and his weapons (below, "Weapons"). Collisions, game flow and audio come
-next, each in its own module (below, "Modules").
+This build has the scroll, the redraw, the band and panel, the multiplexer
+with parked slots, the soldier, the enemies ("Enemies"), his weapons
+("Weapons"), the tune and effects ("Audio") and the front end ("Front
+end"). Collisions, checkpoints and the area-end gate come next, each in its
+own module ("Modules"). "Combined budget" measures all of it together.
 
 ## Briefing
 
@@ -520,14 +521,19 @@ frames that run the game's logic):
 
 | Frame | PAL | NTSC | Instrument |
 |---|---|---|---|
-| Logic frame, worst | 3,049 | 3,071 | harness meter: C's bracket (CIA2 timer A) plus every IRQ outside it (CIA2 timer B, kernel.asm) |
-| Logic frame, typical (median) | 2,971 | 2,994 | the same |
-| Redraw, most cycles | 14,100 | 14,317 | CIA1 timer B around `redraw`, wall time, IRQs that land inside included (main.c `do_redraw`) |
+| Logic frame, worst | 3,097 | 3,120 | harness meter: C's bracket (CIA2 timer A) plus every IRQ outside it (CIA2 timer B, kernel.asm) |
+| Logic frame, typical (median) | 3,016 | 3,039 | the same |
+| Redraw, most cycles | 14,100 | 14,313 | CIA1 timer B around `redraw`, wall time, IRQs that land inside included (main.c `do_redraw`) |
 | Redraw ends on line (next frame) | 135 | 181 | `$D011`/`$D012` at its end (kernel.asm `redraw_end`) |
 | Redraw's smallest lead over the beam | 73 lines | 27 lines | row 20 is fetched on line 208 at YSCROLL 0; 208 minus the end line |
-| Logic before a redraw ends, lines after line 250 | 50 | 48 | limit 286 (PAL) and 237 (NTSC): the band's tick on line 224 |
-| The frame after a redraw ends on line | 159 | 205 | limit 250, the frame IRQ |
+| Logic before a redraw ends, lines after line 250 | 51 | 50 | limit 286 (PAL) and 237 (NTSC): the band's tick on line 224 |
+| The frame after a redraw ends on line | 161 | 205 | limit 250, the frame IRQ |
 | Lost frames | 0 | 0 | wait_frame's count; also 0 in a 2,500-frame drive of the normal build that scrolled 397 lines (49 redraws), each model |
+
+The logic frame rows were 3,049 / 3,071 worst and 2,971 / 2,994 typical
+before the front end; its `flow_frame` (the panel's changed-field compare)
+added 45 to 49 cycles a frame ("Front end", below). The redraw and its lead
+did not move: the front end adds no IRQ work.
 
 The redraw frame against the recipe: 13,885-13,916 on PAL and 14,128-14,175
 on NTSC there, with its harness's 546 cycles of row reads inside and no
@@ -717,7 +723,7 @@ uses it.
 | `$8000-$83E7` | the one screen: playfield rows 0-20, panel rows 21-23 (VIC bank 2) |
 | `$83F8-$83FF` | sprite pointers |
 | `$8400-$87FF` | scratch: the meter's readout row in AUTOPILOT builds, copied after the verdict |
-| `$8800-$8FFF` | characters: 0-63 copied from the ROM at start-up, 64-255 the jungle (src/gen/charset.bin) |
+| `$8800-$8FFF` | characters: 0-63 copied from the ROM at start-up, 64-254 the jungle, 255 the title logo's solid block `G_SOLID` (src/gen/charset.bin) |
 | `$9000-$9EFF` | the raw row map, 96 rows x 40 (src/gen/map.bin); the VIC sees the character ROM here |
 | `$9F00-$9FFF` | attr[screen code], page aligned (src/gen/attr.bin) |
 | `$A000-$A83F` | sprites: soldier 8 x 4 frames, then the blank parking block (block 160) |
@@ -753,7 +759,8 @@ A module never writes the VIC's sprite registers: it writes its slots
 | Objects and enemies | objects.c/h, spawns.h | slots 5-15, the pool, the spawn list | `obj_alloc`, `obj_free`, `objects_rows(top)` (wave_director: spawns keyed to map rows, fired as the top row reaches them), `objects_update` (writes the slots), `objects_draw` (empty), `objects_scroll` (returns 1 when main.c must rebuild); for collide: `kind_box`, `kind_flags`, `obj_kill(slot)`; objects keep map coordinates and draw at Y = my - scroll_wy + 54 |
 | Weapons | weapons.c/h | slots 1-3 (bullets), 4 (grenade), decrements `grenades` | `weapons_update(joy)` (fire joy bit 4, throw `JOY_THROW` bit 5), `weapons_reset`; for collisions: `Box`, `box_hit`, `box_has`, `box_blast`, `weapons_bullet_box(i, &b)`, `weapons_bullet_spent(i)`, `weapons_blast_box(&b)` ("Weapons", below) |
 | Collision (next) | collide.c/h | boxes | `collide()`, after objects and weapons moved; scenery is `attr_at` |
-| Flow (next) | flow.c/h, main.c's states | score, lives, grenades, title, game over, high score | `flow_new_game`, `flow_frame`; checkpoint_respawn restarts through `scroll_init(row, 0)`, `objects_reset`, `objects_rows`; area_end_gate_wave starts when `scroll_can_step()` is 0; the gate is `G_GATE`, map rows 1-2, columns 18-21; `panel_update` after a change |
+| Flow | flow.c/h | `score` (BCD, 3 bytes), `lives`, `grenades`, how a game ends | `flow_new_game`, `flow_frame` (redraws the panel fields whose value changed: set `lives`/`grenades`, call `flow_add_score(bcd)`, and the panel follows), hooks `flow_player_died` (now: a life off, game over at none) and `flow_area_cleared` (now: the game ends); next: checkpoint_respawn restarts through `scroll_init(row, 0)`, `objects_reset`, `objects_rows`; area_end_gate_wave starts when `scroll_can_step()` is 0; the gate is `G_GATE`, map rows 1-2, columns 18-21 |
+| Front end | front.c/h, hiscore.c/h | the front-end states (title, table, attract demo, game over, name entry), the high-score table | a module asks for a state in `state_next`; main.c runs its entry routine (`front_enter`, or `play_enter` for `ST_PLAY`) before the next frame; `demo` is 1 while `ST_PLAY` is the attract demo; `hs_rank`, `hs_place` |
 | Audio | sound.asm, sound.c/h, tools/mktune.py, main.c `sfx` | the SID, CIA1 timer A (stopwatch) | `audio_init`, `audio_play` (line-250 IRQ; held off the redraw frame by `sound_hold`/`sound_release` in `do_redraw`), `sfx_request` (A = effect); C calls `sfx(SFX_...)` from sound.h; sfx_voice_takeover: effects on voices 1 and 2, the tune on 3 ("Audio") |
 
 Rules for every module:
@@ -810,9 +817,105 @@ sprite Y 52 (10 of 10).
 
 `node scripts/verify-templates.ts --only run-and-gun --selftest` in c64-kb
 (the starter made into a fresh project outside the repo): `make all`,
-`make shot check` (45 of 45), `make disk`, `make selftest` and
-`make mapend` (10 of 10) all pass; "verify-templates: 1 of 1 starters
-passed".
+`make shot check` (45 of 45), `make disk`, `make selftest`,
+`make mapend` (10 of 10), `make frontend` (13, 17, 21 and 37 of 37, and
+the fault build refused) and `make fedrive` all pass; "verify-templates:
+1 of 1 starters passed" (run again with the front end, 2026-09-26).
+
+## Front end
+
+Built from `game_state_machine` and `front_end_and_attract`
+(game-design/game-structure.md), `high_score_table_insert` (recipe
+kickassembler/high-score-insert, ported to C in hiscore.c),
+`decimal_print` (its BCD variation), `joystick_edge_detect`,
+`joystick_autorepeat` and `attract_mode_input_replay`. Neither
+game-design pattern lists this archetype, and the briefing proposed
+none of them (KB-GAPS.md 13).
+
+Command: `node src/cli.ts check-compatibility high_score_table_insert decimal_print joystick_edge_detect joystick_autorepeat attract_mode_input_replay frame_sync_loop`
+said WARNINGS: `shared_register (soft)` on `DC00` between the three input
+techniques and on `RASTER` with frame_sync_loop, the implied prerequisite
+`lfsr_random`, and "not covered" for high_score_table_insert and
+decimal_print. Here one read of `$DC00` a frame feeds all of them
+(main.c `port_read`), and the demo is deterministic without a random
+generator (KB-GAPS.md 15).
+
+States (one byte, `state`; a module writes `state_next`; main.c runs the
+entry routine before the next frame):
+
+| State | Screen | Leaves |
+|---|---|---|
+| `ST_TITLE` | logo (rows 1-6), PUSH FIRE TO START, JOYSTICK PORT 2, the top score | fire: play; 500 frames idle: table, then the demo |
+| `ST_TABLE` | HIGH SCORES, five rows, the new one yellow | fire: play; 400 frames idle: the demo (from the title) or the title (after an entry) |
+| `ST_PLAY`, `demo` = 1 | the game fed a 485-frame recording, DEMO on the panel | a real fire press or the recording's end: title; nothing scored |
+| `ST_OVER` | GAME OVER, the score | 150 frames (fire after 50): entry if `hs_rank` places the score, else title |
+| `ST_ENTRY` | NEW HIGH SCORE, the score and its rank, three letters | three letters accepted, or 1,000 frames untouched (closed with the letters typed so far): table |
+
+- The entry routine parks every slot, sets YSCROLL 3, clears the
+  playfield and puts up the front end's panel (FIREBASE, no digits); the
+  screen's text comes on the state's first frame, so neither half runs
+  past the next frame IRQ. Every press waits for a release first (the
+  latch), so the press that ended a state starts nothing.
+- Name entry is a joystick letter wheel: up and down step A-Z and `.`,
+  auto-repeat after 16 frames every 5; fire or right accepts; left goes
+  back. The KB's `text_input_line` needs GETIN and the KERNAL, which is
+  banked out here (KB-GAPS.md 14).
+- The table: five rows of three screen codes and three BCD bytes, the
+  recipe's layout and tie rule (an equal score goes below its holder),
+  seeded at boot with original initials, 50,000 down to 10,000. Not saved.
+- The score is BCD, three bytes, added in C a nibble at a time with no
+  `SED` (pitfall `decimal_mode_in_irq_handler` cannot arise); printed a
+  nibble a digit. `flow_frame` redraws a panel field only when its value
+  differs from the one drawn.
+- The logo is FIREBASE in a 3 x 5 block font with a drop shadow, drawn by
+  tools/mkassets.py (`make_logo`, src/gen/logo.bin) from one new glyph,
+  255, all pixels set, in hires cells (colour RAM below 8).
+
+Measured (VICE x64sc 3.10, `make frontend`, CIA1 timer B wall time with
+IRQs that land inside; its start/stop adds about 20 cycles):
+
+| What | PAL | NTSC |
+|---|---|---|
+| `flow_frame`, worst (a death frame: 8,500 added, score and lives redrawn) | 836 | 836 |
+| `flow_frame`, a frame with no change (the logic frame's rise over the slice, meter) | +45 to +48 | +45 to +49 |
+| Play logic frame with forced deaths, worst / typical (meter, 100 frames) | 3,847 / 3,105 | 3,872 / 3,129 |
+| A front-end frame, worst (the first, which draws the screen) | 7,955 | 8,211 |
+| A front-end entry routine, worst | 8,090 | 8,350 |
+| `hs_place` (rank 4 of 5: two rows shifted, one written) | 241 | 241 |
+| IRQ cycles added | 0 | 0 |
+
+The redraw's NTSC lead stays 27 lines (row 6 of `make shot check`'s
+verdict). Before the split, one entry routine drew its screen too:
+16,590 on PAL and 17,343 on NTSC, over the NTSC frame; the cell-by-cell
+logo alone took 11,023 (a debug build timing each part) and `put_dec`'s
+32-bit divide made `flow_frame`'s worst 2,095; both are replaced.
+
+Checks (`VERIFY_TARGETS` runs both after selftest):
+
+- `make frontend`: the `-dFRONTEND=1` autopilot build (`FORCE_OVER` on: a
+  death every 40 logic frames, 8,500 points each) plays title, play,
+  three deaths, game over, the name DAB, the table and the title, where it
+  grades itself (main.c `first_fail`, FRONTEND): no play frame lost, the
+  states in order (TPOEHT), score 025500 with no lives, the panel read
+  025500 and 0 as the game ended, rank 4, the table equal to the expected
+  one byte for byte (DAB fourth, SID fifth, VIC dropped), no sprite and no
+  panel digit on the title, YSCROLL 3. expect-frontend.json grades that
+  title (37 checks: the verdict rows, the prompt, the top score, the logo's
+  colours and shadow by pixel, the band, the panel without digits);
+  expect-fe-over.json (13), expect-fe-entry.json (17) and
+  expect-fe-table.json (21) grade the game over, entry and table screens,
+  each shot inside the same run at its own cycle count, in the middle of
+  that screen's window on each model (a sweep of shots every 1,000,000
+  cycles: game over PAL 6-8 million, NTSC 6-8; entry PAL 9-10, NTSC 9;
+  table PAL 11-18, NTSC 10-16; title from NTSC 17). The FORCE_FAULT build
+  files every score into row 0, the fault the technique names, and must
+  fail expect-frontend.json (it does: RANK 1, border red).
+- `make fedrive`: the `-dFORCE_OVER=1` normal build played by
+  harness/drive.py on the real `$DC00`: the title idles into the table
+  (505 frames) and the demo (400) and back to the title (485); fire; game
+  over; DAB typed with taps; the table shows `4  025500  DAB`; the title;
+  a second game ties 25,500, ranks 5 (below DAB: the tie rule), B is
+  typed and the entry closes itself 995 frames later as `B..`.
 
 ## Enemies
 

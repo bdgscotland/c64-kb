@@ -21,4 +21,7 @@
 #define SPR_BLAST    73   // grenade blast, 2 frames
 #define SPR_DOWN     75   // a hit enemy's dust
 #define SPR_BLOCKS   76
+#define G_SOLID      255  // every pixel set: the logo's block
+#define LOGO_W       32   // logo.bin: LOGO_H rows of LOGO_W, 0 empty 1 letter 2 shadow
+#define LOGO_H       6
 #endif

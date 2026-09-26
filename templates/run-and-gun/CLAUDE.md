@@ -63,6 +63,14 @@ What will bite you here:
   put it back with `playfield_colour()`.
 - Oscar64's zero page reached `$56` here; the blob uses none. Pass values
   to the blob through its own bytes (`ASM_<LABEL>` in `build/asm.h`).
+- The front end (front.c, hiscore.c) and the game's end (flow.c) are
+  states of main.c's one state byte: write `state_next`, never `state`,
+  and main.c runs the entry routine before the next frame. The score is
+  three BCD bytes: add with `flow_add_score(bcd)`; change `lives` or
+  `grenades` directly and `flow_frame` redraws the panel field. Death and
+  the gate call `flow_player_died` and `flow_area_cleared` (hooks that do
+  the minimum; PLAN.md, "Front end"). `make frontend` and `make fedrive`
+  prove title, play, game over, name entry, table and title.
 - `make mapend` (-dMAPEND=1) proves the scroll stops at the map's top;
   `make drive STEPS=...` plays the normal build with the stick on `$DC00`;
   `make gallery` takes the README picture.

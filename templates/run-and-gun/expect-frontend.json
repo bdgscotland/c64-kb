@@ -1,0 +1,24 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "verdict line", "type": "text", "row": 14, "col": 1, "text": "RESULT 01 PASS" },
+    { "name": "states in order (title, play, over, entry, table, title); rank, name and score filed", "type": "text", "row": 15, "col": 1, "text": "TRAIL TPOEHT RANK 4 DAB 025500" },
+    { "name": "the panel as the game ended; sprites on the title; lost play frames", "type": "text", "row": 16, "col": 1, "text": "PANEL 025500 0 SHOWN 0 LOST 00" },
+    { "name": "frame meter, the first 100 play frames (forced deaths and panel updates inside)", "type": "meter", "row": 19, "col": 1, "frames": 100 },
+
+    { "name": "title: the prompt", "type": "text", "row": 9, "col": 11, "text": "PUSH FIRE TO START" },
+    { "name": "title: the port", "type": "text", "row": 11, "col": 12, "text": "JOYSTICK PORT 2" },
+    { "name": "title: the top score, from the table", "type": "text", "row": 13, "col": 13, "text": "TOP 050000 FBS" },
+    { "name": "logo: F's top row (screen row 1) white", "type": "pixel", "vic_x": 60, "line": 62, "colour": 1 },
+    { "name": "logo: F's second row yellow", "type": "pixel", "vic_x": 60, "line": 70, "colour": 7 },
+    { "name": "logo: F's fifth row red", "type": "pixel", "vic_x": 60, "line": 94, "colour": 2 },
+    { "name": "logo: the shadow right of F's stem, black", "type": "pixel", "vic_x": 68, "line": 70, "colour": 0 },
+    { "name": "logo: the gap between F and I is earth", "type": "pixel", "vic_x": 84, "line": 62, "colour": 9 },
+    { "name": "logo: E's last row, the last letter, red across three cells", "type": "rect", "vic_x": 280, "line": 91, "width": 24, "height": 8, "colour": 2 },
+    { "name": "logo rows 1-6 identical on both models", "type": "same", "cells": [1, 4, 6, 36] },
+    { "name": "the band: lines 214-222 black", "type": "rect", "colour": 0, "vic_x": 24, "line": 214, "width": 320, "height": 9 },
+    { "name": "panel: the name", "type": "text", "row": 21, "col": 28, "text": "FIREBASE", "dy": 4 },
+    { "name": "panel: no score digits on the front end", "type": "text", "row": 21, "col": 0, "text": "                            ", "dy": 4 },
+    { "name": "panel: no lives or grenade digits", "type": "text", "row": 23, "col": 0, "text": "                                        ", "dy": 4 }
+  ]
+}

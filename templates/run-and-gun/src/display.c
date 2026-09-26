@@ -36,6 +36,31 @@ void put_dec(char *at, unsigned long v, char digits)
     }
 }
 
+// decimal_print for a byte: repeated subtraction of ten, no 32-bit divide
+// (put_dec's unsigned long % 10 made flow_frame's worst 2,095 cycles in make
+// frontend; measured again after this in PLAN.md, "Front end").
+void put_dec8(char *at, char v, char digits)
+{
+    char t = 0;
+    while (v >= 10) {                   // t = v / 10, v = v % 10
+        v -= 10;
+        t++;
+    }
+    at[digits - 1] = '0' + v;
+    if (digits > 1)
+        at[digits - 2] = '0' + t;       // values to 99
+}
+
+// decimal_print, BCD route: one digit per nibble, a shift and a mask; the
+// screen code of a digit is $30 plus its value.
+void put_bcd(char *at, const char *bcd, char nbytes)
+{
+    for (char i = 0; i < nbytes; i++) {
+        at[2 * i] = '0' + (bcd[i] >> 4);
+        at[2 * i + 1] = '0' + (bcd[i] & 15);
+    }
+}
+
 void text_colour(char row, char col, char n, char c)
 {
     memset(COLOUR + row * 40 + col, c, n);
@@ -46,8 +71,11 @@ void playfield_colour(void)
     memset(COLOUR, PF_CRAM, PF_ROWS * 40);
 }
 
+static char panel_is_front;              // 1: panel_front's text is up; nothing to redraw
+
 void panel_draw(void)
 {
+    panel_is_front = 0;
     memset(PANEL, ' ', 3 * 40);
     put_text(SCREEN, PANEL_ROW, 2, "SCORE 000000");
     put_text(SCREEN, PANEL_ROW, 28, "FIREBASE");
@@ -57,24 +85,41 @@ void panel_draw(void)
     panel_update();
 }
 
+// One field each, so flow_frame redraws only what changed.
+void panel_score(void)
+{
+    put_bcd(SCREEN + PANEL_ROW * 40 + 8, score, 3);
+}
+
+void panel_lives(void)
+{
+    put_dec8(SCREEN + (PANEL_ROW + 2) * 40 + 8, lives, 1);
+}
+
+void panel_grenades(void)
+{
+    put_dec8(SCREEN + (PANEL_ROW + 2) * 40 + 33, grenades, 2);
+}
+
 void panel_update(void)
 {
-    put_dec(SCREEN + PANEL_ROW * 40 + 8, score, 6);
-    put_dec(SCREEN + (PANEL_ROW + 2) * 40 + 8, lives, 1);
+    panel_score();
+    panel_lives();
     panel_grenades();
 }
 
-// The grenade count alone: two digits with byte arithmetic. panel_update's
-// score is an unsigned long, and put_dec's divisions cost 12,694 cycles a
-// call (CIA1 timer B, IRQs off, VICE x64sc PAL), too much for a play frame.
-void panel_grenades(void)
+// The front end's panel: the name only. No score, lives or grenade digits
+// while the state is a front-end one (game_state_machine, "Checks").
+void panel_front(void)
 {
-    char *p = SCREEN + (PANEL_ROW + 2) * 40 + 33;
-    char g = grenades, t = '0';
-    while (g >= 10) {
-        g -= 10;
-        t++;
+    if (panel_is_front)
+        return;
+    panel_is_front = 1;
+    for (char i = 0; i < 40; i++) {
+        PANEL[i] = ' ';
+        PANEL[i + 40] = ' ';
+        PANEL[i + 80] = ' ';
     }
-    p[0] = t;
-    p[1] = '0' + g;
+    put_text(SCREEN, PANEL_ROW, 28, "FIREBASE");
+    text_colour(PANEL_ROW, 28, 8, VCOL_YELLOW);
 }

@@ -12,13 +12,18 @@
 //
 // Files: main.c (states, the frame loop, the autopilot, the meter, the
 // verdict), scroll.c (map, scroll, attributes), soldier.c (the player),
-// objects.c (slots, pool, the enemies), weapons.c, collide.c, flow.c (stubs
-// for the next modules), display.c (VIC, text, panel), kernel.asm + mux.asm +
-// sound.asm (IRQ chain, band, redraw, multiplexer, audio hooks). PLAN.md,
-// "Modules", says who owns what.
+// objects.c (slots, pool, the enemies), weapons.c (shots, grenades, hit
+// boxes), collide.c (a stub for the next module), flow.c (score, lives, how
+// a game ends), front.c and hiscore.c (title, attract demo, game over, name
+// entry, high-score table), sound.c (effect requests, the audio checks),
+// display.c (VIC, text, panel), kernel.asm + mux.asm + sound.asm (IRQ chain,
+// band, redraw, multiplexer, player). PLAN.md, "Modules", says who owns
+// what.
 //
 // AUTOPILOT=1 replaces joystick port 2 with a script and grades the end state;
-// FORCE_FAULT=1 starts the soldier 8 pixels to the right.
+// FORCE_FAULT=1 starts the soldier 8 pixels to the right. FRONTEND=1 (make
+// frontend) plays the front end instead; FORCE_OVER=1 ends every game in
+// three forced deaths (flow.c).
 #include "game.h"
 #include "display.h"
 #include "scroll.h"
@@ -28,6 +33,8 @@
 #include "collide.h"
 #include "flow.h"
 #include "sound.h"
+#include "front.h"
+#include "hiscore.h"
 #include "frame_meter.h"        // templates/_harness/meter
 #include <string.h>
 
@@ -72,7 +79,7 @@ __export const char weapon_sprites_bin[] = {
 };
 #pragma data( data )
 
-char state;
+char state, state_next;
 unsigned play_frames;
 char ntsc;
 
@@ -108,6 +115,22 @@ static const char script[][2] = {
 #elif defined(WEAPONS)
 #define WT_PART 1                       // make weapons: the script (weapons_test.h)
 #include "weapons_test.h"
+#elif defined(FRONTEND)
+// make frontend (-dFRONTEND=1): the whole front end in one run. Fire on the
+// title; up while flow.c's forced deaths (a death every 40 logic frames, 8,500
+// points each) take the three lives; game over; the name DAB typed on the
+// letter wheel; the table; the title, where it freezes and grades itself.
+static const char script[][2] = {
+    {   2, 0xff }, {   2, 0xef },       // title: fire starts the game
+    { 130, 0xfe },                      // up: the game ends on about play frame 135
+    { 200, 0xff },                      // game over (150 frames), then the entry, untouched
+    {   1, 0xfe }, {   1, 0xff }, {   1, 0xfe }, {   1, 0xff }, {   1, 0xfe }, {   1, 0xff },
+    {   1, 0xef }, {   1, 0xff },       // up three times, A to D; fire
+    {   1, 0xef }, {   1, 0xff },       // A; fire
+    {   1, 0xfe }, {   1, 0xff }, {   1, 0xef }, {   1, 0xff },   // B; fire: filed, the table
+};
+#define PLAY_FRAMES 60000               // never frozen in play: the title freezes it
+#define FREEZE_YS   3
 #else
 static const char script[][2] = {
     {   2, 0xff }, {   2, 0xef },       // title: fire starts the game
@@ -121,7 +144,12 @@ static const char script[][2] = {
 #define FREEZE_YS   3                   // the text grid check.py reads (dy 0); make phases sets 0-7
 #endif
 #endif
+#ifdef FRONTEND
+#define METER_HOLD  100                 // the forced game over leaves about 120 logic frames
+#define METER_ROW   19                  // under the title's verdict rows (row 20 is under the band)
+#else
 #define METER_HOLD  200                 // normal play frames the meter records
+#endif
 #define SCRIPT_LEN (sizeof(script) / 2)
 static char ap_index, ap_used;
 
@@ -168,6 +196,10 @@ static char port_read(void)
     }
     return port_j;
 }
+#endif
+
+#ifndef METER_ROW
+#define METER_ROW 9
 #endif
 
 // ---- frames ---------------------------------------------------------------------------
@@ -329,19 +361,8 @@ static void do_redraw(void)
 }
 
 // ---- states -----------------------------------------------------------------------
-static void title_enter(void)
-{
-    state = ST_TITLE;
-    slots_park_all();
-    char *s = SCREEN;
-    put_text(s, 6, 15, "FIREBASE");
-    put_text(s, 9, 10, "PUSH FIRE TO START");
-    put_text(s, 11, 11, "JOYSTICK PORT 2");
-    text_colour(6, 15, 8, VCOL_YELLOW);
-    text_colour(9, 10, 18, TEXT_CRAM);
-    text_colour(11, 11, 15, VCOL_LT_GREY);
-}
-
+// game_state_machine: ST_PLAY's entry routine is here; the front end's are in
+// front.c (front_enter).
 static void play_enter(void)
 {
     while (!K_BAND_TICK) ;              // the redraw after the last playfield badline
@@ -359,13 +380,27 @@ static void play_enter(void)
     play_frames = 0;
     light = 0;
     state = ST_PLAY;
+    front_play_begun();                 // the demo's label; the trail in FRONTEND builds
 #if FRAME_METER
-    meter_init((unsigned)SCRATCH, 9, 1, PF_CRAM, METER_HOLD);
+    meter_init((unsigned)SCRATCH, METER_ROW, 1, PF_CRAM, METER_HOLD);
     have_main = 0;
 #endif
 #if AUTOPILOT
     sound_start();                      // after meter_init: its calibration drops two frame IRQs
 #endif
+}
+
+// The entry routine of the state a module asked for (game_state_machine),
+// before the next frame.
+static void state_enter(char s)
+{
+    if (s == ST_PLAY)
+        play_enter();
+    else if (s == ST_FROZEN)
+        state = ST_FROZEN;
+    else
+        front_enter(s);
+    state_next = state;
 }
 
 static void actors_commit(char what)
@@ -497,6 +532,77 @@ static char slots_above_cut(void)
 #undef WT_PART
 #define WT_PART 2                       // make weapons: its verdict (weapons_test.h)
 #include "weapons_test.h"
+#elif defined(FRONTEND)
+// make frontend: title, play, game over, entry, table, title; the table filed
+// by rank; the panel followed the game; the front end shows no play sprite
+// and no panel digits. PLAN.md, "Front end", derives each value.
+static const char fe_expect_table[HS_TABLEN] = {
+    'F' - 64, 'B' - 64, 'S' - 64, 0x05, 0x00, 0x00,
+    'K' - 64, 'B' - 64, 'A' - 64, 0x04, 0x00, 0x00,
+    'C' - 64, '6', '4',           0x03, 0x00, 0x00,
+    'D' - 64, 'A' - 64, 'B' - 64, 0x02, 0x55, 0x00,    // the new row, fourth
+    'S' - 64, 'I' - 64, 'D' - 64, 0x02, 0x00, 0x00,    // VIC's 10,000 dropped
+};
+
+static char panel_has_digit(void)
+{
+    for (unsigned i = 0; i < 3 * 40; i++)
+        if (PANEL[i] >= '0' && PANEL[i] <= '9')
+            return 1;
+    return 0;
+}
+
+static char first_fail(void)
+{
+    char n = 1;
+    CHECK(overruns == 0 && rd_late == 0)                    // 1 no play frame lost, no redraw late
+    CHECK(memcmp(fe_trail, "TPOEHT", 7) == 0)               // 2 the states, in order
+    CHECK(score[0] == 0x02 && score[1] == 0x55 && score[2] == 0 && lives == 0)   // 3 three deaths, 25,500
+    CHECK(memcmp(fe_over_panel, "0255000", 7) == 0)         // 4 the panel showed it as the game ended
+    CHECK(fe_rank == 3)                                     // 5 ranked fourth
+    CHECK(memcmp(hs_table, fe_expect_table, HS_TABLEN) == 0)   // 6 filed there, the rows below shifted
+    CHECK(K_MUX_SHOWN == 0)                                 // 7 the title shows no sprite
+    CHECK(!panel_has_digit())                               // 8 and no score, lives or grenade digits
+    CHECK((hw_d011 & 0x7f) == 0x13)                         // 9 the front end's YSCROLL 3
+    return 0;
+}
+
+// The verdict under the title's logo, prompt and top score: rows 14-18, the
+// meter on 19 (row 20 is under the band at YSCROLL 3).
+static void verdict(void)
+{
+    char fail = first_fail();
+    char ok = fail == 0;
+    verdict_code = ok ? 1 : 2;
+    RESULT = verdict_code;
+    vic.color_border = ok ? VCOL_GREEN : VCOL_RED;
+    char *s = SCREEN;
+    put_text(s, 14, 1, ok ? "RESULT 01 PASS   " : "RESULT 02 FAIL 00");
+    if (!ok)
+        put_dec(s + 14 * 40 + 16, fail, 2);
+    put_text(s, 15, 1, "TRAIL ...... RANK 0 ... ......");
+    for (char i = 0; i < 6 && fe_trail[i]; i++)
+        s[15 * 40 + 7 + i] = fe_trail[i] - 64;
+    s[15 * 40 + 19] = '1' + fe_rank;
+    const char *row = hs_table + (fe_rank < HS_ROWS ? fe_rank : 0) * HS_ROWLEN;
+    memcpy(s + 15 * 40 + 21, row, 3);
+    put_bcd(s + 15 * 40 + 25, row + 3, 3);
+    put_text(s, 16, 1, "PANEL ...... . SHOWN 0 LOST 00");
+    memcpy(s + 16 * 40 + 7, fe_over_panel, 6);
+    s[16 * 40 + 14] = fe_over_panel[6];
+    put_dec(s + 16 * 40 + 22, K_MUX_SHOWN, 1);
+    put_dec(s + 16 * 40 + 29, overruns, 2);
+    put_text(s, 17, 1, "FE 00000 IN 00000 HS 00000 FL 00000");
+    put_dec(s + 17 * 40 + 4, fe_frame_max, 5);
+    put_dec(s + 17 * 40 + 13, fe_enter_max, 5);
+    put_dec(s + 17 * 40 + 22, fe_hs_cyc, 5);
+    put_dec(s + 17 * 40 + 31, fe_flow_max, 5);
+    put_text(s, 18, 1, "AT");
+    for (char i = 0; i < 6; i++)
+        put_dec(s + 18 * 40 + 4 + 5 * i, fe_trail_at[i], 4);
+    for (char r = 14; r < 20; r++)
+        text_colour(r, 1, 38, TEXT_CRAM);
+}
 #elif defined(MAPEND)
 static char first_fail(void)
 {
@@ -554,6 +660,7 @@ static char first_fail_enemies(void)
 #ifdef ENEMYTEST
 #define first_fail first_fail_enemies
 #endif
+#ifndef FRONTEND
 static void verdict(void)
 {
     char fail = first_fail();
@@ -638,6 +745,7 @@ static void verdict(void)
 #endif
 }
 #endif
+#endif
 
 // PAL has 312 lines, NTSC 263: the largest line past 255 tells them apart.
 static char is_ntsc(void)
@@ -659,12 +767,13 @@ int main(void)
     cia1.pra = 0xff;                    // no keyboard column selected
     display_init();
     scroll_init(SCROLL_START_TOP, SCROLL_START_YS);
+    front_init();
     flow_new_game();
-    panel_draw();
-    title_enter();
+    front_enter(ST_TITLE);
+    state_next = ST_TITLE;
     LOST_FRAMES = 0;
 #if FRAME_METER
-    meter_init((unsigned)SCRATCH, 9, 1, PF_CRAM, METER_HOLD);
+    meter_init((unsigned)SCRATCH, METER_ROW, 1, PF_CRAM, METER_HOLD);
     K_MTR_OPEN = 0;                     // IRQs time themselves (timer B)
     K_BYTE(ASM_MTR_ON) = 1;             // the frame IRQ hands their sum to C
 #else
@@ -677,18 +786,13 @@ int main(void)
     }
     last_fc = K_FRAME_CNT;
 
-    char prev = 0xff;
     for (;;) {
         wait_frame();
         K_BAND_TICK = 0;
         char joy = port_read();
         switch (state) {
-        case ST_TITLE:
-            actors_commit(COMMIT_MUX);
-            if (!(joy & JOY_FIRE) && (prev & JOY_FIRE))
-                play_enter();
-            break;
         case ST_PLAY:
+            joy = front_play_joy(joy);  // the demo's recording in the attract demo
             counting = play_frames > 1;
 #if AUTOPILOT
             counting = counting && play_frames < PLAY_FRAMES + 16;
@@ -698,7 +802,7 @@ int main(void)
             // (a fault build stopped by a trunk) freezes 40 frames later, red.
             if (play_frames >= PLAY_FRAMES && !light &&
                 ((scroll_ys == FREEZE_YS && K_CUR_YS == FREEZE_YS) || play_frames >= PLAY_FRAMES + 40)) {
-                state = ST_FROZEN;
+                state = state_next = ST_FROZEN;
                 meter_flush();
                 sound_stop();
                 break;
@@ -756,11 +860,16 @@ int main(void)
                 actors_commit(COMMIT_MUX);
 #endif
             }
-            memcpy(SCREEN + 9 * 40 + 1, SCRATCH + 9 * 40 + 1, 20);
+            memcpy(SCREEN + METER_ROW * 40 + 1, SCRATCH + METER_ROW * 40 + 1, 20);
             break;
 #endif
+        default:                        // ST_TITLE, ST_TABLE, ST_OVER, ST_ENTRY (front.c)
+            front_frame(joy);
+            actors_commit(COMMIT_YS | COMMIT_MUX);   // parked slots, the front end's YSCROLL
+            break;
         }
-        prev = joy;
+        if (state_next != state)
+            state_enter(state_next);
         if (state != ST_PLAY)
             meter_print();
     }
