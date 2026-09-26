@@ -25,6 +25,10 @@
 // interrupts only from line 256 to line 0 of each (56 lines PAL, 7 NTSC): an
 // IRQ that comes then is delayed, not lost. An earlier version masked the
 // whole calibration and lost one KERNAL timer IRQ in the same trace.
+// A program whose own IRQ covers lines 256-262 every frame never shows the
+// wait that window unmasked (run-and-gun on NTSC, which hung there): after
+// two frames without it the bracket is taken at the top of the frame,
+// masked for the bracket only (meter_zero 11 on PAL and NTSC either way).
 //
 // Two kinds of frame start late in a meter build, and never in the release:
 // the first frames after meter_init (its four waits for line 0 take more

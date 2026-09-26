@@ -45,18 +45,37 @@ void meter_init(unsigned screen, char row, char col, char colour, char hold)
     // masked all four waits for $D012 = 0 (lines 0 and 256 alike): 26,945
     // cycles in one PAL run, one KERNAL timer IRQ lost (VICE store trace of
     // $A2), and in run-and-gun two music steps at the start of play.
+    // A program whose own IRQ runs across lines 256-262 every frame (NTSC's
+    // seven: run-and-gun's frame IRQ from line 250) never lets the wait see
+    // bit 7 of $D011 unmasked, and the next version hung here on NTSC. So
+    // the wait also counts frames by the raster wrapping; after two frames
+    // with no window it takes the bracket where it is, at the top of the
+    // frame (top border: no badline), masked for the bracket only.
     for (char k = 0; k < 4; k++)
     {
+        char last = vic.raster, wraps = 0;
         for (;;)
         {
-            while (!(vic.ctrl1 & 0x80)) ;       // wait, unmasked, for line 256
-            __asm volatile { php
-                             sei }
+            char r = vic.raster;                // before $D011: a line-255 read then bit 7 is not a wrap
             if (vic.ctrl1 & 0x80)
-                break;                          // still before line 0: masked from here
-            __asm volatile { plp }              // an IRQ carried us past line 0: again
+            {
+                __asm volatile { php
+                                 sei }
+                if (vic.ctrl1 & 0x80)
+                {
+                    while (vic.ctrl1 & 0x80) ;  // masked from here to line 0
+                    break;
+                }
+                __asm volatile { plp }          // an IRQ carried us past line 0: again
+            }
+            else if (r < last && ++wraps == 2)
+            {
+                __asm volatile { php
+                                 sei }          // an IRQ covers the window: here, now
+                break;
+            }
+            last = r;
         }
-        while (vic.ctrl1 & 0x80) ;
         METER_START;
         unsigned z = meter_read();
         __asm volatile { plp }
