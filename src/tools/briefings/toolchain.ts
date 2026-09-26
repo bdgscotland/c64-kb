@@ -101,6 +101,9 @@ export async function toolchainSplit(
   const tight = handedOff.map((t) => t.name);
   return {
     primary: PRIMARY_TOOLCHAIN,
+    // The field keeps its first name, but it is the list handed to
+    // KickAssembler: the heavy techniques after the cycle-tight ones are not
+    // cycle-tight. Renaming it would change the briefing's output schema.
     cycle_tight_handoff: [...tight, ...heavy],
     rationale: rationaleFor(tight, keptInPrimary, heavy),
   };

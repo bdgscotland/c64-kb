@@ -182,14 +182,15 @@ export async function enrichPitfall(
 const OwnersRow = z.object({ name: z.string(), owners: z.array(z.string()).nullish() });
 
 /**
- * Of the pitfalls a technique reaches only through a register or routine
- * it uses, those whose TRIGGERED_BY list names techniques, none of them the
- * topic or one it requires (REQUIRES, up to twelve deep), belong to those
- * techniques. `pitfalls-for threshold_scroll_v` listed every `$D011` trick
+ * Leaves out a pitfall the technique reaches through a register or routine
+ * it uses when every technique that triggers it (TRIGGERED_BY) is another
+ * one: neither the topic nor a technique the topic requires (REQUIRES, up
+ * to twelve deep). A pitfall no technique triggers, only the register,
+ * stays. `pitfalls-for threshold_scroll_v` listed every `$D011` trick
  * through SCROLY (fpp_write_outside_window, linecrunch_write_outside_window,
  * mid_row_badline_write_off_by_one), none of which a one-line YSCROLL step
- * meets (KB-GAPS 6). A pitfall the register alone triggers stays.
- * Returns the kept rows and the left-out names with their owners.
+ * meets (KB-GAPS 6). Returns the kept rows, and in leftOut each pitfall
+ * left out with the techniques that trigger it (its owners).
  */
 export async function withoutOthersPitfalls(
   f: FalkorService,

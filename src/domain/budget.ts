@@ -504,6 +504,10 @@ function budgetPhase(inp: PhaseInputs): PhaseBudget {
     .map((c) => c.name);
   const low = contributors.reduce((s, c) => s + c.low, 0);
   const high = contributors.reduce((s, c) => s + c.high, 0);
+  // The one-in-N members are passed too, so their bands and screen-on figures
+  // count for the frames they run on. A known approximation: one of them
+  // measured with the screen on also zeroes the every-frame floor
+  // (heldSomewhere), though its figure is not summed into every frame.
   const fixed_losses = fixedLossesFor([...contributors, ...sorted.occasional], inp, byName);
   const everyFrame = contributors.filter((c) => c.every_frame).reduce((s, c) => s + c.low, 0);
   const floor = everyFrame + fixed_losses.floor;
