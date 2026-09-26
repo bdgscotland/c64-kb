@@ -416,6 +416,141 @@ frame's active display period.
 
 ---
 
+## row_map_redraw — Coarse vertical scroll as a full playfield redraw from a raw row map
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011
+**Uses kernal:** (none)
+**Requires:** soft_scroll_v
+**Alternative to:** char_scroll_buffer_v (redraws every row from the map instead of moving them; no colour RAM move and no seam row, but the level must sit in RAM as raw screen codes, 40 bytes a row, and the redraw frame has little time left for logic), eight_way_scroll_double_buffer (one screen and no `$D018` flip; vertical only, and the one-pass redraw must stay ahead of the beam)
+**Cost:** cycles_per_frame=14673
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-row-map-redraw (the redraw frame, 21 rows, CIA1 timer B, screen on, PAL; includes the line-250 IRQ and 378 cycles of per-row harness reads; 14,889 on NTSC)
+**Claims:** vic_yscroll (shares)
+**Claims basis:** derived-listing
+
+The redraw runs on the frame on which `soft_scroll_v` wraps YSCROLL, and the
+new value must reach `$D011` for the same frame as the new rows, so it
+shares the unit that technique owns, as `char_scroll_buffer_v` does. It
+writes screen RAM and reads the map, which are the program's memory. Its
+self-modified operands are the recipe's code, not a unit.
+
+### Why
+
+`char_scroll_buffer_v` moves 20 or 24 rows and writes one new row on a
+coarse step, and it has to move colour RAM too. A game whose level is stored
+as the screen itself, 40 screen codes a row, can skip the move: point the
+copy at the map row now at the top and write the whole playfield. There is no
+seam row to decode and no shift direction to get wrong, and if the whole
+level is one colour, colour RAM is never touched.
+
+### How
+
+1. Store the level as raw screen codes, 40 bytes a row, row 0 at the top.
+   The playfield's top row is map row `top`; the source for screen row r is
+   `map + (top + r) × 40`.
+2. Scroll with `soft_scroll_v`. When YSCROLL wraps (7 to 0 for content
+   moving down), step `top` by one and redraw.
+3. Start the redraw after the last playfield row's badline of the current
+   frame, and before the end of the frame: in the recipe, on line 225, when
+   the band split below the playfield ticks the frame counter.
+4. Copy top row first with absolute indexed loads and stores whose operands
+   are patched per row (`self_modifying_code`): `LDA map,Y` / `STA screen,Y`,
+   Y from 39 down, then 40 added to both operands.
+5. Write the new YSCROLL for the next frame in the same frame as the redraw.
+6. Run no other logic on that frame, or only what fits in what is left.
+
+### Why it works
+
+The VIC reads a character row from screen RAM once, on the row's badline,
+and repeats it from its internal buffer for the other seven lines. After the
+last playfield row's badline, screen RAM can change freely until row 0's
+badline in the next frame. The copy starts in that gap and writes rows in the
+order the beam reads them, so it only has to stay ahead, not finish, before
+the display starts. Measured in VICE x64sc 3.10 on the recipe: from line 225
+on PAL, rows 0-11 are written before line 48, and the last row finishes on
+line 145 against its fetch on line 208. On the display lines a row costs
+about 11.5 lines because of the badlines, so the lead shrinks by three to
+four lines a row, to 62 lines at row 20. On NTSC, whose frame is 263 lines,
+only rows 0-6 are done by line 48 and the lead at row 20 is 17 lines.
+
+### When not to use it
+
+- **Maps with colour per cell.** The redraw would need 840 more bytes into
+  colour RAM, which has no second page; use `tile_map_render` with
+  `char_scroll_buffer_v` or `eight_way_scroll_double_buffer`.
+- **Tight memory.** A raw map costs 40 bytes a row, 7.5 to 8 KB for a level
+  of about 190 rows. Metatiles (`tile_map_render`) store the same level in a
+  fraction of that, but decoding them inside the copy adds cycles to every
+  row of the race (not measured here); see the metatile variation below.
+- **Heavy logic every frame.** The redraw frame keeps only what the copy and
+  the interrupts leave: 4,131 cycles on PAL and 1,332 on NTSC in the recipe
+  (arithmetic from the measured counts). If logic may not skip a frame in
+  eight, spread the move over the seven quiet frames into a second screen and
+  flip `$D018` (`screen_double_buffer_d018`).
+
+### Pitfalls
+
+- **Starting late tears.** The recipe's `:wait=10` build starts the same copy
+  on line 10: rows 0-12 are new, rows 13-20 show the old picture, and the
+  PNG shows one map row missing between screen rows 12 and 13. The harness
+  reported a lead of −18 lines at row 17.
+- **Rows and YSCROLL in different frames jump.** A trial build that started
+  the copy on line 40 wrote every row after its fetch: the whole frame showed
+  the old rows at the new YSCROLL 0, a jump of seven pixels and back, not a
+  tear. Both must change for the same frame.
+- **Starting early.** Before the last playfield row's badline (line 215 at
+  YSCROLL 7) the copy overwrites rows the VIC has not yet fetched in the
+  current frame.
+- **NTSC has less room.** 49 fewer lines between the playfield's end and the
+  next frame's first badline; the recipe's lead falls from 62 lines to 17.
+- **The frame tick.** A redraw that runs past the next frame-counter tick
+  makes a wait-for-change loop miss a frame. The `:wait=10` build ends on
+  line 249, after the tick on 224, and loses a frame on every redraw.
+
+### Variations
+
+- **Spread over the quiet frames.** Build the next screen three rows a frame
+  in a second matrix and flip `$D018` on the wrap frame: no race, no logic
+  skipped, 1 KB more RAM (`screen_double_buffer_d018`).
+- **Direction.** Content moving up steps `top` the other way and wraps
+  YSCROLL from 0 to 7; the copy order stays top row first (not built here).
+- **Metatile map.** Decode metatiles into a raw row buffer during the quiet
+  frames, then run this copy from the buffer.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA1 timer B around the redraw, 31 redraws
+per run, screen on: 14,666 to 14,673 cycles on PAL and up to 14,889 on
+NTSC, including the line-250 interrupt that lands inside, the badline stalls
+and 378 cycles of harness reads. The inner loop is 14 cycles a byte, 559 a
+row, plus a cycle per page-crossing load (arithmetic). The recipe's band
+split costs 852 cycles on PAL (`invalid_mode_band`), so the redraw frame has
+about 4,100 cycles left on PAL and 1,300 on NTSC.
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 (PAL C64C) on the maintainer's copy (rung 1).
+The playfield is 21 rows on one screen with no second matrix. Every eighth
+frame while scrolling, the game redraws all 21 rows, 840 bytes, from a raw
+map: screen codes, 40 bytes a row, row 0 at the top, no tiles or
+compression, 7,480 to 7,960 bytes per area, three areas resident. The copy
+is a self-modified absolute-indexed load and store, top row first. It starts
+on line 244, after the main loop wakes on the frame counter at about line
+217, and returns on line 181 of the next frame: 15,714 cycles with
+interrupts. Row 20 is written on line 182 and fetched on 208, so the copy
+leads the beam by at least 26 lines. That frame runs no game logic except
+object motion, and the frame still had at least 859 cycles spare in 77
+measured redraw frames. Colour RAM is filled once per area with one
+multicolour value and never scrolled.
+
+### Recipes
+
+- `recipes/kickassembler/row-map-redraw.md`: a 21-row playfield scrolling down one pixel a frame over a band and a panel, redrawn from a 60-row raw map on every wrap, with the redraw's lines, cycles and lead printed and a torn `:wait=10` build.
+
+---
+
 ## scroll_panel_split — Vertically scrolled playfield over a fixed score panel
 
 **Complexity:** medium

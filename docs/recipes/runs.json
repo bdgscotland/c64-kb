@@ -2758,5 +2758,50 @@
     "shots": {
       "pal": "screenshots/invalid-mode-band-noband.png"
     }
+  },
+  "kickassembler/row-map-redraw": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/row-map-redraw.png",
+      "ntsc": "screenshots/row-map-redraw-ntsc.png"
+    }
+  },
+  "kickassembler/row-map-redraw@midpal": {
+    "cycles": 8045360,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/row-map-redraw-mid.png"
+    }
+  },
+  "kickassembler/row-map-redraw@midntsc": {
+    "cycles": 8023828,
+    "models": [
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "ntsc": "screenshots/row-map-redraw-mid-ntsc.png"
+    }
+  },
+  "kickassembler/row-map-redraw@torn": {
+    "cycles": 8137592,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "build": [
+      ":wait=10"
+    ],
+    "shots": {
+      "pal": "screenshots/row-map-redraw-torn.png"
+    }
   }
 }
