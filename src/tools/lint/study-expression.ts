@@ -318,10 +318,13 @@ function checkDollarHexRuns(ctx: StudyCtx): void {
 function checkBareHexRuns(ctx: StudyCtx): void {
   for (const run of findBareHexRuns(ctx.text)) {
     const lineNo = lineNoOf(ctx.text, run.startIndex);
-    if (ctx.skip.has(lineNo) || !hasHexLetter(run.tokens)) continue;
+    if (ctx.skip.has(lineNo)) continue;
     const len = run.tokens.length;
     const bytes = run.tokens.map((t) => parseInt(t, 16));
-    if (len >= 16) {
+    // The hex-letter requirement guards the unconditional 16+ check against
+    // prose decimal numbers. Image-match is specific enough on its own and
+    // applies to any 8+ bare run found verbatim in the game binary.
+    if (len >= 16 && hasHexLetter(run.tokens)) {
       ctx.findings.push(
         hexRunFinding({
           text: ctx.text,

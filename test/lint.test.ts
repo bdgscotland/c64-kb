@@ -725,6 +725,20 @@ describe("lintStudyExpression — bare hex image-match (synthetic image)", () =>
     expect(lintStudyExpression(page)).toEqual([]);
     expect(lintStudyExpression(page, null)).toEqual([]);
   });
+
+  it("flags a digit-only bare run of 8 bytes found in the image (no hex letters needed for image-match)", () => {
+    // 00 01 02 03 04 05 06 07 — pure decimal digits, no a-f letters, but present in SYNTH_IMAGE
+    const page = STUDIED_HEADER + "Bytes: 00 01 02 03 04 05 06 07\n";
+    const findings = lintStudyExpression(page, SYNTH_IMAGE);
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.message).toContain("game binary");
+  });
+
+  it("is quiet on a digit-only 8-byte run without an image (no hex letter, below 16)", () => {
+    // Without an image the run is below 16 and has no hex letters, so no finding.
+    const page = STUDIED_HEADER + "Bytes: 00 01 02 03 04 05 06 07\n";
+    expect(lintStudyExpression(page)).toEqual([]);
+  });
 });
 describe("lintStudyExpression — PAGE reference exists", () => {
   it("points at a page that exists in the repo", () => {
