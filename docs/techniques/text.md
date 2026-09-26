@@ -162,7 +162,7 @@ before this measurement.
 **Complexity:** low
 **Cost:** cycles_per_frame=1361
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-print-number (one call, worst decimal case)
+**Cost measured on:** oscar64-print-number (one call, five digits of a 16-bit value by subtract-powers, its worst case 59999; a BCD score or an 8-bit counter costs far less, see Cycle budget)
 
 **Why.** A HUD shows a score, a timer, lives, a coordinate, and it shows
 them every frame or every time they change. The KERNAL's number printing
@@ -182,26 +182,45 @@ Double-dabble (shift and add-three) is the textbook alternative and is
 more than twice as slow here, because the 6502 shifts and adjusts one
 byte at a time.
 
-**Variations.** BCD counters kept in decimal mode (`SED`) give one digit
-per nibble and print with a shift and a mask, at the price of the decimal
-flag inside an interrupt (`decimal_mode_in_irq_handler`). Hex output for a
+**Variations.** BCD counters give one digit per nibble and print with a
+shift and a mask. Added in decimal mode (`SED`), they cost the decimal
+flag inside an interrupt (`decimal_mode_in_irq_handler`); added a nibble
+at a time with a carry in C, they do not. A value below 256 goes through
+an 8-bit subtract-powers (100, then 10). Hex output for a
 debugging display is a table lookup per nibble. A changed-field redraw
 compares the new value with the last one drawn.
 
 **Cycle budget.** Measured on the recipe with CIA1 timer A around the
 call body, less the 17 cycles of an empty call: 957 cycles for 65,535 and
 1,361 for 59,999 by subtraction of powers of ten (the count of
-subtractions is what varies), 2,537 by double-dabble for 65,535, 74 for
-an 8-bit hex value. The Cost line carries the worst measured decimal
-case; the page does not measure the code size (an earlier Cost line
-said `bytes_code=0`, which a budget summed as zero bytes). The same five digits by
+subtractions is what varies), 2,558 by double-dabble for 65,535 (2,537
+before the recipe grew; code placement moves it by a few cycles), 74 for
+an 8-bit hex value. The same recipe measures the cheaper forms: three
+digits of a byte by subtracting 100 and 10 in 8 bits, 161 cycles at
+worst (199); six digits of a score held as three BCD bytes, 205 for any
+value; and, for contrast, six digits of an `unsigned long` by `% 10` and
+`/ 10`, 7,866 (one 32-bit divide a digit). A HUD with a six-digit score
+and two small counters costs about 205 + 2 × 161 = 527 cycles redrawn
+whole by the cheap routes (arithmetic). The 161 and 205 include 10 and
+20 cycles of pointer setup that the recipe's empty call does not have
+(its `.asm`, rung 1). The run-and-gun starter measured
+the long route inside a game: its panel update on a death frame (a BCD
+score add, six BCD digits and one byte digit printed) took 836 cycles,
+and 2,095 while the lives and grenade digits went through an
+`unsigned long` `% 10` print (`templates/run-and-gun/PLAN.md`, "Front
+end", CIA1 timer B, VICE x64sc 3.10). The Cost line carries the worst
+measured 16-bit decimal case, not the BCD or 8-bit route (an earlier
+version of this page gave only the 16-bit figures, so a budget charged
+1,361 for a BCD score). The page does not measure the code size (an
+earlier Cost line said `bytes_code=0`, which a budget summed as zero
+bytes). The same five digits by
 four shift-and-subtract divisions by ten cost 2,793 cycles for 65,535
 in `recipes/oscar64/divide-check.md`, three times the subtract-powers
 route (`division_8_16bit` in `techniques/maths.md` has the comparison).
 
 ### Recipes
 
-- `recipes/oscar64/print-number.md` — both decimal routes and the hex route, checked over every 16-bit value against Python, with the cycle harness on screen
+- `recipes/oscar64/print-number.md` — both 16-bit decimal routes over every 16-bit value, the 8-bit decimal and hex routes over every byte, a six-digit BCD route and a 32-bit `% 10` route over 10,000 values, all checked against Python, with the cycle harness on screen
 
 ## high_score_table_insert — A new score into a sorted table: rank, shift down, drop the last, write
 
