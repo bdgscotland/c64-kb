@@ -24,15 +24,16 @@
  * clock range and a 64K bit-per-address map (8 KB), never every hit. Groups
  * are formed in finish().
  */
-import type { Hit } from "./monlog.ts";
-import type { IrqChain } from "./irq-chain.ts";
+import { CpuPort } from "../claims/units.ts";
+import { storedValue, type Hit } from "./monlog.ts";
+import type { IrqChain, Obs } from "./irq-chain.ts";
 
 interface Range {
   start: number;
   end: number;
 }
 
-export interface Writer {
+export interface Writer extends Obs {
   pc_range: Range;
   dest_ranges: Range[];
   stores: number;
@@ -40,11 +41,13 @@ export interface Writer {
   last_clock: number;
   /** True when pc_range overlaps $0100-$01FF: the writer's own code runs from the stack page. */
   in_stack_page: boolean;
-  /** Parts of dest_ranges in $D000-$DFFF written while $01 banked I/O out: they reached RAM, not the chips. */
-  ram_under_io: Range[];
+  /** Parts of dest_ranges in $D000-$DFFF written while $01 banked I/O out: they reached RAM, not the chips. Null when a store there was made with $01 unknown. */
+  ram_under_io: Range[] | null;
+  /** 1, 2, ... for writers whose code runs from the stack page, in clock order (depack stages); null for any other writer. */
+  stage: number | null;
 }
 
-export interface Stub {
+export interface Stub extends Obs {
   addr: number;
   sys: number;
   text: string;
@@ -63,6 +66,8 @@ const MAX_AGGREGATES = 4096;
 /** Code stamps that are not clocks. */
 const NEVER_WRITTEN = -1;
 const IN_ROM = -2;
+/** A PC in a ROM window while $01 is not known: ROM or RAM cannot be told. */
+const UNRESOLVED = -3;
 
 function touch(touched: Uint8Array, addr: number): void {
   const i = addr >> 3;
@@ -91,36 +96,43 @@ function rangesOf(touched: Uint8Array, from = 0, to = ADDR_SPACE - 1): Range[] {
 
 const overlapsStackPage = (r: Range): boolean => r.start <= STACK_PAGE.end && r.end >= STACK_PAGE.start;
 
-/** The CPU port's low three bits (LORAM, HIRAM, CHAREN) after reset: BASIC, KERNAL and I/O in. */
-const PORT_AFTER_RESET = 0x37;
+/**
+ * $00 and $01 followed through store hits, from power-on values (the trace
+ * starts at clock 0). STA/STX/STY/SAX give the byte, INC and DEC change the
+ * known one; anything else (LSR, ROL, ...) leaves it unknown until the next
+ * store that gives a byte. A read-modify-write can log twice at one clock;
+ * it counts once.
+ */
+class PortFollower {
+  readonly cpu = new CpuPort();
+  private lastRmw = "";
 
-const ioVisible = (port: number): boolean => (port & 4) !== 0 && (port & 3) !== 0;
+  apply(h: Hit): void {
+    if (h.kind !== "store" || h.addr > 0x0001) return;
+    const known = storedValue(h);
+    if (known !== null) {
+      this.cpu.store(h.addr, known);
+      return;
+    }
+    const id = `${h.pc}:${h.clock}:${h.addr}`;
+    if (id === this.lastRmw) return;
+    this.lastRmw = id;
+    const before = h.addr === 0 ? this.cpu.ddr : this.cpu.port;
+    const step = h.mnemonic === "INC" ? 1 : h.mnemonic === "DEC" ? -1 : null;
+    this.cpu.store(h.addr, before === null || step === null ? null : (before + step) & 0xff);
+  }
 
-/** Is pc mapped to ROM under this $01? BASIC needs LORAM and HIRAM; the KERNAL needs HIRAM. */
-function romAt(pc: number, port: number): boolean {
-  if (pc >= 0xa000 && pc <= 0xbfff) return (port & 3) === 3;
-  if (pc >= 0xe000) return (port & 2) !== 0;
-  return false;
+  get bits(): number | null {
+    return this.cpu.bits;
+  }
 }
 
-/** $01 after a store hit to it, or null when the instruction does not say (ROL, LSR and the like). */
-function portAfter(h: Hit, port: number): number | null {
-  switch (h.mnemonic) {
-    case "STA":
-      return h.a;
-    case "STX":
-      return h.x;
-    case "STY":
-      return h.y;
-    case "SAX":
-      return h.a & h.x;
-    case "INC":
-      return (port + 1) & 0xff;
-    case "DEC":
-      return (port - 1) & 0xff;
-    default:
-      return null;
-  }
+/** Is pc mapped to ROM under these banking bits? Null when the bits are unknown and pc is in a ROM window. */
+function romAt(pc: number, bits: number | null): boolean | null {
+  const window = (pc >= 0xa000 && pc <= 0xbfff) || pc >= 0xe000;
+  if (!window) return false;
+  if (bits === null) return null;
+  return pc >= 0xe000 ? (bits & 2) !== 0 : (bits & 3) === 3;
 }
 
 interface PcAgg {
@@ -131,6 +143,8 @@ interface PcAgg {
   last: number;
   touched: Uint8Array;
   ramUnderIo: Uint8Array | null;
+  /** A store to $D000-$DFFF made with $01 unknown. */
+  ioUnresolved: boolean;
 }
 
 const sameGeneration = (a: number, b: number): boolean =>
@@ -169,7 +183,9 @@ function orInto(dst: Uint8Array, src: Uint8Array | null): void {
   for (let i = 0; i < src.length; i++) dst[i] = (dst[i] ?? 0) | (src[i] ?? 0);
 }
 
-function writerOf(g: PcAgg[]): Writer {
+type Unnumbered = Omit<Writer, "id" | "basis" | "rung" | "stage">;
+
+function writerOf(g: PcAgg[]): Unnumbered {
   const touched = new Uint8Array(BITMAP_BYTES);
   const underIo = new Uint8Array(BITMAP_BYTES);
   let stores = 0;
@@ -191,8 +207,20 @@ function writerOf(g: PcAgg[]): Writer {
     first_clock: first,
     last_clock: last,
     in_stack_page: overlapsStackPage(pc_range),
-    ram_under_io: rangesOf(underIo, 0xd000, 0xdfff),
+    ram_under_io: g.some((a) => a.ioUnresolved) ? null : rangesOf(underIo, 0xd000, 0xdfff),
   };
+}
+
+/** Ids in clock order, and stage numbers for the stack-page writers. */
+function numbered(ws: Unnumbered[]): Writer[] {
+  let stage = 0;
+  return ws.map((w, i) => ({
+    id: `w${i}`,
+    basis: "measured-vice",
+    rung: 1,
+    ...w,
+    stage: w.in_stack_page ? ++stage : null,
+  }));
 }
 
 /**
@@ -205,9 +233,10 @@ export class WriterAggregator {
   private readonly byKey = new Map<string, PcAgg>();
   private readonly capHits: number | undefined;
   private readonly lastStore = new Float64Array(ADDR_SPACE).fill(NEVER_WRITTEN);
-  private port: number | null = PORT_AFTER_RESET;
-  private portLost = false;
-  private lastPortHit = "";
+  private readonly port = new PortFollower();
+  private unresolvedHits = 0;
+  /** Did the hit being added need $01 while it was unknown? */
+  private hitUnresolved = false;
   private hitsSeen = 0;
   private cappedAt: number | null = null;
 
@@ -233,44 +262,47 @@ export class WriterAggregator {
     agg.last = Math.max(agg.last, h.clock);
     touch(agg.touched, h.addr);
     this.effect(h, agg);
+    if (this.hitUnresolved) this.unresolvedHits++;
     return true;
   }
 
   /** The aggregate for this hit's (PC, code stamp); null when a new one would pass MAX_AGGREGATES. */
   private aggFor(h: Hit): PcAgg | null {
-    const port = this.port ?? PORT_AFTER_RESET;
-    const stamp = romAt(h.pc, port) ? IN_ROM : (this.lastStore[h.pc] ?? NEVER_WRITTEN);
+    const rom = romAt(h.pc, this.port.bits);
+    this.hitUnresolved = rom === null;
+    const stamp = rom === null ? UNRESOLVED : rom ? IN_ROM : (this.lastStore[h.pc] ?? NEVER_WRITTEN);
     const key = `${h.pc}:${stamp}`;
-    let agg = this.byKey.get(key);
-    if (!agg) {
-      if (this.byKey.size >= MAX_AGGREGATES) return null;
-      agg = {
-        pc: h.pc,
-        stamp,
-        count: 0,
-        first: h.clock,
-        last: h.clock,
-        touched: new Uint8Array(BITMAP_BYTES),
-        ramUnderIo: null,
-      };
-      this.byKey.set(key, agg);
-    }
+    const found = this.byKey.get(key);
+    if (found) return found;
+    if (this.byKey.size >= MAX_AGGREGATES) return null;
+    const agg: PcAgg = {
+      pc: h.pc,
+      stamp,
+      count: 0,
+      first: h.clock,
+      last: h.clock,
+      touched: new Uint8Array(BITMAP_BYTES),
+      ramUnderIo: null,
+      ioUnresolved: false,
+    };
+    this.byKey.set(key, agg);
     return agg;
   }
 
-  /** What the store did to memory: $01, the RAM under I/O, or a RAM byte's code stamp. */
+  /** What the store did to memory: $00/$01, the RAM under I/O, or a RAM byte's code stamp. */
   private effect(h: Hit, agg: PcAgg): void {
-    if (h.addr === 0x0001) {
-      // A read-modify-write can log twice at one clock; count it once.
-      const id = `${h.pc}:${h.clock}`;
-      if (id === this.lastPortHit) return;
-      this.lastPortHit = id;
-      this.port = this.port === null ? null : portAfter(h, this.port);
-      if (this.port === null) this.portLost = true;
+    if (h.addr <= 0x0001) {
+      this.port.apply(h);
       return;
     }
     if (h.addr >= 0xd000 && h.addr <= 0xdfff) {
-      if (this.port === null || ioVisible(this.port)) return;
+      const bits = this.port.bits;
+      if (bits === null) {
+        agg.ioUnresolved = true;
+        this.hitUnresolved = true;
+        return;
+      }
+      if ((bits & 4) !== 0 && (bits & 3) !== 0) return; // I/O: the chips, not RAM
       agg.ramUnderIo ??= new Uint8Array(BITMAP_BYTES);
       touch(agg.ramUnderIo, h.addr);
     }
@@ -286,16 +318,18 @@ export class WriterAggregator {
     return this.hitsSeen;
   }
 
-  /** True once a store to $01 did not say its value: ROM and I/O mapping after it is not known. */
-  get portUnknown(): boolean {
-    return this.portLost;
+  /** Store hits whose code generation (a PC in a ROM window) or target ($D000-$DFFF) needed $01 while it was unknown. */
+  get unresolved(): number {
+    return this.unresolvedHits;
   }
 
   /** Writers in order of their first store. */
   finish(): Writer[] {
-    return clusters([...this.byKey.values()])
-      .map(writerOf)
-      .sort((a, b) => a.first_clock - b.first_clock || a.pc_range.start - b.pc_range.start);
+    return numbered(
+      clusters([...this.byKey.values()])
+        .map(writerOf)
+        .sort((a, b) => a.first_clock - b.first_clock || a.pc_range.start - b.pc_range.start),
+    );
   }
 }
 
@@ -357,7 +391,9 @@ function basicLines(
  * addr is the line's own start: Commando's "SYS 2217 COMPUTERBRAINS" is at
  * $0801, line 2049.
  */
-function linkedStubs(bytes: Uint8Array, load: number): { stubs: Stub[]; covered: Range[] } {
+type BareStub = Omit<Stub, "id" | "basis" | "rung">;
+
+function linkedStubs(bytes: Uint8Array, load: number): { stubs: BareStub[]; covered: Range[] } {
   if (load !== 0x0801) return { stubs: [], covered: [] };
   const lines = basicLines(bytes, load);
   const stubs = lines.flatMap((l) => {
@@ -385,7 +421,7 @@ function headerBefore(bytes: Uint8Array, sysOff: number, matchLen: number): numb
 }
 
 /** Every $9E+digits+text anywhere in the image, outside the ranges a linked BASIC line's tokens already cover: a second stub buried in packed data (Commando's inner "SYS 2066 C.C.S."). */
-function scannedStubs(bytes: Uint8Array, load: number, covered: Range[]): Stub[] {
+function scannedStubs(bytes: Uint8Array, load: number, covered: Range[]): BareStub[] {
   const text = Buffer.from(bytes).toString("latin1");
   return [...text.matchAll(STUB_SCAN)]
     .filter((m) => !inAny(covered, m.index))
@@ -403,22 +439,43 @@ function scannedStubs(bytes: Uint8Array, load: number, covered: Range[]): Stub[]
 /** The program's own BASIC-line stub(s) first, then any other $9E+digits+text found in the image, sorted by address. */
 export function findStubs(bytes: Uint8Array, load: number): Stub[] {
   const linked = linkedStubs(bytes, load);
-  return [...linked.stubs, ...scannedStubs(bytes, load, linked.covered)].sort((a, b) => a.addr - b.addr);
+  return [...linked.stubs, ...scannedStubs(bytes, load, linked.covered)]
+    .sort((a, b) => a.addr - b.addr)
+    .map((st, i) => ({ ...st, id: `s${i}`, basis: "measured-vice", rung: 1 }));
 }
 
 // --- first program dispatch: reuses irq-chain's own entries, not re-derived --
 
-/** KERNAL ROM starts here: a handler still there is still the KERNAL's own default, not one the program installed. */
-const KERNAL_ROM = 0xe000;
-
 /**
- * The clock of the first entry into a handler the program itself installed
- * (a RAM address, below KERNAL ROM), from entries irq-chain's own
- * analyseIrqChain found (run from power-on, not re-derived here). The
- * KERNAL's default IRQ handler ($EA31, ROM) fires from soon after reset
- * until the program overrides it or masks interrupts, so the first entry
- * overall is almost never the program's own; the first one below $E000 is.
+ * The clock of the first entry into a handler the program itself installed,
+ * from entries irq-chain's own analyseIrqChain found (run from power-on).
+ * ROM or RAM is decided by the banking at the entry: portHits are the
+ * same pass's stores to $00/$01, applied up to and including the entry's
+ * clock. The KERNAL's default handler ($EA31) fires from soon after reset,
+ * so the first entry overall is almost never the program's. A handler in a
+ * ROM window with $01 unknown is skipped and named in unknowns. An earlier
+ * version took every handler at $E000 or above as KERNAL ROM, so a handler
+ * in the RAM under the KERNAL was never found.
  */
-export function firstProgramDispatch(entries: IrqChain["entries"]): number | null {
-  return entries.find((e) => e.handler < KERNAL_ROM)?.clock ?? null;
+export function firstProgramDispatch(
+  entries: IrqChain["entries"],
+  portHits: Iterable<Hit> = [],
+): { clock: number | null; unknowns: string[] } {
+  const stores = [...portHits].filter((h) => h.kind === "store" && h.addr <= 0x0001);
+  const port = new PortFollower();
+  const unknowns: string[] = [];
+  const named = new Set<number>();
+  let next = 0;
+  for (const e of entries) {
+    for (let h = stores[next]; h && h.clock <= e.clock; h = stores[++next]) port.apply(h);
+    const rom = romAt(e.handler, port.bits);
+    if (rom === false) return { clock: e.clock, unknowns };
+    if (rom === null && !named.has(e.handler)) {
+      named.add(e.handler);
+      unknowns.push(
+        `$01 not known at the entry to $${e.handler.toString(16).toUpperCase().padStart(4, "0")} at clock ${e.clock}: ROM or RAM handler unknown`,
+      );
+    }
+  }
+  return { clock: null, unknowns };
 }

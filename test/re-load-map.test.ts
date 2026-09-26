@@ -46,6 +46,10 @@ describe("groupWriters: PC clustering", () => {
         last_clock: 120,
         in_stack_page: false,
         ram_under_io: [],
+        stage: null,
+        id: "w0",
+        basis: "measured-vice",
+        rung: 1,
       },
     ]);
   });
@@ -103,6 +107,10 @@ describe("groupWriters: PC clustering", () => {
         last_clock: 20,
         in_stack_page: false,
         ram_under_io: [],
+        stage: null,
+        id: "w0",
+        basis: "measured-vice",
+        rung: 1,
       },
     ]);
   });
@@ -145,7 +153,9 @@ function basicPrg(load: number, lineNum: number, sys: number, text: string): Uin
 describe("findStubs", () => {
   it("finds a BASIC line's SYS stub by walking its link bytes", () => {
     const bytes = basicPrg(0x0801, 10, 2217, "COMPUTERBRAINS");
-    expect(findStubs(bytes, 0x0801)).toEqual([{ addr: 0x0801, sys: 2217, text: "COMPUTERBRAINS", line: 10 }]);
+    expect(findStubs(bytes, 0x0801)).toMatchObject([
+      { addr: 0x0801, sys: 2217, text: "COMPUTERBRAINS", line: 10 },
+    ]);
   });
 
   it("finds a second stub embedded elsewhere in the image, not on a linked BASIC line", () => {
@@ -155,14 +165,14 @@ describe("findStubs", () => {
     const bytes = new Uint8Array([...first, ...junk]);
     const stubs = findStubs(bytes, 0x0801);
     expect(stubs).toHaveLength(2);
-    expect(stubs[0]).toEqual({ addr: 0x0801, sys: 2217, text: "COMPUTERBRAINS", line: 10 });
+    expect(stubs[0]).toMatchObject({ addr: 0x0801, sys: 2217, text: "COMPUTERBRAINS", line: 10 });
     expect(stubs[1]).toMatchObject({ sys: 2066, text: "C.C.S." });
   });
 
   it("does not walk BASIC lines for a PRG that does not load at $0801, but still scans raw bytes", () => {
     const bytes = new Uint8Array([0x00, 0x90, ...Buffer.from("\x9e 4096 HELLO\x00", "latin1")]);
     const stubs = findStubs(bytes, 0x9000);
-    expect(stubs).toEqual([{ addr: 0x9000, sys: 4096, text: "HELLO", line: null }]);
+    expect(stubs).toMatchObject([{ addr: 0x9000, sys: 4096, text: "HELLO", line: null }]);
   });
 
   it("reports each stub's BASIC line number: the linked line's, or a scanned line's whose link says it runs at $0801", () => {
@@ -266,6 +276,66 @@ describe("groupWriters: code generations and the CPU port", () => {
   });
 });
 
+describe("groupWriters: banking that cannot be followed", () => {
+  it("a later STA to $01 with a known value restores the banking after an LSR $01", () => {
+    const hits = [
+      stm(0x4000, 0x0001, 100, { mnemonic: "LSR" }),
+      stm(0x4000, 0x0001, 200, { mnemonic: "STA", a: 0x38 }),
+      stm(0x0820, 0xd400, 300, { mnemonic: "STA" }),
+    ];
+    const agg = new WriterAggregator();
+    for (const h of hits) agg.add(h);
+    const w = agg.finish().find((x) => x.pc_range.start === 0x0820);
+    expect(w?.ram_under_io).toEqual([{ start: 0xd400, end: 0xd400 }]);
+    expect(agg.unresolved).toBe(0);
+  });
+
+  it("with $01 unknown, a store to $D000-$DFFF is unresolved: ram_under_io is null and the count says so", () => {
+    const agg = new WriterAggregator();
+    agg.add(stm(0x4000, 0x0001, 100, { mnemonic: "LSR" }));
+    agg.add(stm(0x0820, 0xd400, 200, { mnemonic: "STA" }));
+    const w = agg.finish().find((x) => x.pc_range.start === 0x0820);
+    expect(w?.ram_under_io).toBeNull();
+    expect(agg.unresolved).toBe(1);
+  });
+
+  it("with $01 unknown, code in a ROM window is its own generation, not the RAM's", () => {
+    const hits = [
+      st(0x0900, 0xa35a, 1_000), // RAM under BASIC written
+      st(0xa35a, 0x0010, 2_000), // BASIC ROM ($01 = $37)
+      stm(0x0910, 0x0001, 3_000, { mnemonic: "ROL" }), // $01 unknown from here
+      st(0xa35a, 0x0011, 4_000),
+    ];
+    const agg = new WriterAggregator();
+    for (const h of hits) agg.add(h);
+    const at = agg.finish().filter((w) => w.pc_range.start === 0xa35a);
+    expect(at.map((w) => w.first_clock)).toEqual([2_000, 4_000]);
+    expect(agg.unresolved).toBe(1);
+  });
+});
+
+describe("observations and stages", () => {
+  it("every writer carries id, basis and rung; stack-page writers are numbered as stages in clock order", () => {
+    const { writers } = groupWriters([
+      st(0x0820, 0x0105, 10), // installer
+      st(0x0105, 0x0801, 1_000_000), // stage 1
+      st(0x0a30, 0x0105, 2_000_000), // second installer
+      st(0x0105, 0xffff, 3_000_000), // stage 2
+    ]);
+    expect(writers.map((w) => [w.id, w.basis, w.rung, w.stage])).toEqual([
+      ["w0", "measured-vice", 1, null],
+      ["w1", "measured-vice", 1, 1],
+      ["w2", "measured-vice", 1, null],
+      ["w3", "measured-vice", 1, 2],
+    ]);
+  });
+
+  it("every stub carries id, basis and rung", () => {
+    const stubs = findStubs(basicPrg(0x0801, 10, 2217, "X"), 0x0801);
+    expect(stubs[0]).toMatchObject({ id: "s0", basis: "measured-vice", rung: 1 });
+  });
+});
+
 const irqHit = {
   id: "e0",
   basis: "measured-vice" as const,
@@ -282,15 +352,34 @@ describe("firstProgramDispatch", () => {
       { ...irqHit, id: "e1", handler: 0xea31, clock: 40_000, frame: 1 },
       { ...irqHit, id: "e2", handler: 0x4134, clock: 15_243_156, frame: 700 },
     ];
-    expect(firstProgramDispatch(entries)).toBe(15_243_156);
+    expect(firstProgramDispatch(entries).clock).toBe(15_243_156);
+  });
+
+  it("finds a handler at $E100 when the KERNAL is banked out at the dispatch", () => {
+    const entries = [
+      { ...irqHit, handler: 0xea31, clock: 100, frame: 0 },
+      { ...irqHit, handler: 0xe100, clock: 5_000, frame: 1 },
+    ];
+    const port = [stm(0x0900, 0x0001, 4_000, { mnemonic: "STA", a: 0x35 })];
+    expect(firstProgramDispatch(entries, port)).toEqual({ clock: 5_000, unknowns: [] });
+  });
+
+  it("a handler above $E000 with $01 unknown at the dispatch is not counted, and says so", () => {
+    const entries = [{ ...irqHit, handler: 0xe100, clock: 5_000, frame: 1 }];
+    const port = [stm(0x0900, 0x0001, 4_000, { mnemonic: "LSR" })];
+    const r = firstProgramDispatch(entries, port);
+    expect(r.clock).toBeNull();
+    expect(r.unknowns).toEqual([
+      "$01 not known at the entry to $E100 at clock 5000: ROM or RAM handler unknown",
+    ]);
   });
 
   it("is null when every entry is still in KERNAL ROM", () => {
-    expect(firstProgramDispatch([{ ...irqHit, handler: 0xea31, clock: 100, frame: 0 }])).toBeNull();
+    expect(firstProgramDispatch([{ ...irqHit, handler: 0xea31, clock: 100, frame: 0 }]).clock).toBeNull();
   });
 
   it("is null with no entries at all", () => {
-    expect(firstProgramDispatch([])).toBeNull();
+    expect(firstProgramDispatch([]).clock).toBeNull();
   });
 });
 
@@ -335,6 +424,9 @@ describe.skipIf(!canRun)(
       expect(stackWriter?.pc_range.end).toBeLessThanOrEqual(0x01ff);
       expect(stackWriter?.dest_ranges).toContainEqual({ start: 0x8000, end: 0x80ff });
       expect(stackWriter?.stores).toBeGreaterThanOrEqual(256);
+      expect(stackWriter?.stage).toBe(1);
+      // The first PC run after the stage's last store: the JMP ($8000) target.
+      expect(r.result.entry_pc).toBe(0x8000);
 
       // The installer (not in the stack page) that copied the reloc loop's own
       // bytes into $0100.
@@ -355,9 +447,9 @@ describe.skipIf(!canRun)(
       // null, named in unknowns, and the writers cover the whole 4,000,000
       // cycle run (no smaller cap was derived).
       expect(r.result.first_program_dispatch_clock).toBeNull();
-      expect(r.result.unknowns.some((u) => u.includes("no interrupt entered a handler below $E000"))).toBe(
-        true,
-      );
+      expect(
+        r.result.unknowns.some((u) => u.includes("no interrupt entered a handler the program installed")),
+      ).toBe(true);
     }, 180_000);
   },
 );
@@ -384,7 +476,7 @@ describe.skipIf(!hasCommando)(
 
       // Stubs: the outer one and the inner one stage 1 unpacks to $0801; their
       // line numbers (2049 = $0801, 65535 = $FFFF) are each stage's output pointer.
-      expect(stubs).toContainEqual({ addr: 0x0801, sys: 2217, text: "COMPUTERBRAINS", line: 2049 });
+      expect(stubs[0]).toMatchObject({ addr: 0x0801, sys: 2217, text: "COMPUTERBRAINS", line: 2049 });
       expect(stubs.find((s) => s.sys === 2066)).toMatchObject({ text: "C.C.S.", line: 0xffff });
 
       // Two stack-page writers at the same PCs, split by the code copied over the first.
@@ -399,7 +491,7 @@ describe.skipIf(!hasCommando)(
       expect(two?.dest_ranges.some((d) => d.start <= 0xdfff && d.end >= 0xd000)).toBe(false);
 
       // The 4 KB raw copy to $D000-$DFFF went to RAM under I/O ($01 = $38).
-      expect(writers.some((w) => w.ram_under_io.some((d) => d.start === 0xd000 && d.end === 0xdfff))).toBe(
+      expect(writers.some((w) => w.ram_under_io?.some((d) => d.start === 0xd000 && d.end === 0xdfff))).toBe(
         true,
       );
 
@@ -409,6 +501,8 @@ describe.skipIf(!hasCommando)(
       expect(init?.first_clock).toBeGreaterThan(15_190_000);
       expect(has(init, 0x0314, 0x0315)).toBe(true); // $4125/$412A install $4134
 
+      expect([one?.stage, two?.stage]).toEqual([1, 2]);
+      expect(r.result.entry_pc).toBe(0x0850);
       expect(r.result.first_program_dispatch_clock).toBe(15_243_156);
     }, 300_000);
   },

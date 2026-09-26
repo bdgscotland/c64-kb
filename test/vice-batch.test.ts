@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -38,6 +38,43 @@ describe("runBatch refusals", () => {
   it("refuses a disk that is missing or not a .d64", async () => {
     expect(await reasonOf(runBatch({ ...run, disk: "/nonexistent.d64" }))).toBe("disk");
     expect(await reasonOf(runBatch({ ...run, disk: prg }))).toBe("disk");
+  });
+});
+
+/** A stand-in x64sc: a shell script that writes to its -monlogname file, forever or once. */
+function fakeX64sc(forever: boolean): () => { path: string; kind: "env"; windowed: boolean } {
+  const dir = mkdtempSync(join(tmpdir(), "fake-x64sc-"));
+  const bin = join(dir, "x64sc");
+  const write = forever
+    ? 'while :; do echo "#1 (Trace store 0400)  0/$000,  0/$00" >> "$log"; done'
+    : 'echo "#1 (Trace store 0400)  0/$000,  0/$00" > "$log"; exit 1';
+  writeFileSync(
+    bin,
+    `#!/bin/sh\nwhile [ $# -gt 0 ]; do [ "$1" = "-monlogname" ] && log="$2"; shift; done\n${write}\n`,
+    { mode: 0o755 },
+  );
+  return () => ({ path: bin, kind: "env", windowed: false });
+}
+
+describe("runBatch log cap", () => {
+  const prg = join(mkdtempSync(join(tmpdir(), "vice-batch-cap-")), "p.prg");
+  writeFileSync(prg, Buffer.from([0x01, 0x08, 0x00, 0x00]));
+  const run = { prg, monCommands: "", cycles: 1000, model: "pal" as const };
+
+  it("stops the emulator once the log passes maxLogBytes and says the log was truncated", async () => {
+    const r = await runBatch({ ...run, maxLogBytes: 200_000 }, fakeX64sc(true));
+    try {
+      expect(r.truncated).toBe(true);
+      expect(statSync(r.log).size).toBeGreaterThanOrEqual(200_000);
+    } finally {
+      r.dispose();
+    }
+  }, 30_000);
+
+  it("a run that ends by itself under the cap is not truncated", async () => {
+    const r = await runBatch({ ...run, maxLogBytes: 200_000 }, fakeX64sc(false));
+    expect(r.truncated).toBe(false);
+    r.dispose();
   });
 });
 

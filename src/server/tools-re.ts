@@ -142,12 +142,13 @@ export const LoadMapOutput = {
   load: int.describe("The PRG's own load address"),
   end: int,
   stubs: z
-    .array(z.object({ addr: int, sys: int, text: z.string(), line: int.nullable() }))
+    .array(z.object({ ...obs, addr: int, sys: int, text: z.string(), line: int.nullable() }))
     .describe(
       "$9E (the SYS token) + digits + text, from the program's own linked BASIC line(s) and any other occurrence found in the image (a second stub buried in packed data). line is the BASIC line number when the header is readable (a depacker can use it as its output pointer: Commando's are 2049 = $0801 and 65535 = $FFFF)",
     ),
   writers: z.array(
     z.object({
+      ...obs,
       pc_range: z.object({ start: int, end: int }),
       dest_ranges: z.array(z.object({ start: int, end: int })),
       stores: int,
@@ -158,9 +159,22 @@ export const LoadMapOutput = {
         .describe("The writer's own code runs from $0100-$01FF: a relocator surviving the block it unpacks"),
       ram_under_io: z
         .array(z.object({ start: int, end: int }))
-        .describe("Parts of dest_ranges in $D000-$DFFF written while $01 banked I/O out: RAM, not the chips"),
+        .nullable()
+        .describe(
+          "Parts of dest_ranges in $D000-$DFFF written while $01 banked I/O out: RAM, not the chips. Null when a store there was made with $01 unknown (named in unknowns)",
+        ),
+      stage: int
+        .nullable()
+        .describe(
+          "1, 2, ... for writers whose code runs from the stack page, in clock order (depack stages); null otherwise",
+        ),
     }),
   ),
+  entry_pc: int
+    .nullable()
+    .describe(
+      "The first PC run in $0200-$9FFF or $C000-$CFFF after the last stage's last store (where the depacked program starts); null when there is no stage or none ran",
+    ),
   transient_vectors: z
     .array(z.object({ vector: vectorName, value: int, writes: int }))
     .describe(
@@ -168,7 +182,9 @@ export const LoadMapOutput = {
     ),
   first_program_dispatch_clock: int
     .nullable()
-    .describe("Clock of the first entry into a handler the program itself installed (below $E000), or null"),
+    .describe(
+      "Clock of the first entry into a handler in RAM ($00/$01 at the entry decide ROM or RAM), or null",
+    ),
   unknowns: z.array(z.string()),
 };
 
@@ -330,12 +346,16 @@ Output (structured): ram_path, ram_sha1, clock, vic {bank, screen, charset, bitm
 const stubText = (s: LoadMapResult["stubs"][number]) =>
   `${hex(s.addr)}${s.line === null ? "" : ` line ${s.line}`} SYS ${s.sys}${s.text ? ` ${s.text}` : ""}`;
 
+const underIo = (w: LoadMapResult["writers"][number]): string => {
+  if (w.ram_under_io === null) return " (RAM under I/O: unknown)";
+  if (!w.ram_under_io.length) return "";
+  return ` (RAM under I/O: ${w.ram_under_io.map((d) => `${hex(d.start)}-${hex(d.end)}`).join(", ")})`;
+};
+
 const writerText = (w: LoadMapResult["writers"][number]) =>
-  `${hex(w.pc_range.start)}-${hex(w.pc_range.end)}${w.in_stack_page ? " (stack page)" : ""}: ${w.stores} stores, clock ${w.first_clock}-${w.last_clock} -> ` +
+  `${w.id}${w.stage === null ? "" : ` stage ${w.stage}`} ${hex(w.pc_range.start)}-${hex(w.pc_range.end)}${w.in_stack_page ? " (stack page)" : ""}: ${w.stores} stores, clock ${w.first_clock}-${w.last_clock} -> ` +
   w.dest_ranges.map((d) => `${hex(d.start)}-${hex(d.end)}`).join(", ") +
-  (w.ram_under_io.length
-    ? ` (RAM under I/O: ${w.ram_under_io.map((d) => `${hex(d.start)}-${hex(d.end)}`).join(", ")})`
-    : "");
+  underIo(w);
 
 export function loadMapReply(r: ReResult<LoadMapResult>): ToolReply {
   return reply(r, (m) => {
@@ -346,7 +366,8 @@ export function loadMapReply(r: ReResult<LoadMapResult>): ToolReply {
     return (
       `load ${hex(m.load)}-${hex(m.end)}\n` +
       `stubs: ${m.stubs.map(stubText).join("; ") || "none"}\n` +
-      `${m.writers.map(writerText).join("\n")}\n${dispatch}` +
+      `${m.writers.map(writerText).join("\n")}\n` +
+      `entry ${m.entry_pc === null ? "unknown" : hex(m.entry_pc)}\n${dispatch}` +
       unknownsText(m.unknowns)
     );
   });
@@ -355,20 +376,20 @@ export function loadMapReply(r: ReResult<LoadMapResult>): ToolReply {
 export const reLoadMapTool = defineTool({
   name: "c64_re_load_map",
   title: "Load map: who wrote where, from power-on in VICE",
-  description: `Run a .prg (or a session) headless in VICE x64sc from power-on with \`trace store 0000 ffff\` and group every store by the code that made it. A writer is store instructions whose PCs are within 256 bytes and whose code was written at about the same time (within 100,000 cycles), so two depack stages run from the same stack-page addresses come out as two writers, in order. Each writer has its destination ranges, store count, first and last clock, in_stack_page (its code runs from $0100-$01FF, where a depacker survives the block it unpacks), and ram_under_io (stores to $D000-$DFFF made while $01 banked I/O out, which reached RAM). $01 is followed through the same trace (STA/STX/STY/SAX, INC, DEC to $0001). Writers are listed by first clock.
+  description: `Run a .prg (or a session) headless in VICE x64sc from power-on with \`trace store 0000 ffff\` and group every store by the code that made it. A writer is store instructions whose PCs are within 256 bytes and whose code was written at about the same time (within 100,000 cycles), so two depack stages run from the same stack-page addresses come out as two writers, in order. Each writer has an id, its destination ranges, store count, first and last clock, in_stack_page (its code runs from $0100-$01FF, where a depacker survives the block it unpacks), stage (1, 2, ... for the stack-page writers in clock order; zero-page-only depackers are not numbered), and ram_under_io (stores to $D000-$DFFF made while $01 banked I/O out, which reached RAM; null when $01 was unknown). $00/$01 are followed through the same trace (STA/STX/STY/SAX, INC, DEC; any other op makes them unknown until the next store with a value, named in unknowns). Writers are listed by first clock. entry_pc is the first PC run in $0200-$9FFF or $C000-$CFFF after the last stage's last store, from a fourth, exec-only pass.
 
 Use it before c64_re_irq_chain on a packed game: a depacker writing through $FFFA-$FFFF or $0314 is a bulk copy, not a handler install. Measured on Commando (VICE x64sc 3.10, PAL): stage 1 at $0101-$01A6 writes $0801-$B37C, stage 2 at $0104-$019E writes $FFFF down to $0800 skipping $D000-$DFFF, $A35A copies 4 KB to RAM under I/O, and the game's init at $3DD7-$4380 installs $0314 and clears $FFC0-$FFFF.
 
-Also reports the BASIC stub(s) (\`$9E\` + digits + text, from the program's linked lines plus any other occurrence in the image, with the line number when readable), transient_vectors (c64_re_irq_chain's transient list, from power-on) and first_program_dispatch_clock: the first interrupt entry into a handler below $E000, that is one the program installed rather than the KERNAL's $EA31.
+Also reports the BASIC stub(s) (\`$9E\` + digits + text, from the program's linked lines plus any other occurrence in the image, with the line number when readable), transient_vectors (c64_re_irq_chain's transient list, from power-on) and first_program_dispatch_clock: the first interrupt entry into a handler in RAM (ROM or RAM decided by $00/$01 at the entry), that is one the program installed rather than the KERNAL's $EA31.
 
-Method: two or three small passes with c64_re_irq_chain's checkpoints over the full run find the dispatch clock; the full-memory trace then runs to that clock plus one frame (the full run when none is found, named in unknowns), streamed hit by hit. A 2,000,000-hit cap is an unknowns entry if reached.
+Method: two or three small passes with c64_re_irq_chain's checkpoints over the full run find the dispatch clock; the full-memory trace then runs to that clock plus one frame (the full run when none is found, named in unknowns), streamed hit by hit. Every pass stops VICE once its monitor log passes 256 MiB (Commando's full-memory trace is 148.6 MB); a stopped pass and the 2,000,000-hit parse cap are unknowns entries.
 
 ${NEEDS}
 
 ${SESSION_INPUT}
 
 Inputs: prg_path or session, model pal|ntsc, cycles, disk_path.
-Output (structured): run {prg, model, cycles, entry, start_clock, vice, session?, image?}, load, end, stubs [{addr, sys, text, line}], writers [{pc_range, dest_ranges, stores, first_clock, last_clock, in_stack_page, ram_under_io}], transient_vectors [{vector, value, writes}], first_program_dispatch_clock, unknowns.`,
+Output (structured): run {prg, model, cycles, entry, start_clock, vice, session?, image?}, load, end, stubs [{id, basis, rung, addr, sys, text, line}], writers [{id, basis, rung, pc_range, dest_ranges, stores, first_clock, last_clock, in_stack_page, ram_under_io, stage}], entry_pc, transient_vectors [{vector, value, writes}], first_program_dispatch_clock, unknowns.`,
   inputSchema: LoadMapInput,
   outputSchema: LoadMapOutput,
   annotations: READ_ONLY,

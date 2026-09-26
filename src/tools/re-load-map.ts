@@ -50,186 +50,214 @@ export interface LoadMapResult {
   end: number;
   stubs: Stub[];
   writers: Writer[];
+  /** The first PC run in $0200-$9FFF or $C000-$CFFF after the last stage's last store; null when there is no stage or none ran. */
+  entry_pc: number | null;
   transient_vectors: IrqChain["transient"];
   first_program_dispatch_clock: number | null;
   unknowns: string[];
 }
 
-/** A hit-count safety net on the big store-0000-ffff trace, for when no dispatch clock can cap it. */
+/** A hit-count safety net on the parse of the store-0000-ffff trace. */
 const MAX_WRITER_HITS = 2_000_000;
+/**
+ * The emulator is stopped once a pass's monitor log passes this: 256 MiB.
+ * Commando's full-memory trace to its first dispatch plus a frame is
+ * 148.6 MB (measured here), so its result is inside the cap.
+ */
+const MAX_LOG_BYTES = 256 * 1024 * 1024;
+/** Where entry_pc is looked for: RAM outside the stack page and the ROM and I/O windows, so the log stays small. */
+const ENTRY_COMMANDS = "trace exec 0200 9fff\ntrace exec c000 cfff\n";
+
+interface Pass {
+  log: string;
+  truncated: boolean;
+  dispose(): void;
+  keep(h: Hit): boolean;
+}
 
 /**
  * Where load map's passes run, always from power-on (clock 0): unlike
  * IrqChainInput/FrameProfileInput's Source (src/tools/re.ts), there is no
- * entry or in-play gate here (a session's in_play may sit long after the
- * clocks load map cares about: Commando's first program dispatch is
- * ~15.2M cycles into a session whose in_play is ~35M). trace() collects a
- * small-scope pass into an array (Pass A/B, a handful of addresses);
- * bigTrace() hands back the raw log of a (commonly shorter, capped) pass
- * for the caller to stream.
+ * entry or in-play gate (Commando's first program dispatch is ~15.2M
+ * cycles into a session whose in_play is ~35M). run() hands back the raw
+ * log of one pass, stopped at MAX_LOG_BYTES, for the caller to stream.
  */
 interface LoadMapSource {
   runInfo: RunInfo;
   timing: RegionTiming;
   fullCycles: number;
   bytes: Uint8Array;
-  trace(commands: string, cycles: number): Promise<Hit[]>;
-  bigTrace(
-    commands: string,
-    cycles: number,
-  ): Promise<{ log: string; dispose(): void; keep(h: Hit): boolean }>;
+  run(commands: string, cycles: number): Promise<Pass>;
 }
 
 function prgLoadMapSource(prg: string, args: SourceArgs): LoadMapSource {
   const model: Model = args.model ?? "pal";
   const fullCycles = args.cycles ?? 8_000_000;
   const bytes = readFileSync(prg);
-  const entry = readPrg(bytes).sys ?? null;
   const disk = args.disk_path ? { disk: args.disk_path } : {};
-  const runOne = (commands: string, cycles: number) =>
-    runBatch({ prg, monCommands: commands, cycles, model, ...disk });
   return {
-    runInfo: { prg, model, cycles: fullCycles, entry, start_clock: 0, vice: resolveX64sc()?.path ?? "" },
+    runInfo: {
+      prg,
+      model,
+      cycles: fullCycles,
+      entry: readPrg(bytes).sys ?? null,
+      start_clock: 0,
+      vice: resolveX64sc()?.path ?? "",
+    },
     timing: REGION_TIMING[videoRegion(model)],
     fullCycles,
     bytes,
-    trace: async (commands, cycles) => {
-      const r = await runOne(commands, cycles);
-      try {
-        return await collect(r.log);
-      } finally {
-        r.dispose();
-      }
-    },
-    bigTrace: async (commands, cycles) => {
-      const r = await runOne(commands, cycles);
-      return {
-        log: r.log,
-        dispose: () => {
-          r.dispose();
-        },
-        keep: () => true,
-      };
+    run: async (commands, cycles) => {
+      const r = await runBatch({
+        prg,
+        monCommands: commands,
+        cycles,
+        model,
+        maxLogBytes: MAX_LOG_BYTES,
+        ...disk,
+      });
+      return { ...r, keep: () => true };
     },
   };
 }
 
 function sessionLoadMapSource(staged: Staged, l: SessionRef, opts: RunOpts): LoadMapSource {
   const { session: s, name } = l;
-  const { prg, image } = staged;
-  const bytes = readFileSync(prg);
-  const entry = readPrg(bytes).sys ?? null;
-  const fullCycles = s.limitcycles;
-  const shot = screenshotPath(l.shot, opts.shotDir);
-  const runOne = async (commands: string, cycles: number) => {
-    const m = sessionScript(s);
-    m.add(commands);
-    const r = await runBatch(batchOf(staged, s, m, { screenshot: shot, cyclesOverride: cycles }));
-    return { r, m };
-  };
+  const bytes = readFileSync(staged.prg);
   return {
     runInfo: {
       prg: l.label,
       model: s.machine.model,
-      cycles: fullCycles,
-      entry,
+      cycles: s.limitcycles,
+      entry: readPrg(bytes).sys ?? null,
       start_clock: 0,
       vice: resolveX64sc()?.path ?? "",
       session: name,
-      image,
+      image: staged.image,
     },
     timing: REGION_TIMING[videoRegion(s.machine.model)],
-    fullCycles,
+    fullCycles: s.limitcycles,
     bytes,
-    trace: async (commands, cycles) => {
-      const { r, m } = await runOne(commands, cycles);
-      try {
-        return (await collect(r.log)).filter((h) => m.isToolHit(h));
-      } finally {
-        r.dispose();
-      }
-    },
-    bigTrace: async (commands, cycles) => {
-      const { r, m } = await runOne(commands, cycles);
-      return {
-        log: r.log,
-        dispose: () => {
-          r.dispose();
-        },
-        keep: (h: Hit) => m.isToolHit(h),
-      };
+    run: async (commands, cycles) => {
+      const m = sessionScript(s);
+      m.add(commands);
+      // One exit screenshot per pass, never shared (screenshotPath is unique per call).
+      const screenshot = screenshotPath(l.shot, opts.shotDir);
+      const batch = batchOf(staged, s, m, { screenshot, cyclesOverride: cycles });
+      const r = await runBatch({ ...batch, maxLogBytes: MAX_LOG_BYTES });
+      return { ...r, keep: (h: Hit) => m.isToolHit(h) };
     },
   };
 }
 
-/**
- * The dispatch/interrupt-detection irq-chain.ts already has (storeCommands,
- * liveHandlers, execCommands, analyseIrqChain), run here from power-on
- * (startClock 0, never an entry or play clock) so its entries and
- * transient list cover the whole boot: firstProgramDispatch picks the
- * first entry below KERNAL ROM out of them, not re-derived.
- */
-async function chainFromPowerOn(src: LoadMapSource): Promise<IrqChain> {
-  const a = await src.trace(storeCommands(), src.fullCycles);
-  const handlers = liveHandlers(a, 0);
-  let b = await src.trace(execCommands(handlers), src.fullCycles);
-  // A handler that is JMP (pointer) (Commando's $4134): a third pass adds
-  // the pointer's bytes, the same as c64_re_irq_chain, so its entries carry
-  // a resolved target instead of thousands of "pointer not known" unknowns.
-  const pointers = indirectPointers(b);
-  if (pointers.length) b = await src.trace(execCommands(handlers, pointers), src.fullCycles);
-  return analyseIrqChain(b, src.timing, 0);
+const truncatedNote = (what: string, cycles: number) =>
+  `${what}: the monitor log passed ${MAX_LOG_BYTES} bytes and VICE was stopped before clock ${cycles}; later hits are missing`;
+
+/** A small pass collected into an array; truncation named in unknowns. */
+async function collectPass(
+  src: LoadMapSource,
+  commands: string,
+  cycles: number,
+  unknowns: string[],
+): Promise<Hit[]> {
+  const p = await src.run(commands, cycles);
+  try {
+    if (p.truncated) unknowns.push(truncatedNote("irq-chain pass", cycles));
+    return (await collect(p.log)).filter((h) => p.keep(h));
+  } finally {
+    p.dispose();
+  }
 }
 
-/** The big store-0000-ffff trace, streamed and grouped into writers without ever holding the whole log. */
-async function writersOf(
+/**
+ * irq-chain.ts's own passes (storeCommands, liveHandlers, execCommands,
+ * analyseIrqChain), run from power-on so entries and transients cover the
+ * whole boot. The last pass's hits carry the $00/$01 stores that decide
+ * ROM or RAM for each handler at its entry.
+ */
+async function chainFromPowerOn(
   src: LoadMapSource,
-  capCycles: number,
-): Promise<{ writers: Writer[]; unknowns: string[] }> {
-  const big = await src.bigTrace("trace store 0000 ffff\n", capCycles);
+  unknowns: string[],
+): Promise<{ chain: IrqChain; hits: Hit[] }> {
+  const a = await collectPass(src, storeCommands(), src.fullCycles, unknowns);
+  const handlers = liveHandlers(a, 0);
+  let b = await collectPass(src, execCommands(handlers), src.fullCycles, unknowns);
+  // A handler that is JMP (pointer) (Commando's $4134): a third pass adds
+  // the pointer's bytes, the same as c64_re_irq_chain.
+  const pointers = indirectPointers(b);
+  if (pointers.length) b = await collectPass(src, execCommands(handlers, pointers), src.fullCycles, unknowns);
+  return { chain: analyseIrqChain(b, src.timing, 0), hits: b };
+}
+
+/** The store-0000-ffff trace, streamed and grouped into writers without holding the log. */
+async function writersOf(src: LoadMapSource, capCycles: number, unknowns: string[]): Promise<Writer[]> {
+  const big = await src.run("trace store 0000 ffff\n", capCycles);
   try {
+    if (big.truncated) unknowns.push(truncatedNote("store trace", capCycles));
     const agg = new WriterAggregator(MAX_WRITER_HITS);
     for await (const h of readHits(big.log)) {
-      if (!big.keep(h)) continue;
-      if (h.kind !== "store") continue;
+      if (!big.keep(h) || h.kind !== "store") continue;
       if (!agg.add(h)) break;
     }
-    const unknowns: string[] = [];
     if (agg.capped !== null)
       unknowns.push(`store trace capped at ${agg.capped} hits; writers past this point are not included`);
-    if (agg.portUnknown)
+    if (agg.unresolved)
       unknowns.push(
-        "a store to $01 did not show its value: ROM mapping and ram_under_io after it are not known",
+        `${agg.unresolved} stores needed $01 while it was not known (a PC in a ROM window, or a target in $D000-$DFFF): their code generation or I/O-or-RAM target is unresolved; ram_under_io is null on the writers with such a target`,
       );
-    return { writers: agg.finish(), unknowns };
+    return agg.finish();
   } finally {
     big.dispose();
   }
 }
 
+/** The first PC run in RAM after the last stage's last store: where the depacked program starts. */
+async function entryPcOf(src: LoadMapSource, writers: Writer[], unknowns: string[]): Promise<number | null> {
+  const last = writers.filter((w) => w.stage !== null).at(-1);
+  if (!last) return null;
+  const cycles = Math.min(src.fullCycles, last.last_clock + src.timing.cycles_per_frame);
+  const p = await src.run(ENTRY_COMMANDS, cycles);
+  try {
+    for await (const h of readHits(p.log))
+      if (p.keep(h) && h.kind === "exec" && h.clock > last.last_clock) return h.pc;
+    unknowns.push(
+      `no PC in $0200-$9FFF or $C000-$CFFF ran within a frame after stage ${last.stage}'s last store (clock ${last.last_clock}): entry_pc unknown`,
+    );
+    return null;
+  } finally {
+    p.dispose();
+  }
+}
+
 async function runLoadMap(src: LoadMapSource): Promise<ReResult<LoadMapResult>> {
   const prg = readPrg(src.bytes);
-  const stubs = findStubs(src.bytes, prg.load);
-  const chain = await chainFromPowerOn(src);
-  const dispatchClock = firstProgramDispatch(chain.entries);
-  const unknowns = [...chain.unknowns];
-  if (dispatchClock === null)
+  const unknowns: string[] = [];
+  const { chain, hits } = await chainFromPowerOn(src, unknowns);
+  unknowns.push(...chain.unknowns);
+  const dispatch = firstProgramDispatch(chain.entries, hits);
+  unknowns.push(...dispatch.unknowns);
+  if (dispatch.clock === null)
     unknowns.push(
-      `no interrupt entered a handler below $E000 within ${src.fullCycles} cycles; writers cover the whole run`,
+      `no interrupt entered a handler the program installed within ${src.fullCycles} cycles; writers cover the whole run`,
     );
-  const capCycles = Math.min(src.fullCycles, (dispatchClock ?? src.fullCycles) + src.timing.cycles_per_frame);
-  const w = await writersOf(src, capCycles);
+  const capCycles = Math.min(
+    src.fullCycles,
+    (dispatch.clock ?? src.fullCycles) + src.timing.cycles_per_frame,
+  );
+  const writers = await writersOf(src, capCycles, unknowns);
+  const entry_pc = await entryPcOf(src, writers, unknowns);
   return {
     ok: true,
     run: src.runInfo,
     result: {
       load: prg.load,
       end: prg.end,
-      stubs,
-      writers: w.writers,
+      stubs: findStubs(src.bytes, prg.load),
+      writers,
+      entry_pc,
       transient_vectors: chain.transient,
-      first_program_dispatch_clock: dispatchClock,
-      unknowns: [...unknowns, ...w.unknowns],
+      first_program_dispatch_clock: dispatch.clock,
+      unknowns,
     },
   };
 }

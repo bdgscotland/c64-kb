@@ -331,16 +331,20 @@ describe("RE tool replies carry the whole result", () => {
     });
   });
 
+  const m1 = (id: string) => ({ id, basis: "measured-vice" as const, rung: 1 as const });
+
   it("c64_re_load_map: stubs, writers and the first dispatch clock are in the structured content", () => {
     const result = {
       load: 0x0801,
       end: 0xaffc,
       stubs: [
-        { addr: 0x0801, sys: 2217, text: "COMPUTERBRAINS", line: 2049 },
-        { addr: 0x08e5, sys: 2066, text: "C.C.S.", line: 65535 },
+        { ...m1("s0"), addr: 0x0801, sys: 2217, text: "COMPUTERBRAINS", line: 2049 },
+        { ...m1("s1"), addr: 0x08e5, sys: 2066, text: "C.C.S.", line: 65535 },
       ],
       writers: [
         {
+          ...m1("w0"),
+          stage: 2,
           pc_range: { start: 0x0104, end: 0x019e },
           dest_ranges: [
             { start: 0x0800, end: 0xcfff },
@@ -353,6 +357,8 @@ describe("RE tool replies carry the whole result", () => {
           ram_under_io: [],
         },
         {
+          ...m1("w1"),
+          stage: null,
           pc_range: { start: 0xa35a, end: 0xa370 },
           dest_ranges: [{ start: 0xd000, end: 0xdfff }],
           stores: 4160,
@@ -362,6 +368,7 @@ describe("RE tool replies carry the whole result", () => {
           ram_under_io: [{ start: 0xd000, end: 0xdfff }],
         },
       ],
+      entry_pc: 0x0850,
       transient_vectors: [{ vector: "irq_fffe" as const, value: 0, writes: 7 }],
       first_program_dispatch_clock: 15_243_156,
       unknowns: [],
@@ -372,7 +379,7 @@ describe("RE tool replies carry the whole result", () => {
       /stubs: \$0801 line 2049 SYS 2217 COMPUTERBRAINS; \$08E5 line 65535 SYS 2066 C\.C\.S\./,
     );
     expect(r.text).toMatch(
-      /\$0104-\$019E \(stack page\): 528765 stores, clock 8992780-15190653 -> \$0800-\$CFFF, \$E000-\$FFFF\n/,
+      /w0 stage 2 \$0104-\$019E \(stack page\): 528765 stores, clock 8992780-15190653 -> \$0800-\$CFFF, \$E000-\$FFFF\n/,
     );
     expect(r.text).toMatch(
       /\$A35A-\$A370: 4160 stores, .* -> \$D000-\$DFFF \(RAM under I\/O: \$D000-\$DFFF\)/,
@@ -381,6 +388,11 @@ describe("RE tool replies carry the whole result", () => {
     const parsed = z.object(LoadMapOutput).safeParse(r.structured);
     expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
     expect(r.structured).toEqual({ run, ...result });
+    // The schema requires the observation fields on writers and stubs.
+    const bare = { run, ...result, writers: result.writers.map((w) => ({ ...w, id: undefined })) };
+    expect(z.object(LoadMapOutput).safeParse(bare).success).toBe(false);
+    const noRung = { run, ...result, stubs: result.stubs.map((st) => ({ ...st, rung: undefined })) };
+    expect(z.object(LoadMapOutput).safeParse(noRung).success).toBe(false);
   });
 
   it("c64_re_load_map: no entries at all says no dispatch, and a refusal is text and isError", () => {
@@ -392,15 +404,16 @@ describe("RE tool replies carry the whole result", () => {
         end: 0x0900,
         stubs: [],
         writers: [],
+        entry_pc: null,
         transient_vectors: [],
         first_program_dispatch_clock: null,
         unknowns: [
-          "no interrupt entered a handler below $E000 within 4000000 cycles; writers cover the whole run",
+          "no interrupt entered a handler the program installed within 4000000 cycles; writers cover the whole run",
         ],
       },
     });
     expect(r.text).toMatch(/no program-installed handler dispatched/);
-    expect(r.text).toMatch(/unknown: no interrupt entered a handler below \$E000/);
+    expect(r.text).toMatch(/unknown: no interrupt entered a handler the program installed/);
     const bad = loadMapReply({ ok: false, reason: "no-entry", error: "entry $080D not reached" });
     expect(bad).toEqual({ text: "refused (no-entry): entry $080D not reached", isError: true });
   });
