@@ -385,6 +385,15 @@ build 2026-05-19. The library's scan first tests `$DC01` with every
 column driven low and returns early if it reads `$FF`, which is the
 KERNAL's own no-key shortcut.
 
+In your own C the write-then-read order is not safe. Oscar64 can emit the
+`$DC01` load after a later `$DC00` store even though both are `volatile`:
+`cia1.pra = 0x7f; if (!(cia1.prb & 0x10)) ...; cia1.pra = 0xff;` came
+out as the two stores and then the load, so SPACE was never seen
+(`toolchains/oscar64-reference.md`, Pitfalls, "A volatile load can be
+moved past a later volatile store"; measured in the `.asm` at every level
+on the local build, at `-O0` on v1.32.273 and upstream). Put the column
+write and row read in `__asm`, or read the `.asm` listing once.
+
 ### Why it works
 
 There are no diodes in the matrix: a closed switch is a wire from its
