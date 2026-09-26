@@ -446,8 +446,15 @@ runs give identical figures (rung 1, VICE x64sc 3.10). 59999 is the
 worst case for subtract-powers (digit sum 5 + 9 + 9 + 9, thirty-two
 subtractions); 199 is the worst for `fmt_dec8` (1 + 9, ten
 subtractions); the double-dabble's and the BCD route's costs do not
-depend on the value. The empty call passes two bytes and the 32-bit route
-four, so its figure carries a few cycles of argument passing too. Builds
+depend on the value. Not all of each figure is the body: in the Oscar64
+-O2 `.asm` (rung 1) the empty call's arguments and every value argument
+are loaded before the timer starts, and `fmt_dec_sub` is called through
+a proxy with nothing to set, but the others store their destination
+pointer inside the timed window: 10 cycles for `fmt_dec_dab`,
+`fmt_hex8`, `fmt_dec8` and `fmt_dec_long`, 20 for `fmt_bcd3`'s two
+pointers. So `fmt_dec8`'s routine alone is about 151 and `fmt_bcd3`'s
+about 185 (arithmetic). An earlier version of this paragraph said only
+the 32-bit route carried argument passing. Builds
 with different code placement read 953, 2,533 and 2,537 for the first
 and third lines (2,537 was this page's figure before the 8-bit, BCD and
 32-bit routes were added), so treat the last few cycles as layout, not

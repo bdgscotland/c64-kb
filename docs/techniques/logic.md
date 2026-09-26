@@ -451,16 +451,21 @@ at the player, walks with an `A_BLOCK` test ahead of it
 VICE monitor's profiler (`prof`) put its `objects_update` at 3,118
 cycles a call with 4.7 objects alive on average and every object
 thinking every frame: about 660 cycles an object (arithmetic), of which
-the terrain lookup was about 60. With each object thinking on alternate
-frames and the other half only following the scrolled ground, the
-objects cost 2,288 cycles a logic frame on average and 4,221 at most on
-PAL (2,325 and 4,436 on NTSC), over 200 logic frames with up to 8
-alive, CIA1 timer B around the calls, interrupts that landed inside
-included (`templates/run-and-gun/PLAN.md`, `make enemies`). That is
-about 490 cycles an object a frame on average (2,288 / 4.7,
-arithmetic), ten times the 47.5 above. Budget a game's enemies from a
-figure like this, and the pool's own 380 on top only if the enemy
-update does not already walk the slots.
+the terrain lookup was about 60. That is the like-for-like per-object
+figure: one call, one run. With each object thinking on alternate
+frames and the other half only following the scrolled ground, the three
+object calls together (`objects_rows` + `objects_update` +
+`objects_draw`, so the sprite writes too) took 2,288 cycles a logic
+frame on average and 4,221 at most on PAL (2,325 and 4,436 on NTSC).
+That is wall time over 200 logic frames with up to 8 alive, CIA1 timer
+B around the calls, interrupts that landed inside counted
+(`templates/run-and-gun/PLAN.md`, `make enemies`). The 4.7 alive comes
+from the `prof` run, not this one; an earlier version of this paragraph
+divided 2,288 by it to get 490 cycles an object, ten times the 47.5
+above, which mixed two runs and counted the draw and row calls as
+behaviour. Budget a game's enemies from the 2,288 / 4,221 whole-module
+figure, or from 660 an object plus the draw; add the pool's own 380
+only if the enemy update does not already walk the slots.
 
 ### Recipes
 

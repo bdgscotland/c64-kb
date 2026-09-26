@@ -961,7 +961,10 @@ numbers.
 | Oscar64 C six digits of an `unsigned long` by `% 10`, `fmt_dec_long` | 999999 | 7,866 |
 
 The C double-dabble read 2,537 before the recipe gained its 8-bit, BCD
-and 32-bit routes; the move to 2,558 is code placement. The last few
+and 32-bit routes; the move to 2,558 is code placement. All but the
+two `fmt_dec_sub` rows include the destination-pointer setup inside the
+timed window: 10 cycles, 20 for `fmt_bcd3` (the recipe's Oscar64 `.asm`,
+rung 1). The last few
 cycles depend on code placement: the KickAssembler double-dabble
 read 860 in an earlier build where its inner loop did not cross a page,
 and 875 after a 12-byte insertion moved it (fifteen taken branches at

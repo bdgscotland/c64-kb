@@ -201,7 +201,9 @@ worst (199); six digits of a score held as three BCD bytes, 205 for any
 value; and, for contrast, six digits of an `unsigned long` by `% 10` and
 `/ 10`, 7,866 (one 32-bit divide a digit). A HUD with a six-digit score
 and two small counters costs about 205 + 2 × 161 = 527 cycles redrawn
-whole by the cheap routes (arithmetic). The run-and-gun starter measured
+whole by the cheap routes (arithmetic). The 161 and 205 include 10 and
+20 cycles of pointer setup that the recipe's empty call does not have
+(its `.asm`, rung 1). The run-and-gun starter measured
 the long route inside a game: its panel update on a death frame (a BCD
 score add, six BCD digits and one byte digit printed) took 836 cycles,
 and 2,095 while the lives and grenade digits went through an
