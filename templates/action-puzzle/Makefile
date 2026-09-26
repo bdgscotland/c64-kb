@@ -11,6 +11,7 @@
 #   make disktest   the high-score save on a true-drive 1541: save, save over it, cold start, load
 #   make modelcheck every visible cave cell of the shots against tools/gen.py's model
 #   make drive      the normal game played headless: make drive STEPS='"until:FIRE TO START" tap:fire print'
+#   make gallery    shots/gallery.png: the normal game in play, for a README (GALLERY_SCRIPT)
 #   make clean
 NAME   := action-puzzle
 C_MAIN := src/main.c
@@ -46,6 +47,10 @@ VERIFY_TARGETS := disktest modelcheck selftest-scan drivetest
 # with the stick on $DC00: fire on the title starts cave 1, and holding right
 # digs to a gem.
 DRIVE_STEPS := "until:FIRE TO START" tap:fire "until:LIVES" hold:right "until:GEMS 01/06" print
+
+# make gallery: shots/gallery.png, the normal build in play: cave 1 after 60
+# frames of digging right, four gems taken.
+GALLERY_SCRIPT := "until:FIRE TO START" tap:fire "until:LIVES" wait:45 hold:right wait:60
 
 # make watch (in make check): the player writes the SID. The autopilot run
 # stored to it in 636 frames on PAL and 703 on NTSC; without music_play and

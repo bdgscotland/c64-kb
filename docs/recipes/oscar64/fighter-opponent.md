@@ -3,7 +3,7 @@ recipe: fighter-opponent
 toolchain: oscar64
 output_format: PRG
 region: both
-techniques: [lfsr_random]
+techniques: [fighter_opponent_tables, fighter_guard_state, lfsr_random]
 file_formats: [PRG]
 uses_registers: [D011, D020, DD04, DD05, DD0E]
 uses_kernal: [CHROUT]
@@ -27,8 +27,11 @@ is blocked. A scripted player fights a 600-tick bout at each of four
 levels that differ only in the delay. The screen prints each level's
 choices and hits, the cycles of one opponent step and one hit
 resolution, and a checksum a Python model of the same rules also gives.
-It is the recipe for `fighter_opponent_tables` and `fighter_guard_state`
-in `game-design/enemy-behaviour-and-difficulty.md`.
+It is the recipe for the techniques `fighter_opponent_tables`
+(`techniques/logic.md`) and `fighter_guard_state` (`techniques/sprite.md`),
+and for the patterns of the same names in
+`game-design/enemy-behaviour-and-difficulty.md`. An earlier version listed
+only `lfsr_random` in its frontmatter, so no lookup linked it to either (#113).
 
 ## Source
 
@@ -340,6 +343,10 @@ x64sc 3.10, rung 1).
   line and the band. `RESOLVE` is the same for `resolve`, both blades
   against body or guard boxes; its worst is a hit with the push-apart
   loop. Both are Oscar64 -O2 code and the same on PAL and NTSC.
+  The step is this recipe's minimal opponent. A fuller one in a game
+  built from the KB was reported at 652 cycles worst on PAL and 702 on
+  NTSC (#115, not measured here); `fighter_opponent_tables` in
+  `techniques/logic.md` gives both.
 
 A first version blanked the screen and started at once. DEN is sampled
 on line $30, so the frame it was cleared in still had its badlines, and

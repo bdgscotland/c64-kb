@@ -1,0 +1,56 @@
+{
+  "note": "Part 4 FIRE inside the demo at an arbitrary frame (verify.sh shoots 70M cycles on both models). Frame-independent checks only: the fire is seeded by an LFSR and the palette switches every 200 frames, so no cell colour and no single palette can be pinned; the chain moves two phase steps a frame, so no glyph box can be pinned either. Kept from the 2026-09-23 pin (I-008): border black, seed row burning, lower ten rows carrying the fire. Added 2026-09-24 with the max-out: every lit pixel in the fire rows is a colour of one of the four palettes (0 9 2 8 10 7 1; 6 14 3 15 1; 6 5 3 13 1; 6 4 10 15 1), which also holds across a switch since both palettes in flight are in the union; and the sprite band, lines 60 to 150 where the chain lives (Y 64 to 127 plus 21 rows), carries at least 150 lit pixels that are either a fire colour or the chain's yellow. Six glyphs of 100 to 250 pixels each never all leave that band. Yellow is also in palette 0, so the band check cannot tell a glyph from a warm flame by colour; the standalone pin (test/expect-p4.json) does that by box.",
+  "checks": [
+    {
+      "name": "verdict absent (mid-demo shot, border is black, program has not reached end screen)",
+      "type": "verdict"
+    },
+    {
+      "name": "border black (D020=0); line 30: NTSC has no row for line 20 and check.py refused the file (I-008)",
+      "type": "pixel",
+      "vic_x": 4,
+      "line": 30,
+      "colour": 0
+    },
+    {
+      "name": "pixel at vic_x 40, line 45 is black: line 45 is in the top border (the screen starts at line 50), so this repeats the border check",
+      "type": "pixel",
+      "vic_x": 40,
+      "line": 45,
+      "colour": 0
+    },
+    {
+      "name": "seed row (row 24, lines 242 to 249) is burning: at least 800 lit pixels of 2,560 at any phase (measured 1,160 to 1,648 over eight phases on both models, I-008), every one a palette colour",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 242,
+      "width": 320,
+      "height": 8,
+      "background": 0,
+      "min": 800,
+      "colours": [9, 2, 8, 10, 7, 1, 6, 14, 3, 15, 5, 13, 4]
+    },
+    {
+      "name": "lower ten rows (rows 15 to 24, lines 170 to 249) carry the fire: at least 8,000 lit pixels of 25,600, every one a colour of one of the four palettes (the chain never reaches line 148)",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 170,
+      "width": 320,
+      "height": 80,
+      "background": 0,
+      "min": 8000,
+      "colours": [9, 2, 8, 10, 7, 1, 6, 14, 3, 15, 5, 13, 4]
+    },
+    {
+      "name": "sprite band (lines 60 to 150): at least 150 lit pixels, each a palette colour or the chain's yellow",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 60,
+      "width": 320,
+      "height": 91,
+      "background": 0,
+      "min": 150,
+      "colours": [9, 2, 8, 10, 7, 1, 6, 14, 3, 15, 5, 13, 4]
+    }
+  ]
+}

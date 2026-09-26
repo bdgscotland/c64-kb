@@ -11,6 +11,7 @@
 #   make gameover   the AP_GIVE_UP=1 build: three lives go, and the title after
 #                   GAME OVER must be clean; graded by expect-gameover.json
 #   make drive      the normal game played headless (harness/drive.py; README "Driving it headless")
+#   make gallery    shots/gallery.png: the normal game in play, for a README (GALLERY_SCRIPT)
 #   make disk       build/platformer.d64
 #   make claims     c64-kb's claims-watch over the autopilot build
 #   make clean
@@ -22,6 +23,12 @@ SHOT_CYCLES_PAL  := 26000000
 SHOT_CYCLES_NTSC := 24000000
 
 # What the program may write, for make claims (claims-watch's own grammar).
+# These are this starter's claims, matched to what its own run writes (make
+# claims: 0 violations). A project built from it rewrites them: an IRQ
+# chained through the KERNAL writes $0314 (irq_vector_0314), not $FFFE and
+# $FFFA; a split that changes the character base writes vic_char_base every
+# frame; the zero-page top moves with the code (make zp, then make claims);
+# and --cycles must cover the whole run to its verdict.
 # - Oscar64's registers start at $02 (BC_REG_WORK_Y). main's temporaries
 #   reach $54: T1 is the word at $53-$54 (BC_REG_TMP_SAVED in its
 #   MachineTypes.cpp), and main+250 stores the frame count's high byte in
@@ -80,6 +87,12 @@ tearcheck: $(PRG_AUTO) $(PRG_TEAR)
 # drivetest: the normal build, stick on $DC00: fire on the title starts a game.
 DRIVE_SCREEN := C800:21-24
 DRIVE_STEPS  := "until:PRESS FIRE" tap:fire "until:LIVES 3" hold:right "until:GAME OVER" print
+
+# make gallery: shots/gallery.png, the normal build in play. The autopilot's
+# opening played by hand: over the coins and the hill, a jump straight up,
+# and the picture 10 frames later, above the walker it is about to stomp.
+GALLERY_SCRIPT := "until:PRESS FIRE" hold:fire wait:1 hold:none wait:4 "until:LIVES 3" \
+  hold:right wait:100 hold:none wait:31 hold:fire wait:1 hold:none wait:10
 
 # ---- stage: the worst frame with every enemy slot full ------------------------------
 # STAGE_CROWD puts ten enemies in the first view (src/level.c), so all five

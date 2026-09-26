@@ -414,6 +414,9 @@ The decay pass runs once in four frames, so the average frame is under a frame (
 **Complexity:** medium
 **Region:** both
 **Uses registers:** D011, D018, D021, D022, D023, D024
+**Cost:** cycles_per_frame=6830, cycles_per_frame_typical=5967, bytes_code=575, bytes_data=666
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-plasma (the worst of the 200 frames to the verdict, a seven-row frame of 280 cells, PAL, screen on, from the listing's CIA1 timer A bracket; typical is the six-row frame of 240 cells before the verdict, and three frames in four are six-row frames; the whole screen in one pass is 22,574 and the worst NTSC frame 7,088; bytes_code is the code without the autopilot block; bytes_data is the 239-byte colour map, the 256-byte sine, 100 bytes of row tables, the 40-byte column vector and 14 bytes of state, with 17 bytes of page padding before the sine)
 
 ### Why
 
@@ -466,6 +469,14 @@ Full 16-color plasma (40×25 color RAM update), per frame on PAL:
 - Per-cell: one or two sine lookups, one masking/OR operation, one screen RAM write = approximately 20–25 cycles per cell.
 - 1,000 cells × 22 cycles = approximately 22,000 cycles per frame.
 - Achievable at 25fps (every other PAL frame). Two frames give 39,312 cycles; 50 badlines take 2,150 (43 each), leaving about 15,000 for other work (arithmetic, not measured; an earlier version said ~10,000).
+
+### Recipes
+
+- `recipes/kickassembler/plasma.md`: a full-screen colour-RAM plasma with one column term and two row terms, 18 cycles a cell measured against the 30 to 40 estimated above (the addition is the indexed read; the whole screen in one pass is 22,574 cycles, 1.15 PAL frames), a quarter of the rows repainted each frame, pinned at cycle 10,000,000 on both models with a per-colour cell census, the pictures matched to the model's frame, and a control with the row term dropped.
+
+### Sources
+
+- The measurements on this entry are from the recipe named above, VICE x64sc 3.10, CIA1 timer A; the luminance order is `colour_fade`'s.
 
 ---
 
@@ -1070,6 +1081,242 @@ only there on NTSC at the shipped padding.
 
 ---
 
+## rotozoomer_charset — Rotozoomer: a texture rotated and scaled into a character set used as a framebuffer
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D018, D016
+**Requires:** mcm_text
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/rotozoomer.md` saw `$D018`'s charset bits change
+once per render. The recipe's zero-page bytes and result bytes are its
+own.
+
+### Why
+
+A rotating, zooming texture needs every pixel of the window redrawn each
+frame from a new mapping. A character set is a small framebuffer the
+VIC can show from anywhere in its bank: with the window's codes laid out
+column by column, every pixel line of a column is one byte at a fixed
+offset, and a second charset is a free double buffer.
+
+### How
+
+Fill the window with codes 8col + row (8 rows, 16 columns: codes 0 to
+127), so column col is the 64 bytes at charset + 64col. For each frame's
+angle a and scale s, take the per-pixel step (du, dv) = (cos a, sin a) /
+s and the per-line step (−sin a, cos a) / s in 8.8 fixed point, and the
+first pixel's (u, v) = centre − 32 × (both steps). For each line, copy
+the line start, then for each pixel add the pixel step and read the
+texel from the integer parts, masked to the texture size; pack four
+multicolour pixels a byte and store at charset + 64col + line. Render
+into the charset not shown, then switch the charset bits of `$D018`
+below the window.
+
+### Why it works
+
+Each code's eight bytes are its pixel rows, so the column-major layout
+makes the window a bitmap whose columns are contiguous; the stored byte
+for column col and line y is at one offset, computed once per line. The
+rotation needs no multiplication per pixel: two 16-bit additions move
+(u, v) one pixel along the rotated axis. Measured in VICE x64sc 3.10, PAL
+c64c and NTSC, by `recipes/kickassembler/rotozoomer.md`: all 4,096
+window pixels equal a Python model of the listing's arithmetic for the
+step the program reports on screen, at four pinned captures and five
+more; one render takes 376,000 cycles (about 92 a pixel) on PAL. Built to
+draw into the charset on screen, no capture of ten showed a whole step:
+the render spans about 19 frames.
+
+### Variations
+
+**Speedcode.** Unrolling the pixel loop per column and holding (u, v) in
+self-modified operands cuts the per-pixel cost; not measured here.
+
+**Chunky modes.** The same stepping can feed a screen-matrix framebuffer
+(`chunky_4x4_fli_mode`) instead of a charset, 80 × 50 pixels of 16
+colours; not measured here. Measured in another form, the c64-kb demo's part
+10 (VICE 3.10, PAL and NTSC, a Python model of the arithmetic agreeing on
+every chunk checked): a 4 by 4 pixel chunk is one sample, a character
+holds a 2 by 2 block of chunks, and a 256-character set (every
+four-colour combination of four chunks) makes the screen matrix the
+framebuffer: 256 samples and 64 screen codes for a 64 by 64 window. The
+coordinates run in 4.4 fixed point, one byte each, whose wrap at 256 is
+the 16-texel period, so no mask. One sample costs 44 cycles (two 8-bit
+adds, a four-bit shift, an or, a lookup in a texture table stored
+pre-shifted to its bit position), a character 195, half the window about
+7,000: the step is rendered in two halves on consecutive frames, so no
+call runs past a frame, and the picture moves at one step every two
+frames against the recipe's one in twenty. The texture is swapped by
+rebuilding the two lookup tables a quarter a frame; the 64 codes go to
+the screen from an interrupt below the window once the buffer is
+complete.
+
+**Aspect.** Multicolour pixels are two hires pixels wide; halving the
+horizontal step (du, dv per pixel doubled) draws the texture square.
+Not measured here.
+
+### Cycle budget
+
+About 92 cycles per multicolour pixel in the recipe's loop, badlines
+included: 376,000 cycles for 4,096 pixels on PAL, 19 frames. The
+render runs outside any interrupt; the switch waits for line 250.
+
+### Recipes
+
+- `recipes/kickassembler/rotozoomer.md` — 64 steps of a 16 × 16 texture
+  in a 64 × 64 window, double-buffered, every capture compared pixel for
+  pixel with a model, PAL and NTSC, with the single-buffer control.
+
+---
+
+## glenz_eor_filled_vectors — Glenz vectors: every face EOR-filled, so the back shows through the front
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D018, D016
+**Claims:** vic_char_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of `recipes/kickassembler/glenz.md`
+saw `$D018`'s charset bits change once per frame drawn; the recipe's
+zero page and result bytes are its own.
+
+### Why
+
+Filled polygons normally need sorting or a visibility test and a span
+fill per line. A glenz object draws every face, front and back, and lets
+the overlaps show in their own colours; with EOR filling the faces need
+no order, no test and no span code, and each costs only its outline.
+
+### How
+
+Give each face a colour code (a multicolour bit pair). For each edge of
+each face, step one pixel column at a time from the left end x0 to
+x1 − 1, y in 8.8 fixed point, and EOR the face's code into the pixel
+(x, y). Then fill: in each pixel column, from the top down, replace each
+byte by the EOR of itself and the byte above. A framebuffer laid out
+column by column, such as the character-set window of
+`rotozoomer_charset`, makes each column 64 consecutive bytes. Draw into
+a hidden buffer and switch.
+
+### Why it works
+
+A convex face crosses a pixel column at two edges; the running EOR
+turns its code on at the first point and off at the second. EOR is its
+own inverse and commutes, so faces can be drawn in any order and
+overlaps keep the EOR of their codes, which is the see-through colour.
+The half-open column range gives the column at a corner exactly one point
+between the two edges meeting there. Measured in VICE x64sc 3.10, PAL
+c64c and NTSC, by `recipes/kickassembler/glenz.md`: the window equals a
+model of the listing's algorithm in all 4,096 pixels at the four pinned
+captures and five more; against geometry computed without the EOR fill
+(each face as a polygon, edges exact then rounded) 84 of 262,144 pixels
+differ over the 64 steps, from the 8.8 slope's rounding. Plotting both
+ends of every edge breaks the corner columns: 7,082 differ, as vertical
+streaks.
+
+### Variations
+
+**More colours.** Two bits give three face colours and their EOR
+combinations; hires gives one; a second charset or bitmap plane doubles
+the codes. Not measured here.
+
+**Solid (not see-through).** Draw only the front faces, found by the
+sign of each face's projected area; the EOR fill then gives a solid
+object. Not measured here; `solid_vector_3d` describes span filling.
+
+### Cycle budget
+
+One frame drawn every four PAL frames (78,620 cycles, the wait for a
+switch line included) for the recipe's 64 × 64 window and cube; four
+or five on NTSC.
+
+### Recipes
+
+- `recipes/kickassembler/glenz.md` — a glenz cube, 64 steps, double
+  buffered, every capture compared with two models, PAL and NTSC, with
+  the both-ends control.
+
+---
+
+## raycaster_grid_walls — Column raycaster: one ray per screen column through a grid map
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D018
+**Requires:** ecm_mode
+**Claims:** vic_matrix_base (owns)
+**Claims basis:** measured-vice
+
+A `scripts/claims-watch.ts` store trace of
+`recipes/kickassembler/raycaster.md` saw `$D018`'s matrix bits change
+once per view drawn. The recipe's zero page and result bytes are its
+own.
+
+### Why
+
+A first-person maze or corridor view is walls of varying height, one
+per screen column, from a 2D grid map. A ray per column finds the
+nearest wall; its distance sets the column's height. On a 1 MHz CPU the
+question is how to find the distance without a multiply or divide per
+ray.
+
+### How
+
+For view direction d and view plane p (d turned 90 degrees, scaled by
+the field of view), the ray of column c has direction d + p·cx, cx from
+−1 to 1. March each ray in steps of (d + p·cx) / N from the camera until
+the map cell under it is a wall; the step count k is N times the
+perpendicular distance, so a table h[k] gives the height with no fish-eye
+correction. Keep the column-0 step and the per-column change for each
+view direction in tables, with enough fraction bits (8.16 for N = 8 on a
+40-column screen), so the CPU only adds. Record which cell coordinate
+changed on the last step for the wall's side shade. Draw the column as
+ceiling, wall and floor; extended-colour text with the blank character
+puts the whole view in screen RAM, which double-buffers with `$D018`.
+
+### Why it works
+
+Every ray d + p·cx has the same component along d, so equal steps along
+any of them cover equal distance towards the view plane: counting steps
+measures the perpendicular distance directly. Measured in VICE x64sc
+3.10, PAL c64c and NTSC, by `recipes/kickassembler/raycaster.md`: all
+1,000 screen cells equal a model of the listing's march at the four
+pinned captures and five more; against an exact boundary-to-boundary
+(DDA) raycast of the same scene, 2,115 of 2,560 column heights are equal,
+2,453 within one row, the worst 6 rows off. With the per-column change
+kept in 8.8 only 930 were equal: see the pitfall
+`fixed_point_step_change_rounded_away`.
+
+### Variations
+
+**DDA.** Stepping from cell boundary to cell boundary finds the exact
+distance and never passes a corner, at the cost of a multiply for the
+first boundary and a divide or reciprocal table for the height. Used here
+only as the reference, in Python.
+
+**Textured walls.** The fraction of the hit position along the wall
+gives the texture column; with characters, a column of 8 × 8 cells can
+only be stretched in whole rows. Not measured here.
+
+### Cycle budget
+
+One view every 157,000 to 216,000 cycles on PAL in the recipe (8 to 11
+frames), most of it in the march: the step count is the distance times
+8, per column.
+
+### Recipes
+
+- `recipes/kickassembler/raycaster.md` — a 16 × 16 map, 64 view
+  directions, double-buffered extended-colour text, every capture
+  compared with a model and the march compared with an exact raycast,
+  PAL and NTSC.
+
+---
+
 ## voxel_landscape — Voxel-space landscape rendering
 
 **Complexity:** scene-tier
@@ -1339,6 +1586,183 @@ Badline body: 20 CPU cycles PAL (22 NTSC), plus the 43-cycle stall, one full ras
 ### Sources
 
 - Measured in VICE x64sc 3.10 (`recipes/kickassembler/pseudo-3d-road.md`).
+
+---
+
+## char_row_road — Per-line road edges drawn into each character row's own characters, band colours from registers per line
+
+**Complexity:** scene-tier
+**Region:** both
+**Uses registers:** D012, D016, D018, D019, D021, D022, D023
+**Requires:** mcm_text
+**Cost:** cycles_per_line=63, lines_active=128
+**Cost basis:** measured-vice
+**Claims:** vic_raster_irq (owns), vic_matrix_base (owns), vic_char_base (owns)
+**Claims basis:** derived-listing
+
+Read off `templates/racing/src/engine.asm`: the IRQ chain owns the raster
+compare, and each picture swaps the screen and character set in `$D018`
+at line 251. The Cost line is the racing starter's kernel (it has no
+recipe yet), measured in VICE x64sc on PAL and NTSC: it holds every cycle
+of the road lines from the horizon's line to line 250, the screen on and
+sprites 0-3 over the road.
+
+### Why
+
+A road in characters steps its edges by whole characters from one row to
+the next unless every row's edge characters are drawn for that row. The
+maintainer's word for the stepped road of an earlier racer was "shady";
+per-line `$D016` (`pseudo_3d_road_raster`) shifts both edges of a line
+together and still steps between rows. Drawing each row's edge
+characters line by line puts every edge on its own pixel on every line.
+
+### How
+
+Multicolour characters. `%00` is the grass and `%10` the kerb, and both
+are registers written on every road line by a polling kernel (`$D021`,
+`$D023`), so the grass and kerb bands move every frame from the camera's
+position alone: the colour pair is bit 6 of the line's distance plus the
+position's low byte. `%01` is the road (`$D022`), `%11` the centre line
+(colour RAM). So the characters depend only on the road's shape.
+
+Per 8-line row, bottom up: the centre and its step in closed form from
+the curvature under the row (dx + 8c, cx + 8dx + 36c), then the columns
+each edge crosses on the row's first and last line (an edge is straight
+within a row), then the edge characters, one byte per line: position p
+of a span reads `PAGE[X + 64 - 4p]`, where `PAGE` is the kerb width's
+edge table and X the line's pair offset from a ramp table (slope and
+fraction, eight entries), unrolled. Then the row's 40 screen codes, only
+when its spans moved. A row whose centre (to a quarter pair), step (to a
+sixteenth) and horizon are as its copy last drew them is kept. Two
+copies of screen, characters and kernel, swapped at line 251.
+
+### Why it works
+
+The kernel waits for its line in `$D012` (`CMP`, `BNE`, seven cycles a
+turn) and stores `$D021` and `$D023` by cycle 13 and 17: the left border
+of a 38-column screen (the starter's PROBE build, VICE x64sc). Sprites
+0-3 fetch at the end of a line and let the CPU go by cycle 3, so the
+waits absorb them; sprites 4-7 would not. On NTSC a store was seen on
+cycle 18 on lines with sprites 0, 1 and 3 on them, one to two pixels
+into the window at VIC X 31-33; the builder keeps kerb pixels out of
+those three (roadcheck, VICE x64sc). Every road line of the starter's
+still matches a model drawn from the machine's own characters,
+registers and slots on PAL and NTSC (`templates/racing/tools/roadcheck.py`),
+and the edges move at most 4-6 pixels a line with none of 8 or more.
+
+### Cycle budget
+
+The kernel holds each road line from the horizon down, 63 cycles a line
+on PAL and 65 on NTSC. A picture at speed costs about 60,000 cycles of
+row work and 15,000 of sprites (the starter's PROF build, race frames
+only, VICE x64sc), in the main program. With the game's step 25 times a
+second a picture came every 13.3 frames on PAL and 19.8 on NTSC at the
+time of writing (measured, #110).
+
+### Pitfalls
+
+- A span wider than the render's unrolled positions is dropped: a
+  centre line crossing five columns on a bend lost its row when the
+  render took four (the starter, 174 rows a race, measured).
+- `abs,X` with X = `$FF` does not wrap: an insertion sort that stored to
+  `table + 1, X` at the gap wrote 256 bytes past its table.
+
+### Recipes
+
+No recipe yet: the racing starter (`templates/racing/`) implements it.
+
+### Sources
+
+- Measured in VICE x64sc 3.10 on the racing starter (#110).
+
+---
+
+## speedcode_bitmap_road — Bitmap road drawn by per-line speedcode, its edges moved by patching the code (Nicol's method)
+
+**Complexity:** high
+**Region:** both
+**Uses registers:** D011, D012, D016, D018, D019, D021
+**Requires:** multicolor_bitmap
+**Cost:** cycles_per_frame=231671, bytes_code=25601, bytes_data=8000
+**Cost basis:** measured-vice
+**Cost bytes basis:** arithmetic
+**Cost measured on:** kickassembler-speedcode-road (PAL, one picture: the patch's mean 194,037 plus the run's mean 37,634, interrupts off, sprites 0-3 on; 128 road lines of six edges each)
+**Claims:** vic_matrix_base (owns), vic_char_base (owns)
+**Claims basis:** derived-listing
+
+Read off the recipe: the split writes the bitmap's screen and base to
+`$D018` on line 122 and the text top's at line 251.
+
+### Why
+
+Simon Nicol's unreleased 1989 racer is remembered for the best road on
+the C64 (gamesthatwerent, Sources). Its method as reported: a bitmap,
+each road line drawn by a run of pre-generated stores with the colour in
+A, and the code itself patched where the colour changes along the line,
+so moving an edge costs a few byte patches, not a redraw.
+
+### How
+
+Each road line is 40 five-byte slots, one a bitmap byte: `BIT $00` /
+`STA byte` keeps A, `LDA #v` / `STA byte` sets it. A line's slot for
+column c is at 5c, so a patch is a store through a pointer to the line
+with `Y = 5c`. For each line: its edges in multicolour pixels, the byte
+each falls in (`edge / 4`), the mixed value of that byte from two mask
+tables, and the slots to set: the mixed byte and the byte after it (the
+new colour). The line's old slots go back to `BIT`. Then all lines run
+as one routine.
+
+### Why it works
+
+A slot stores whatever A holds, so a run of `BIT` slots paints a colour
+along the line at seven cycles a byte and needs no loop. Measured in
+VICE x64sc 3.10 (`recipes/kickassembler/speedcode-road.md`): the run of
+128 lines × 40 bytes takes 37,634 cycles on PAL and 38,017 on NTSC, and
+the edges move at most 6 pixels a line, none 8 or more.
+
+### Cycle budget
+
+The recipe patches 194,037 cycles a picture on PAL (196,130 NTSC; about
+1,600 a road line: six edges, two slots set and two cleared each), and
+runs 37,634: a picture every 22.1 frames on PAL and 35.2 on NTSC with
+the band kernel running. A tighter patcher's floor is about 63,000 a
+picture (arithmetic from the instruction table: 24 slot stores and six
+edges a line), about 100,000 with the run. The character road
+(`char_row_road`) costs about 60,000 for the same road, double-buffered:
+its geometry is per 8-line row, the bitmap's per line.
+
+### Variations
+
+**Fewer edges.** A road with no kerbs and no centre line has two edges a
+line and a quarter of the patching. Not measured here.
+
+### Pitfalls
+
+- A bitmap has one register colour per line (`$D021`): kerb colours come
+  from screen RAM and colour RAM per 8 × 8 cell, so kerb bands are in
+  the bitmap and move only with the picture.
+- Two bitmaps need two sets of speedcode (the `STA` addresses differ):
+  51,200 bytes. The recipe draws into the bitmap on show, and a moving
+  road tears.
+- Switching from text to multicolour bitmap mid-screen passes through
+  hires bitmap if `$D011` is written before `$D016`: its `%0` pixels take
+  the screen RAM's colour, and on NTSC the line drew black (VICE x64sc,
+  the recipe). Write `$D016`, then `$D011`, then `$D018`.
+
+### Recipes
+
+- `recipes/kickassembler/speedcode-road.md` — 128 lines, six edges each,
+  timed with CIA2, PAL and NTSC, ending on a still.
+
+### Sources
+
+- Simon Nicol's car game: https://www.gamesthatwerent.com/gtw64/car-game-2/
+  (the method, "the best road system anyone had seen on the C64", about
+  40 KB; reported, not measured here).
+- Louis Gorenfeld, "Lou's Pseudo 3d Page": https://www.extentofthejam.com/pseudo/
+- C64 Lotus Esprit Turbo Challenge's road in characters, with expanded
+  sprites over the kerbs that the release dropped:
+  https://www.gamesthatwerent.com/2015/11/lotus-esprit-turbo-challenge-early-proto/
 
 ---
 

@@ -259,6 +259,35 @@ hardware sprites), hardware priority is fixed: sprite 0 is always in front of
 sprite 1. Design the sort order so that in areas of overlap, the intended
 top-priority sprite ends up in a lower-numbered hardware slot.
 
+**Variation: fixed reposition rows.** Measured in a five-part
+KickAssembler demo built from the KB: 24 balls on a ring over a 16-band
+`$D021` gradient, in a part that shares one KERNAL-vectored dispatcher
+with a sequencer and a music player. Per-frame reuse entries in that
+table lost a frame whenever two were armed under about four lines apart
+(`irq_table_rebuilt_per_frame_loses_close_entries` in
+`pitfalls/raster-and-badline.md`), so the rows are assembled fixed: nine
+reposition rows twenty lines apart, 62 to 222, beside the part's own rows
+at 20, 249 and 252. One handler serves every row and takes, from a
+running index, every entry whose due line is before the row's line plus
+two; an entry is due at its slot's previous occupant's Y + 22, so it runs
+at most eight lines late against a 31-line margin. The layout is proved
+at assembly time: over all 256 offsets of the ring's Y table, the ball
+eight places down in Y order sits at least 50 lines (22 + 20 + 8) under
+its predecessor; the shipped tables give 53, and the latest due line is
+213 against a limit of 223. Fewer rows fail the proof, at 25 lines apart
+the latest write lands within two lines of its ball; seventeen rows ten
+apart would admit a flatter ring at about 600 more cycles a frame. The
+schedule (hardware sprite k mod 8 to ball k in Y order, entries grouped
+by line) is built one frame ahead and triple-buffered, current, published
+and building, because with two halves the build straddled the top row
+once the main loop's phase moved, and the picture froze. Cost per frame,
+CIA-timed with the rows' interrupts and the main loop's sort, projection
+and build (projection on even frames, build on odd): PAL worst 8,294 and
+median 6,339, NTSC worst 9,176 and median 7,835, for 24 balls with the
+gradient; the demo's end screen later read PAL 8,332 and NTSC 9,126
+worst. Ball Y stays at or above 36: at 28 the PAL frame showed the
+sprite's rows ghosted at 256 + Y.
+
 **Cross-reference:** `recipes/kickassembler/sprite-multiplex-24.md` is the
 fixed three-band variant (the "Fixed three-pass" option above) in
 KickAssembler: one raster IRQ above each band rewrites all eight hardware
@@ -1396,12 +1425,20 @@ Not measured here.
 **Uses kernal:** (none)
 **Requires:** topbottom_border_open, dypp_sprite_sine_scroller
 **Demands:** midframe_raster_irqs
-**Raster band:** 20-46, 249 (the recipe's RESTORE_LINE 20 plus its measured worst frame of 1,586 cycles, about 25 lines; its OPEN_LINE 249)
+**Raster band:** movable (the sprite-border-scroller recipe updates from its RESTORE_LINE 20 for about 25 lines, its measured worst frame of 1,586 cycles, and opens the border on line 249; fli-music-scroller.md updates on lines 273-299, one-part-demo.md from line 273 to line 1)
 **Cost:** cycles_per_frame=1586, cycles_per_frame_typical=829, irq_slots=2, sprites_per_line=8
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-sprite-border-scroller (both handlers' brackets summed per frame, above the display; worst frame is a real hand-off frame, typical is 182 of 300 frames)
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
+
+The update can run on any lines where none of its sprites is drawn, so
+the band is `movable`; a program states where it runs it as
+`sprite_border_scroller@lines`. An earlier version stated the recipe's
+lines, 20-46 and 249, as the technique's, and `c64_check_compatibility`
+set it against the FLI's lines 45-251 in `fli-music-scroller.md`, which
+runs the update on lines 273-299 (measured in VICE x64sc;
+[#90](https://github.com/bdgscotland/c64-kb/issues/90)).
 
 ### Why
 
@@ -1711,6 +1748,58 @@ same block) or run the stretch below the display with the lower border
 opened (`topbottom_border_open`), where there are no badlines. Not
 built here; the pinned picture is the eight-line staircase.
 
+**Variable height per sprite, measured.** The c64-kb demo's part 8 (VICE
+3.10, PAL and NTSC; first built over an FLD background, see the FLD entry
+in `techniques/raster.md`, then rebuilt over the badlines, the next
+variation) stretched three sprites side by side, each to a
+height of its own from a sine, with one clear-then-set pair a line from
+a loop and no stable raster, and measured what the recipe could not.
+With three sprites on the line the CPU is held from cycle 55 to cycle 1
+of the next line, nine cycles, so a pass of 54 cycles (56 on NTSC)
+repeats once a line. The pair written on line k sets the flip-flop the
+VIC samples at cycle 16 of k + 1 and decides the row fetched for k + 2,
+so every advance shows two lines after the line that decides it. A clear
+landing at cycle 19 and a set at 27 repeat the row: the window's lower
+edge, arithmetic above, holds there. A pass exactly the free window long
+keeps whatever phase its entry gave it and walks one cycle a line
+whenever a write cycle sits in the stalled window, since writes proceed
+and reads stop, so a phase with a read at 55 is the stable one. Rows 0 to
+3 and 18 to 20 of each sprite left blank take up the lines a shorter
+stretch does not need, so all three sprites keep their DMA, and the stall
+the loop is timed on, to the end of the band. The per-line advance table
+was built in the main loop and double-buffered: on NTSC the build did
+not finish before the band's interrupt, and a band that read a
+half-built table ran 256 passes into the next frame.
+
+**Over the badlines, with a poll a line, measured.** The same part
+rebuilt (VICE 3.10, PAL and NTSC, 151 traced frames) keeps the text
+screen's badlines and makes them part of the shape instead of moving
+them: a badline forces every sprite's row to advance (no write lands, and
+the flip-flop is inverted at 55 from cleared to set), so a row lasts at
+most eight lines, and the per-frame table spreads each sprite's 21 rows
+over a height of 21 to 91 lines with an accumulator that adds 21 a line,
+asks for one more row on passing the height, and counts the forced
+advance on every line whose index is 1 mod 8 as a row already taken. No
+line is entered by a cycle count: each begins with `lda $d012 / cmp
+$d012 / beq`, whose read straddling cycle 55 is held by the sprite fetch
+to the next line's cycle 1, so the exit read lands at 1 to 7 whether
+three sprites, two, one or none are still fetching (the seven-cycle loop
+puts it there on its own), the bar colour store follows at 7 to 13 in the
+left blank, and the clear and set land at 19 to 25 and 28 to 34. The
+poll cannot enter the badline itself: its reads are held from 12 to 54
+and then by the sprites to the next line's cycle 1, so the first read
+after the line before already sees the line after, and the loop would
+wait a whole extra line (the pitfall
+`d012_poll_cannot_enter_badline_under_sprites`). The block around each
+badline therefore stores the badline's colour from the line before,
+timed to land at 57 or later there or at 2 to 5 of the badline once the
+stall releases, computes the number of the line after into zero page in
+the delay slot of the pass before, and waits for that line by number
+with `cpx $d012`; a cycle-stream sweep over the poll phase and every
+sprite-stall case (reads stall, writes proceed) chose the two delays and
+the trace matched it. Cost: about 11,000 cycles a frame typical on
+either model (96 band lines plus half a table build).
+
 ### Pitfalls
 
 - `raster_irq_first_line_jitter` (`docs/pitfalls/raster-and-badline.md`):
@@ -1718,6 +1807,11 @@ built here; the pinned picture is the eight-line staircase.
   raster IRQ's 0-to-6 cycle entry jitter is larger than the distance
   from the pinned C=52 to the edge at 55; the double IRQ is what makes
   the write cycle a constant.
+- `d012_poll_cannot_enter_badline_under_sprites`
+  (`docs/pitfalls/raster-and-badline.md`): a `$D012` poll run once a line
+  under fetching sprites is held straight through a badline and exits on
+  the line after the one it wanted; the badline's line is handled from
+  the line before it.
 - `badline_cycle_loss` (`docs/pitfalls/raster-and-badline.md`): the CPU
   is stopped for 48 of the badline's 63 cycles once the sprite's DMA
   follows the character fetch, no write can land in the window, and the
@@ -2045,7 +2139,7 @@ expanded frame uses the expanded width: `48 - 2 * offset - 2 * box_width`
 (arithmetic from the two rules, not measured here). Scaling the box in
 compiled C with variable shifts took 158 cycles a box in that recipe.
 
-**Guard.** A fighter's guard replaces the body box with a guard box: `fighter_guard_state` in `game-design/enemy-behaviour-and-difficulty.md`.
+**Guard.** A fighter's guard replaces the body box with a guard box: `fighter_guard_state` below, and the pattern of that name in `game-design/enemy-behaviour-and-difficulty.md`.
 
 ### Cycle budget
 
@@ -2118,6 +2212,67 @@ cycles instead of 10, so a full 9-bit hit is 64. A masked-out pair is
 - cadaver/c64gameframework (MIT), `actor.s` (CheckActorCollision,
   CheckBulletCollision, AF_GROUPFLAGS) and `sprite.s` (bounds emitted by
   the sprite draw), https://github.com/cadaver/c64gameframework
+
+---
+
+## fighter_guard_state — A fighter's guard as a box: the guard box replaces the body box, and the box a blade meets decides block or hit
+
+**Complexity:** low
+**Region:** both
+**Cost:** cycles_per_frame=364, cycles_per_frame_typical=41
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-fighter-opponent (both fighters' blades against body or guard boxes, X only, one floor; worst a hit with its push-apart; screen blanked, interrupts off)
+**Claims:** none
+**Claims basis:** derived-listing
+
+The design, its checks and what breaks without it are the pattern of the
+same name in `game-design/enemy-behaviour-and-difficulty.md`. This entry
+is the mechanism and its cost, so that `technique-lookup` can name it; an
+earlier version of the KB had only the pattern section (#113).
+
+### Why
+
+A guard changes what a blade meets. Put it in the boxes and the one
+pair test that handles every contact resolves it. A guard flag checked
+after damage has to be checked by every damage source, and a new one
+(a projectile, a throw) forgets it.
+
+### How
+
+1. On a guard frame, emit a guard box in a guard group where the body
+   box would be, over the part of the body the guard covers. Emit no
+   body box.
+2. Give a blade's pair mask both groups. A blade then meets a guard box
+   or a body box, never both.
+3. Guard box met: blocked, no damage, both fighters pushed apart (3
+   pixels in the recipe). Body box met: a hit, a stun, a 6-pixel push.
+4. A per-swing flag ends the blade after its first contact, so one swing
+   resolves once.
+
+### Why it works
+
+The body box is absent while the guard box is present, so the group of
+the box the blade met is the result. Height and facing are more boxes,
+not more rules: a high and a low guard are two boxes, and a guard box
+offset forward leaves the back of the body exposed. The full box test is
+`per_frame_hitbox`'s four compares; the recipe has one floor and tests X
+only.
+
+### Variations
+
+- High and low guards as two guard boxes over two parts of the body.
+- A guard that covers the front only, so a blow from behind lands.
+
+### Cycle budget
+
+Measured in the recipe with CIA2 timer A around each of 2,400 `resolve`
+calls, less an empty start and stop, interrupts off and the screen
+blanked (Oscar64 -O2, VICE x64sc, PAL and NTSC the same): 364 cycles
+worst, a hit with its push-apart loop, and 41 mean.
+
+### Recipes
+
+- `recipes/oscar64/fighter-opponent.md` — the opponent's guard frame replaces its body box; blows landed and blocked counted for both fighters and checked against a Python model
 
 ---
 

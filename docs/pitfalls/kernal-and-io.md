@@ -1309,6 +1309,7 @@ tramp:  bit $dd0d               // clear the CIA2 flag before the KERNAL looks
 **Region:** both
 **Triggered by kernal:** OPEN, CLOSE, CHKIN, CHKOUT, CLRCHN, CHRIN, CHROUT, LOAD, SAVE
 **Triggered by techniques:** stable_raster_irq, frame_sync_loop, kernal_file_write_seq, kernal_file_read_seq, kernal_relative_file_io, kernal_load_to_address, directory_read_and_select
+**Mitigated by techniques:** music_during_kernal_load
 
 ### Symptom
 
@@ -1439,8 +1440,18 @@ vic.intr_ctrl = 1; vic.intr_enable = 1;
   during file I/O": the test program and the same figures beside the
   save-file recipe.
 - `recipes/oscar64/stable-raster-irq.md`, "What `rirq_init` actually
-  does": the dispatcher shares the IRQ line with the CIA jiffy timer,
-  which the brackets above stall in the same way (not measured here).
+  does": the dispatcher shares the IRQ line with the CIA jiffy timer.
+  An earlier version of this line said the brackets stall a CIA timer
+  interrupt the same way, not measured. They do worse: ACPTR's `$DC0D`
+  polls at `$EE2D` and `$EE30` acknowledge a pending timer A flag, so the
+  interrupt is lost, not delayed. Over a 4,096-byte LOAD a CIA1 timer A
+  interrupt at the frame rate was taken in 65 to 72 % of frames against
+  82 to 88 % for a raster interrupt, PAL and NTSC
+  (`recipes/kickassembler/music-during-load.md`, rung 1).
+- Technique `music_during_kernal_load` (`techniques/music-sid.md`):
+  music kept in time across the load by counting frames on CIA2 timers
+  A and B, which the serial code does not touch, and catching up in the
+  handler; 0 steps lost in the same measurement.
 
 ### Sources
 
@@ -1461,7 +1472,7 @@ vic.intr_ctrl = 1; vic.intr_enable = 1;
 
 **Severity:** high
 **Region:** PAL
-**Triggered by kernal:** OPEN, CHKIN
+**Triggered by kernal:** OPEN, CHKIN, LOAD
 **Triggered by techniques:** kernal_file_read_seq, kernal_file_write_seq, error_channel_check, kernal_load_to_address, directory_read_and_select
 
 The id says "first open after reset" because that is where it was
@@ -1577,6 +1588,20 @@ NTSC (122 runs each, none hung):
   in still has badlines), read, set the bit again. With no badlines the
   67-cycle pulse is always seen.
 
+**LOAD of a file that may be missing.** LOAD sends the name and then
+the TALK in one call, so a program cannot read the error channel in
+between. The drive's answer is the same short pulse: the OPEN of
+secondary 0 fails with `62`, TALK finds no channel and releases the bus
+at `$EA50`, CLK low for 68 drive cycles (ROM count, the same
+instructions and branches as the secondary-2 case above; the path taken
+confirmed with VICE exec traces of the drive, PAL and NTSC). Blank the
+screen for the LOAD as above, or first OPEN the file by name, read
+channel 15, and LOAD only on `00`. `recipes/oscar64/load-asset-runtime.md`
+blanks it (#101); the OPEN-first form was not run. That recipe did not
+hang without the blank either, at 0 to 250 frames of wait on PAL and
+NTSC: its turnaround fell on three raster lines only, none in the
+window. That is its phase, not a margin.
+
 In either case check `$90` and the error channel after the read.
 Nothing gets the program out once it is inside `$EDD6`: the I flag is
 set, so a raster or CIA IRQ watchdog cannot fire. An NMI can;
@@ -1606,6 +1631,8 @@ against `chargen-901225-01.bin`.
 | error channel first, file read only on `00` | none hung | not run | none hung, 0 to 60 |
 | the listing after #93: channel 15 opened after the file, read first, closed last; no wait knob, one put back for the sweep | none hung, fresh disk; none hung, disk with the file (the `00` path) | not run | none hung, 0 to 60, both disks |
 | `$D011` bit 4 cleared, one frame, read, bit set | none hung | not run | none hung, 0 to 60 |
+| LOAD of the missing file, `load-asset-runtime`, before #101 (no blank) | none hung | none hung, 61 to 250 | none hung, 0 to 250 |
+| the same after #101, screen blanked for each LOAD | none hung | none hung, 61 to 250 | none hung, 0 to 250 |
 
 The 0, 5, 10, 20 and 50-frame cells agree with the earlier table this
 replaced: ran, ran, hung, ran, ran on PAL; all ran on NTSC.
@@ -1684,6 +1711,11 @@ explains why).
   hanging PAL builds; 746 runs of the scaffold at waits 0 to 250 on PAL
   and NTSC and of the two fixed builds at 0 to 60; the idle-method and
   drive-type runs. Rung 1.
+- VICE x64sc 3.10, 2026-09-24 (#101): exec traces of the drive at
+  `$E909`, `$E9B3` and `$EA50` during LOAD's TALK, PAL and NTSC; 1,004
+  runs of `load-asset-runtime` at waits 0 to 250 with and without the
+  blank, and 248 more at eight drive speeds. Rung 1. The 68-cycle count
+  for LOAD is from the ROM bytes, rung 3 on rung 1.
 - VICE x64sc 3.10, 2026-09-22: the first monitor session and the
   `-iecreset`, `-autostart-delay` and load-from-disk runs. Rung 1.
 
@@ -1694,8 +1726,8 @@ explains why).
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D015, D011
-**Triggered by kernal:** IECIN, CHRIN, CHKIN, OPEN, CLOSE
-**Triggered by techniques:** kernal_file_write_seq, kernal_file_read_seq, error_channel_check, sprite_multiplex_8, sprite_multiplex_24, sprite_multiplex_game
+**Triggered by kernal:** IECIN, CHRIN, CHKIN, OPEN, CLOSE, LOAD
+**Triggered by techniques:** kernal_file_write_seq, kernal_file_read_seq, kernal_load_to_address, error_channel_check, sprite_multiplex_8, sprite_multiplex_24, sprite_multiplex_game
 
 Measured in VICE x64sc 3.10 with true drive emulation, not on a real
 C64 and 1541 (rung 1, VICE only). VICE's default drive 8 is a 1541-II
@@ -1820,6 +1852,26 @@ without sprites, and a threshold in the number of sprites. Where each
 sprite's fetch cycles sit relative to the badline, and why the NTSC
 threshold is one sprite higher, were not traced here; the 6567R8's
 65-cycle line would give a longer gap, but that is not measured.
+
+**LOAD hangs the same way (#107).** LOAD's serial path calls ACPTR
+three times, at `$F4D5`, `$F4E0` and `$F501` (rung 1, the ROM bytes). A
+second test program, the save test's sprites and CIA2 NMI watchdog
+around `krnio_load` of a 1,000-byte PRG, ran 5 LOADs with the sprites
+off around each call, then 5 with them left on. One run per cell;
+each cell reads "sprites off / sprites left on":
+
+| Sprites | PAL c64c | NTSC 6567R8 |
+|---|---|---|
+| 0 | 5 of 5 / 5 of 5 | 5 of 5 / 5 of 5 |
+| 3 | 5 of 5 / hung | 5 of 5 / 5 of 5 |
+| 4 | not run | 5 of 5 / hung |
+| 8 | 5 of 5 / hung | 5 of 5 / hung |
+
+The thresholds are the save test's: 3 sprites on PAL, 4 on NTSC. An
+earlier version of the trigger lines named only the byte and channel
+routines, so `c64_check_compatibility` did not raise this pitfall
+beside `kernal_load_to_address`; a game that loads its next level with
+sprites on hits it.
 
 **A different hang in the same runs.** 8 sprites at Y 250 hung on NTSC
 in round 1, in the other wait inside ACPTR: `$EE30` to `$EE3A`, where
@@ -2342,3 +2394,86 @@ file.
 - `techniques/file-io.md`, `kernal_file_write_seq` and
   `disk_copy_block_commands`.
 - `recipes/kickassembler/disk-copier.md`: the images decoded.
+
+
+## cycle_limit_lands_before_the_grading_frame — A test's `-limitcycles` that ends before the program's grading frame reads as a pass, or as a black picture, and has measured nothing
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** frame_sync_loop, raster_profile_bars, pal_ntsc_detection
+
+### Symptom
+
+An exit screenshot taken under a cycle limit copied from another test
+shows the effect still running with no verdict on the border, or a
+black screen, and an expect file that only checks for the absence of a
+red border, or for black, passes. In a five-part KickAssembler demo
+built from the KB every part's standalone test grades at frame 300 and
+freezes; the tests were run at `-limitcycles 7000000`, a figure carried
+over from a recipe. The fire part's shot at that limit showed the
+palette before its first switch and a border still black, and the notes
+of two parts record the same finding: the program starts near 3.0M
+cycles in this VICE, so 7,000,000 was frame 200 for every part's test,
+while the grades landed at 8.95M and 8.98M cycles and the frozen frame
+the PAL/NTSC "same" comparison needs was past 9M.
+
+### Mechanism
+
+`-limitcycles` counts from power-on, not from the program's first
+instruction. With `-autostartprgmode 1` the program is injected after
+the KERNAL reset and BASIC's cold start, so its frame 0 sits near 3.0M
+cycles, and frame N is near 3.0M + N x 19,656 on PAL or 3.0M + N x
+17,095 on NTSC: a frame-300 grade is about 8.9M PAL and 8.1M NTSC by
+that arithmetic, which is where the two parts measured theirs. A limit
+below the grade is a picture of the running effect, not of its verdict,
+and any check phrased as an absence, no red border, a black rectangle,
+is satisfied by a program that has not graded yet, and equally by one
+that has crashed to a blank screen. Because the two models put a
+different number of cycles in a frame, one limit can be past the grade
+on NTSC and short of it on PAL.
+
+### Fix
+
+Derive the limit from the grading frame and the measured start offset,
+not from another test, and make the picture independent of the limit:
+freeze the effect after the verdict so every limit past the grade gives
+the same shot, and put a positive check in the expect file, a verdict
+glyph, a frame counter or CIA-timed words on a screen row, that a
+mid-run shot cannot satisfy. The demo's tests moved to 9,500,000 (the
+fire part) and 10,000,000 (the ball part), their expect notes say so,
+and each test stops its effect after grading; the fire part had to
+freeze its sprite chain as well, because the stub leaves interrupts on
+and the chain's phase otherwise depended on the cycle limit.
+
+### Worked example
+
+```text
+// Choose the limit from the frame, not the other way round.
+//   start offset (measured once, this VICE, autostartprgmode 1): ~3.0M
+//   PAL:  3.0M + 300 x 19,656 = 8.9M   -> -limitcycles 10000000
+//   NTSC: 3.0M + 300 x 17,095 = 8.1M   -> the same limit is past both
+//
+// In the program: grade, then freeze, so the shot is the grading frame
+// whatever the limit.
+grade:
+    jsr selfcheck          // sets the verdict colour on $D020
+    lda #0
+    sta effect_running     // main does nothing from here
+    sei                    // and the effect's interrupts stop moving it
+    jmp *
+
+// In the expect file: a fact only the graded frame has, alongside the
+// border colour. A frame counter on row 24, a glyph the verdict draws,
+// or the CIA-timed worst/typical words the test prints at the grade.
+```
+
+### Cross-references
+
+- `krnio_save_leaves_splat_file` above: the same shape of error, the
+  emulator stopped before the work it was asked about had finished.
+- `pal_ntsc_tempo_mismatch` in `pitfalls/region-timing.md`: 19,656
+  against 17,095 cycles a frame, which is why one limit is two frames.
+- Technique: `frame_sync_loop` in `techniques/raster.md`: the frame
+  count the grade is pinned to.
+- Technique: `raster_profile_bars` in `techniques/raster.md`: the
+  CIA-timed words a graded frame can print as its positive check.

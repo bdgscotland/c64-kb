@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import { extractGraphEntities } from "../src/graph/extract.ts";
 
@@ -127,6 +129,23 @@ describe("extractGraphEntities — MemoryRegion", () => {
       end: "$07FF",
       bank_switchable: false,
     });
+  });
+});
+
+describe("extractGraphEntities — the memory map's region names", () => {
+  // The graph keys a MemoryRegion by name, so two headings with one name leave
+  // one node: three "Unused" headings once hid $02A7-$02FF from memory-map (#108).
+  it("gives every region in docs/hardware/c64-memory-map.md its own name", () => {
+    const page = readFileSync(
+      join(import.meta.dirname, "..", "docs", "hardware", "c64-memory-map.md"),
+      "utf8",
+    );
+    const names = extractGraphEntities(page, "c64-memory-map.md")
+      .filter((e) => e.type === "memory_region")
+      .map((e) => e.name);
+    const repeated = names.filter((n, i) => names.indexOf(n) !== i);
+    expect(repeated).toEqual([]);
+    expect(names).toContain("Unused page-2 RAM (89 free bytes)");
   });
 });
 

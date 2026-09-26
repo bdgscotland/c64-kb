@@ -1,0 +1,43 @@
+{
+  "note": "Part 5 standalone with -define FADE (fade requested at frame 160, sixteen steps of eight frames, sprites off at step 16), frozen at frame 300; run to 10,000,000 cycles. The gradient fades through the same ladder and is all black from level 15. What is not black: the 8565's grey dot where each row's $D021 write lands, ten one-pixel dots at vic_x 288 to 304 on the lines after the rows (VICE emulates it), hence an ink ceiling of 12 rather than a black rect.",
+  "checks": [
+    {
+      "name": "own verdict after the fade (the walk and the registers still agree with the sprites off)",
+      "type": "verdict"
+    },
+    {
+      "name": "window black but for the rows' grey dots: at most 12 lit pixels over the whole window",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 28,
+      "width": 320,
+      "height": 235,
+      "background": 0,
+      "min": 0,
+      "max": 12
+    },
+    {
+      "name": "left of the dots all black (vic_x 24 to 279)",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": 24,
+      "line": 28,
+      "width": 256,
+      "height": 235
+    },
+    {
+      "name": "right of the dots all black (vic_x 312 to 343)",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": 312,
+      "line": 28,
+      "width": 32,
+      "height": 235
+    },
+    {
+      "name": "black on both models left of the dots",
+      "type": "same",
+      "area": { "vic_x": 24, "line": 28, "width": 256, "height": 235 }
+    }
+  ]
+}

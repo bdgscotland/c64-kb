@@ -58,6 +58,8 @@ describe("game-design extractor", () => {
           basis: "measured-vice",
           source: 'CIA1 timer B, recipes/oscar64/platformer-scaffold.md "Expected output"',
         },
+        // #107: a second line for play PAL is its own measurement, kept.
+        { phase: "play", region: "PAL", worst: 1, basis: "estimated", source: "a second PAL play entry" },
       ],
       source_doc: "game-design/designs/test.md",
     });
@@ -79,7 +81,7 @@ describe("game-design extractor", () => {
     expect(warnings).toContain('phase "later"');
     expect(warnings).toContain('"Not A Name"');
     expect(warnings).toContain('"not_a_recipe"');
-    expect(warnings).toContain("play PAL is given on two lines");
+    expect(warnings).not.toContain("Measured frame");
     expect(warnings).toContain('H2 "Missing name" has a **Composes:** line but no **Game design:** line');
     // Only one design: the prose H2 and the unnamed one are not ingested.
     expect(es.filter((e) => e.type === "game_design")).toHaveLength(1);

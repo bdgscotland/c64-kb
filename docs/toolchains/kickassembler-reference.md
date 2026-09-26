@@ -106,6 +106,10 @@ across separately assembled units. `KickAss.cfg` on this machine already
 contains `-symbolfile -showmem`, so a `.sym` is written on every build without
 the flag.
 
+`-symbolfile` writes next to `-odir`, and `-odir` is relative to the
+source file's directory, not the working directory: `-odir build` from
+the project root with a source in `test/` writes `test/build/name.sym`.
+
 ### .VS — VICE monitor symbol file
 **Produced by:** kickassembler
 **Consumed by:** vice
@@ -147,6 +151,13 @@ Argument labels name the argument of a mnemonic for self-modifying code:
 ```
 
 `*` returns the current program counter value.
+
+Multi-labels bind by position only: `!-` is the nearest `!:` above the
+branch, whatever it was for. A loop closed with `bne !-` after an inner
+`!:` exit label (a `beq !+` inside the body) jumps to the exit label, not
+the loop top; two such loops in the c64-kb demo's part 10 filled a table
+with one value and entered a copy loop on its "not ready" path. Name the
+loop label when the body has another anonymous label.
 
 ### Number formats
 
@@ -473,6 +484,14 @@ disambiguates a macro call from a mnemonic of the same name.
 Macros may call other macros or themselves (recursive, with a termination
 condition). They may be used before they are declared.
 
+A macro body is resolved in the scope of its definition: a macro defined
+outside a `.namespace` cannot see the namespace's labels or zero-page
+`.label`s ("Unknown symbol"). Pass addresses as parameters or name them
+at file level. A label written from a parameter (`readLabel:` with
+`readLabel` a parameter) defines a literal label of that name, so the
+second expansion fails with "already defined"; label the invocation and
+compute the address from a known offset instead.
+
 ### Pseudocommands
 
 Pseudocommands behave like custom mnemonics: they accept addressing-mode
@@ -518,6 +537,10 @@ generate bytes directly. The script language includes:
 
 Use `.eval` to mutate a variable in-line; use `.var` to declare mutable
 script variables; use `.const` for true constants.
+
+A `.var` holding a List that a macro or `.fill` reads in more than one
+pass is refused ("unlocked value across passes"); declare it `.const`,
+which locks it.
 
 ## Preprocessor
 

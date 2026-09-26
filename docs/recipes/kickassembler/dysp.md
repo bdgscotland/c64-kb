@@ -70,14 +70,14 @@ byte-identical across two runs.
 // Build variants (KickAssembler command line):
 //   :ENTRYPAD=n      cycles from the sync to the first DEC (PAL default 45)
 //   :ENTRYPADN=n     the same for NTSC (default 45)
-//   :SYNCPADN=n      NTSC sync padding (default 12)
+//   :SYNCPADN=n      NTSC sync padding (default 13; see page, issue #111)
 //   :MODEL=count :D=n :B=n   count model: lost = B + D * (sprites on the line)
 //   -define FIXEDDELAY       control: the sideborder recipe's fixed
 //                            sprite-free timing on every line
 
 .var ENTRYPAD  = cmdLineVars.containsKey("ENTRYPAD")  ? cmdLineVars.get("ENTRYPAD").asNumber()  : 45
 .var ENTRYPADN = cmdLineVars.containsKey("ENTRYPADN") ? cmdLineVars.get("ENTRYPADN").asNumber() : 45
-.var SYNCPADN  = cmdLineVars.containsKey("SYNCPADN")  ? cmdLineVars.get("SYNCPADN").asNumber()  : 12
+.var SYNCPADN  = cmdLineVars.containsKey("SYNCPADN")  ? cmdLineVars.get("SYNCPADN").asNumber()  : 13
 .var COUNTMODEL = cmdLineVars.containsKey("MODEL") && cmdLineVars.get("MODEL") == "count"
 .var DPER = cmdLineVars.containsKey("D") ? cmdLineVars.get("D").asNumber() : 2
 .var BLEAD = cmdLineVars.containsKey("B") ? cmdLineVars.get("B").asNumber() : 1
@@ -520,6 +520,17 @@ is untouched.
 to 200 (rows 23 to 172), the same four Y positions and the same sprite
 rows, in the NTSC palette.
 
+**While the sprites move (`dysp@moving` in `runs.json`, 8,000,000
+cycles).** A second pinned run takes the picture before frame 300, while
+the sines still move. Measured with PIL as in the sweep below: on both
+models no line from 51 to 200 has the right border closed (the left one
+is closed on line 51 only, as in the static picture). Sprite rows: lines
+60 to 78, 89 to 107, 117 to 135 and 145 to 163 on PAL; 82 to 100, 108 to
+130 and 134 to 152 on NTSC. The earlier NTSC sync padding of 12, run the
+same way, closes the right border on lines 51 to 80 (see "Entry, models"
+below), so `verify:recipes` fails if that fault returns. Pictures:
+`screenshots/dysp-moving.png` and `screenshots/dysp-moving-ntsc.png`.
+
 **Sweep: what the border does under each per-line model (PAL, frame
 300, sprites at Y 77, 88, 105, 169).** Measured from the screenshot:
 a band line counts as closed when all 32 pixels at x 352 to 383 are the
@@ -637,7 +648,8 @@ flip-flop only matters once it clears on line 51.
 ### Entry, models, and what the sines may not do
 
 The stable entry is the double IRQ from `stable-raster-irq.md`: `irq1`
-at line 37, `irq2` at line 39, `SYNC_PAD` 11 on PAL. `ENTRYPAD` is the
+at line 37, `irq2` at line 39, `SYNC_PAD` 11 on PAL and `SYNCPADN` 13 on
+NTSC. `ENTRYPAD` is the
 cycles from the sync to the first `DEC` and its value, 45, was set from
 the write-cycle trace above. `pal_ntsc_detection`'s method from the road
 recipe sets a flag at boot; `irq1` selects the PAL or the NTSC loop by
@@ -648,6 +660,27 @@ write, and the CPU resumes on 61 + 2l, so the `INX` on 57 loses
 starts on 57, from slot numbers that `vic-ii-reference.md` has since
 corrected by measurement, and the 4 + 2l was right), and both loops
 keep their slide at the same low byte so one entry table serves either.
+
+The NTSC padding is two cycles more than PAL's because the two `$D012`
+reads must straddle the end of line 39, and a 65-cycle line ends two
+cycles later. Exec trace of `irq2_ntsc` and of the instruction after its
+`beq`, NTSC, 10,000,000 cycles (the monitor's CYC as printed; Bauer's
+cycle is one more): `irq2` enters on cycle 38 in 44 frames and on 39 in
+359, and the post-sync instruction is on cycle 3 of line 40 in all 403.
+On PAL `irq2` entered on 39 in every frame and the post-sync cycle was 3
+in all 356; `fld.md` shows the same padding of 11 absorbing entries on
+38 and 39 on PAL. An earlier version used 12 on NTSC: the reads then
+fell inside line 39 whichever cycle `irq2` entered on, so the post-sync
+cycle was 2 in the 44 frames that entered on 38 (frames 257 to 300,
+while the sines move) and 3 in the rest. With the loop one cycle early,
+the sprite-free lines at the top of the band wrote on 55 (store trace of
+`$D016` over those frames: 678 `DEC` writes on 55 on lines 51 to 80, none
+in the frames that entered on 39) and kept the border closed: the right border on lines 51 to 80 in the NTSC picture
+at 8,000,000 cycles, until the first sprite line's stall put the loop
+back on 56. The static 10,000,000-cycle pictures were the same with
+either value and did not show it (issue #111, the follow-up to #100 on
+`tech-tech.md`). `ENTRYPADN` 45 is unchanged: frames that entered on 39
+already reached cycle 3.
 
 The IRQ lines 37 to 39 must be free of sprite DMA, or the sync itself
 is stalled by a length that changes with the frame. Sprite 0's lowest Y

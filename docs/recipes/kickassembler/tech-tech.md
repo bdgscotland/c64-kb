@@ -91,7 +91,8 @@ is N instead of 3: the sweep. The technique is `tech_tech_wobbler` in
 .const LAST_LINE  = 162           // row 13, line 7
 .const NLINES     = LAST_LINE - FIRST_LINE + 1   // 48
 .const SYNC_LINE  = 112           // stable raster here; 112 & 7 = 0, not a badline
-.const SYNC_PAD   = 11            // as measured for stable-raster-irq and fli-image
+.const SYNC_PAD_PAL  = 11         // as measured for stable-raster-irq and fli-image
+.const SYNC_PAD_NTSC = 13         // two more: the 65-cycle line ends two cycles later (issue #100)
 
 // Padding, measured in VICE (see page). The block for line l is
 // Delay(LINE_PAD) + 20 cycles of writes; its $D011 write is the block's
@@ -105,10 +106,11 @@ is N instead of 3: the sweep. The technique is `tech_tech_wobbler` in
 
 // From the sync point to cycle 55 of FIRST_LINE, after its natural
 // badline stall: fli-image's 197 (PAL) and 204 (NTSC), less the 14
-// cycles of line 115's own two writes placed before the delay. Measured:
-// 205 - 14 on NTSC put line 116's write one cycle late (four cells lost).
+// cycles of line 115's own two writes placed before the delay. NTSC is
+// 203, measured with SYNC_PAD_NTSC 13: 204 puts line 116's write on
+// cycle 15, 202 on 13 (issue #100).
 .const ENTRY_PAD_PAL  = 197 - 14
-.const ENTRY_PAD_NTSC = 204 - 14
+.const ENTRY_PAD_NTSC = 203 - 14
 
 .const MATRIX0   = $2000          // matrix k at MATRIX0 + k * $400
 .const D016_BASE = $c8            // 40 columns, hires, XSCROLL 0
@@ -406,7 +408,7 @@ i1_common:
 irq2_pal:
     ldx SAVED_SP
     txs
-    Delay(SYNC_PAD)
+    Delay(SYNC_PAD_PAL)
     lda D012
     cmp D012
     beq !+
@@ -416,7 +418,7 @@ irq2_pal:
 irq2_ntsc:
     ldx SAVED_SP
     txs
-    Delay(SYNC_PAD)
+    Delay(SYNC_PAD_NTSC)
     lda D012
     cmp D012
     beq !+
@@ -475,7 +477,7 @@ For the placement sweep, N from 2 to 6:
 java -jar KickAss.jar tech-tech.asm :pad=N -o tech-tech-padN.prg
 ```
 
-`-showmem` reports the code at `$0900` to `$1221` (2,338 bytes, most of
+`-showmem` reports the code at `$0900` to `$1222` (2,339 bytes, most of
 it the two unrolled bands), the tables at `$1C00` to `$1D7F` (384 bytes)
 and the eight matrices at `$2000`, `$2400`, ... `$3C00`, 1,000 bytes each.
 The PRG is 14,313 bytes.
@@ -562,24 +564,38 @@ Nothing in the sweep produced a plain, unwobbled logo: a write late
 enough to miss the badline window altogether was not tried.
 
 On NTSC the block is `LINE_PAD_NTSC` = 5, 25 cycles of a 65-cycle line,
-and the entry delay 204 - 14. With 205 - 14, which `fli-image` suggested
-would be right for the 6567R8, line 116 came out one cycle late (cell 0
-stale, 1 to 3 code 255) and lines 117 to 162 correct; with 204 - 14 all
-47 forced lines are correct in the pinned picture. The remaining lines of
-both models were identical in the two settings, because from the first
-block onwards each line is timed by its own stall.
+the sync padding `SYNC_PAD_NTSC` = 13 and the entry delay 203 - 14. Lines
+117 to 162 are timed by their own stalls and do not depend on either.
 
-The store trace over the pinned 12,000,000 cycles puts every write of
-lines 117 to 162 on cycle 14 on both models, and line 116's on 14 in
-every PAL frame. On NTSC line 116's write moves: cycle 13 in 296 frames,
-14 in 221, and 14 in every frame after the phase stops, which is when the
-pinned picture is taken. With 205 - 14 it is 14 and 15. So on NTSC,
-while the wave moves, line 116 usually resets the row counter: an NTSC
-exit screenshot at 4,000,000 cycles shows two strip cells on line 116,
-not three, and the logo's first character row nine lines tall, 115 to
-123, with every row below one line lower. The PAL picture at the same
-cycle count is correct. The entry sync is one cycle unstable on NTSC;
-this is issue #100.
+The sync padding is two cycles longer than PAL's 11 because the two
+`$D012` reads must straddle the end of line 111, and a 65-cycle line ends
+two cycles later. Store trace of `$D011` and exec trace of `irq1` and
+`irq2_ntsc`, NTSC, 12,000,000 cycles: `irq2` enters on cycle 38 or 39 of
+line 111 (the jitter left by `irq1`'s entry, which differs while the wave
+moves and after it stops). With 13, every write of lines 116 to 162 is on
+cycle 14 in all 516 frames, moving and static. Entry delays 200 to 204
+put line 116 on 11 to 15, one cycle each, so 203 is the only value.
+`pseudo-3d-road` measured the same 11 and 13 for its double IRQ.
+
+An earlier version used `SYNC_PAD` = 11 on both models with the entry
+delay 204 - 14. On NTSC the reads then fell inside line 111 whichever
+cycle `irq2` entered on, so the jitter passed through: line 116's write
+was on cycle 13 in 296 frames and 14 in 221, and on 14 in every frame
+after the phase stopped, which is when the 12,000,000-cycle picture is
+taken. A write on 13 resets the row counter: an NTSC screenshot while the
+wave moved showed two strip cells on line 116, not three, and the first
+character row nine lines tall, 115 to 123. The pinned static pictures
+did not show it and are unchanged by the fix (#100). PAL was correct.
+
+The second pinned run, `tech-tech@moving` in `runs.json` at 4,005,000
+cycles, takes the picture while the wave moves: phase 50 on PAL, 51 on
+NTSC. Measured with PIL against the table: every one of the 48 lines has
+its edge at 56 + sine[(T + 3 l) & 255], every line from 116 to 162 has
+three strip cells, and the first character row is lines 115 to 122 on
+both models. The earlier listing, run the same way, gives the nine-line
+row on NTSC, so `verify:recipes` fails if the fault returns. Its pictures
+are `screenshots/tech-tech-moving.png` and
+`screenshots/tech-tech-moving-ntsc.png`.
 
 Screenshots from the VICE runs this page describes:
 `screenshots/tech-tech.png` (PAL) and `screenshots/tech-tech-ntsc.png`.
@@ -678,9 +694,9 @@ tables outgrow zero page.
 `detect_region` sets a flag at boot and `irq1` picks the PAL or NTSC band
 from it, as `pseudo-3d-road` does. The NTSC band's blocks have two more
 cycles of padding for the 65-cycle line of the 6567R8, which is VICE's
-`-model ntsc`, and a different entry delay; the c-accesses still occupy
-cycles 15 to 54 and the stall still ends on cycle 55, so the block
-structure is the same. The 64-cycle 6567R56A was not run.
+`-model ntsc`, two more cycles of sync padding and a different entry
+delay; the c-accesses still occupy cycles 15 to 54 and the stall still
+ends on cycle 55, so the block structure is the same. The 64-cycle 6567R56A was not run.
 
 ### Masking the CIAs
 

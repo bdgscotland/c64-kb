@@ -8,6 +8,10 @@ file_formats: [CRT]
 uses_registers: [DE00, DE02, DC04, DC05, DC06, DC07, DC0E, DC0F, D011, D016, D018, D020, D021]
 uses_kernal: []
 devices: [easyflash]
+claims: [expansion_io1 (owns), zero_page $02-$0C+$FB-$FE (owns)]
+claims_basis: derived-listing
+harness: [cia1_timer_a, cia1_timer_b]
+ram: [screen=$0400-$07E7, main=$0800-$0FFF, flash=$8000-$9FFF, colour=$D800-$DBE7]
 ---
 
 <!-- doc-type: recipe -->
@@ -661,6 +665,10 @@ java -jar $KICKASS_JAR easyflash-save.asm -o easyflash-save.prg
 # writes easyflash-save.crt (16,480 bytes) beside the source.
 # The .prg named by -o is not written: the default segment is empty.
 ```
+
+The frontmatter's `claims:` is read from the listing
+(`claims_basis: derived-listing`), not from a `claims-watch` trace: the
+watch autostarts a PRG, and this program boots from a cartridge.
 
 ## Expected output
 

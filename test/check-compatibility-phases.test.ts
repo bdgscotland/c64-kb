@@ -36,7 +36,7 @@ const DATA: StateData = {
       name: RASTER_IRQ_PITFALL,
       routines: ["OPEN", "CLOSE", "CHKIN", "CHKOUT", "CLRCHN", "CHRIN", "CHROUT", "LOAD", "SAVE"],
     },
-    { name: SPRITE_PITFALL, routines: ["IECIN", "CHRIN", "CHKIN", "OPEN", "CLOSE"] },
+    { name: SPRITE_PITFALL, routines: ["IECIN", "CHRIN", "CHKIN", "OPEN", "CLOSE", "LOAD"] },
   ],
   recipeKernalOut: [
     {
@@ -78,14 +78,18 @@ describe("stateRules (pure)", () => {
     expect(hits.find((h) => h.kind === "recipe_kernal_out")?.severity).toBe("info");
   });
 
-  it("LOAD alone triggers the raster pitfall, not the sprite one, whose lines do not name it", () => {
-    const kinds = stateRules(
+  it("LOAD alone triggers both pitfalls: it receives through ACPTR (#107)", () => {
+    const hits = stateRules(
       { name: "sprite_multiplex_game", facts: MUX, phase: "play" },
       { name: "kernal_load_to_address", facts: LOAD, phase: "transition" },
       DATA,
-    ).map((h) => h.kind);
-    expect(kinds).toContain("raster_irq_during_serial_io");
-    expect(kinds).not.toContain("sprites_over_badlines_hang_serial_io");
+    );
+    expect(hits.map((h) => h.kind)).toContain("raster_irq_during_serial_io");
+    expect(hits.find((h) => h.kind === "sprites_over_badlines_hang_serial_io")).toMatchObject({
+      b: "kernal_load_to_address",
+      shared: ["LOAD"],
+      across: { a_phase: "play", b_phase: "transition" },
+    });
   });
 
   it("across phases: tagged with both phases; KERNAL-out is soft, not hard", () => {
@@ -197,7 +201,7 @@ describe("checkCompatibility by phase: the game test's T4", () => {
     await f.linkRecipeImplements("kickassembler-sprite-multiplex-game", "ram_under_kernal");
     for (const [name, routines] of [
       [RASTER_IRQ_PITFALL, ["OPEN", "CLOSE", "CHKIN", "CLRCHN", "CHRIN", "LOAD"]],
-      [SPRITE_PITFALL, ["CHRIN", "CHKIN", "OPEN", "CLOSE"]],
+      [SPRITE_PITFALL, ["CHRIN", "CHKIN", "OPEN", "CLOSE", "LOAD"]],
     ] as const) {
       await f.addPitfall({ name, title: name, severity: "high", region: "both", category: "kernal" });
       for (const k of routines) await f.linkTriggeredBy(name, k, "KernalRoutine");
@@ -217,11 +221,15 @@ describe("checkCompatibility by phase: the game test's T4", () => {
     expect(kinds).toEqual(
       new Set(["raster_irq_during_serial_io", "sprites_over_badlines_hang_serial_io", "recipe_kernal_out"]),
     );
-    expect(cross.find((c) => c.kind === "sprites_over_badlines_hang_serial_io")).toMatchObject({
-      a: "sprite_multiplex_game",
-      b: "kernal_file_read_seq",
-      across: { a_phase: "play", b_phase: "transition" },
-    });
+    // LOAD receives through ACPTR, so the load is listed beside the read (#107).
+    const sprites = cross.filter((c) => c.kind === "sprites_over_badlines_hang_serial_io");
+    expect(sprites.map((c) => [c.a, c.b, c.shared]).sort()).toEqual([
+      ["sprite_multiplex_game", "kernal_file_read_seq", ["CHKIN", "CHRIN", "CLOSE", "OPEN"]],
+      ["sprite_multiplex_game", "kernal_load_to_address", ["LOAD"]],
+    ]);
+    expect(sprites.every((c) => c.across?.a_phase === "play" && c.across.b_phase === "transition")).toBe(
+      true,
+    );
     // Play alone is incompatible on its own (two raster-IRQ owners, the
     // game test's T2); the cross-phase findings are soft.
     expect(cross.every((c) => c.severity !== "hard")).toBe(true);

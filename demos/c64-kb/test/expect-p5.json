@@ -1,0 +1,77 @@
+{
+  "note": "Part 5 standalone, frozen at frame 300 (run to 10,000,000 cycles: the program starts near 3.0M, so 7M is frame 200 on every part's test). t = 300: the schedule shown is the build at t 299 from the projection at 298, whose breath[42] is +27 steps, so the ellipse (X 45 to 299 on the cosine, Y 36 to 244 on the sine) leans with its right end down; gradient phase 11, so rows 20/62/82/102/122/142/162/182/202/222 show dark grey, red, brown, blue, black, black, blue, brown, red, dark grey. Balls pinned from the shot (identical on both models in colour index): the leftmost ball sits at X 45, the ring's XMID - RADIUS. The side borders carry the stub's verdict; the rows write only $D021.",
+  "checks": [
+    {
+      "name": "own verdict: tables in RAM, $D011 $0B, rows ascending, the entry last taken is what its sprite's registers hold",
+      "type": "verdict"
+    },
+    {
+      "name": "the window identical on PAL and NTSC (frozen at the same frame) left of vic_x 280: past it lie the rows' mid-line $D021 steps, which land on different pixels at 63 and 65 cycles a line, and the 8565 grey dots",
+      "type": "same",
+      "area": { "vic_x": 24, "line": 28, "width": 256, "height": 235 }
+    },
+    {
+      "name": "top band dark grey, left of the top balls (lines 28 to 57)",
+      "type": "rect",
+      "colour": 11,
+      "vic_x": 24,
+      "line": 28,
+      "width": 36,
+      "height": 30
+    },
+    {
+      "name": "row 62's band red, right of the far balls (lines 64 to 83, vic_x 232 on)",
+      "type": "rect",
+      "colour": 2,
+      "vic_x": 232,
+      "line": 64,
+      "width": 112,
+      "height": 20
+    },
+    {
+      "name": "rows 122 and 142 black inside the ring (lines 125 to 161, vic_x 110 to 259: the near ball on the left ends at 107, the far one on the right starts at 264)",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": 110,
+      "line": 125,
+      "width": 150,
+      "height": 37
+    },
+    { "name": "row 82's band brown", "type": "pixel", "colour": 9, "vic_x": 300, "line": 94 },
+    { "name": "row 102's band blue", "type": "pixel", "colour": 6, "vic_x": 300, "line": 114 },
+    { "name": "row 162's band blue", "type": "pixel", "colour": 6, "vic_x": 40, "line": 174 },
+    { "name": "row 182's band brown", "type": "pixel", "colour": 9, "vic_x": 40, "line": 194 },
+    { "name": "row 202's band red", "type": "pixel", "colour": 2, "vic_x": 40, "line": 214 },
+    { "name": "row 222's band dark grey", "type": "pixel", "colour": 11, "vic_x": 40, "line": 240 },
+    {
+      "name": "a near ball on the lower left arc: big white 24 by 21 at X 109, lines 181 to 201, alone in its search box",
+      "type": "sprite",
+      "colour": 1,
+      "vic_x": 109,
+      "line": 181,
+      "width": 24,
+      "height": 21,
+      "search": { "vic_x": 100, "line": 178, "width": 41, "height": 27 }
+    },
+    {
+      "name": "a far ball on the right arc: small grey 16 by 13 at X 264, lines 130 to 142",
+      "type": "sprite",
+      "colour": 12,
+      "vic_x": 264,
+      "line": 130,
+      "width": 16,
+      "height": 13,
+      "search": { "vic_x": 256, "line": 122, "width": 35, "height": 29 }
+    },
+    {
+      "name": "the leftmost ball, at the ring's X 45: mid-depth, big light grey 24 by 21, lines 79 to 99",
+      "type": "sprite",
+      "colour": 15,
+      "vic_x": 45,
+      "line": 79,
+      "width": 24,
+      "height": 21,
+      "search": { "vic_x": 30, "line": 70, "width": 51, "height": 39 }
+    }
+  ]
+}

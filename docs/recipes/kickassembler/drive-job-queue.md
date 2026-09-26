@@ -632,34 +632,39 @@ which is what the DOS's own `I0` does before it touches a disk. That is
 why the same read then returns `$01` with the BAM in buffer 1, and why
 track 40 returns `$03`: there is no header there to find.
 
-The same PAL run with a `-moncommands` file that traces the drive CPU
-(`trace exec 8:0600`, `trace store 8:06f1`: the `8:` prefix selects the
-drive's address space, and `trace` does not stop the machine) and four
-host addresses (`a_upload`, `a_verify`, `a_cmp` and `b_exec`: the start
-of the upload, the start and the compare loop of the readback, and step
-B) printed these lines, cycle counters as VICE prints them on the
-right; the picture was byte-identical to the untraced run:
+The drive's time per job, in drive cycles, from the remote monitor's
+stopwatch: breakpoints `break 8:0600` (the routine's entry) and `break
+8:0618` (the `STA RESULT` after the wait) in a `-moncommands` file, and
+at each stop a client on `-remotemonitor` sent `sw` and then `x`. At a
+drive stop `sw` prints the drive CPU's own clock: a third breakpoint on
+the wait loop at `$0614` read 27 cycles after the entry (the eight
+instructions before it add to 27) and then 6 per pass (`LDA $01` 3,
+taken `BMI` 3). The screenshots were identical to the committed ones on
+both models.
 
-```text
-.8:0600  A9 A5  LDA #$A5   ...  3358170     M-E entry, first job
-.8:0618  8D F1 06  STA $06F1  - A:0B  ...  4260800   read before seek: $0B
-.8:0600  ...                       4354152     seek job
-.8:0618  ... A:01 ...              4480011     $01 after 125,859 drive cycles
-.8:0600  ...                       4571206     read job
-.8:0618  ... A:01 ...              4795277     $01 after 224,071 drive cycles
-.8:0600  ...                       5038884     track 40
-.8:0618  ... A:03 ...              5805417     $03 after 766,533 drive cycles
-```
+| Job | Result | PAL drive cycles | NTSC drive cycles |
+|---|---|---|---|
+| read before the seek | `$0B` | 916,220 | 916,544 |
+| seek | `$01` | 130,809 | 132,258 |
+| read of 18/0 | `$01` | 229,776 | 231,281 |
+| read of track 40 | `$03` | 778,154 | 778,184 |
+
+Measured in VICE x64sc 3.10 with the pinned command (rung 1). An
+earlier version of this section gave 125,859, 224,071 and 766,533
+(and `file-io.md` 902,630 for the first read) from the cycle column of a drive-side `trace exec`/`trace store`; that
+column is the host clock at the moment VICE brought the drive up to
+date, not a drive cycle (`../../runtime/vice-reference.md`, "Timing
+drive code").
 
 The drive's 6502 runs at 1 MHz, so those are microseconds: a seek and a
 read of a sector that is there take an eighth to a quarter of a second,
-mostly waiting for the sector to come round; the two failures take 0.9 s
-and 0.77 s, which is the controller's retry and bump sequence. On the
+mostly waiting for the sector to come round; the two failures take 0.92 s
+and 0.78 s, which is the controller's retry and bump sequence. On the
 host side `trace exec` at the upload's first and last instruction gave
 132,742 cycles for the three `M-W` commands and 163,545 for the 68-byte
-`M-R` readback (PAL, rung 1). The same trace also caught the drive's
-reset code storing to `$06F1` three times before the program ran: its
-RAM test walks every byte, which is why nothing uploaded survives a
+`M-R` readback (PAL, rung 1). A drive-side `trace store 8:06f1` caught
+the drive's reset code storing to `$06F1` three times before the
+program ran: its RAM test walks every byte, which is why nothing uploaded survives a
 drive reset.
 
 A `command 1 "m 8:0000 8:0011"` attached to a drive-side trace store

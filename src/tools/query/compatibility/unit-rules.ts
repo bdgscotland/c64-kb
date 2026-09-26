@@ -16,6 +16,7 @@
 // runs when the sharer requires the owner: sfx_engine_beside_music requires
 // the player and must still be told to write after it.
 
+import { parseRasterBand, rasterBandsOverlap } from "../../../graph/extract.ts";
 import {
   zeroPageRangesFromCanonical,
   formatZeroPageRanges,
@@ -38,6 +39,8 @@ export interface UnitHit {
 export interface ClaimSide {
   name: string;
   claims: readonly Claim[];
+  /** The raster band, stated or placed (#90); read for the raster compare only. */
+  band?: string | null;
 }
 
 /** Which of the pair, if either, names the other on its REQUIRES chain. */
@@ -51,22 +54,42 @@ export interface PairRelation {
 // The technique that hosts other raster effects as entries in its table.
 export const CHAIN_HOST = "irq_chain_table";
 
+type Chained = "host" | "bands" | null;
+
 /**
- * Two owners of the raster compare with the chain host in the set: the
- * host programs $D012 and each owner's handler becomes one of its entries,
- * which is the resolution the hard hit gives. Reported soft, so following
- * that resolution does not make the verdict worse (#41: adding
- * irq_chain_table to raster_bars + raster_split_modes turned one hard
- * conflict into three).
+ * Why two owners of the raster compare can share it, or null when nothing
+ * says they can. "host": the chain host is in the set, programs $D012 and
+ * each owner's handler becomes one of its entries, which is the resolution
+ * the hard hit gives; reported soft, so following that resolution does not
+ * make the verdict worse (#41: adding irq_chain_table to raster_bars +
+ * raster_split_modes turned one hard conflict into three). "bands": both
+ * run on stated or placed line bands that share no line (#90), so one
+ * compare serves both as a chain in which each handler arms the next one's
+ * line; kickassembler-one-part-demo and kickassembler-fli-music-scroller
+ * run their owners so. A band that is absent or movable says nothing.
  */
-function hostedRasterIrq(a: ClaimSide, b: ClaimSide, rel: PairRelation, unit: string): boolean {
-  if (unit !== "vic_raster_irq") return false;
-  return a.name === CHAIN_HOST || b.name === CHAIN_HOST || (rel.chainHosted ?? false);
+function chainedRasterIrq(a: ClaimSide, b: ClaimSide, rel: PairRelation, unit: string): Chained {
+  if (unit !== "vic_raster_irq") return null;
+  if (a.name === CHAIN_HOST || b.name === CHAIN_HOST || (rel.chainHosted ?? false)) return "host";
+  return disjointLines(a.band, b.band) ? "bands" : null;
+}
+
+function lineRanges(band: string | null | undefined): [number, number][] | null {
+  const p = parseRasterBand(band ?? "");
+  return "error" in p || p.kind !== "lines" ? null : p.ranges;
+}
+
+function disjointLines(a: string | null | undefined, b: string | null | undefined): boolean {
+  const ra = lineRanges(a);
+  const rb = lineRanges(b);
+  return ra !== null && rb !== null && !rasterBandsOverlap(ra, rb);
 }
 
 interface Entry {
   kind: UnitRuleKind;
   severity: Severity;
+  /** unit_contention on the raster compare only: why it is soft. */
+  chained?: Chained;
   first: ClaimSide;
   second: ClaimSide;
   units: string[];
@@ -151,8 +174,10 @@ function matchOwners(p: Pair): Match | null {
   const { a, b, rel, unit } = p;
   if (rel.aRequiresB || rel.bRequiresA) return null;
   if (p.ca.unit === "zero_page") return matchZeroPage(p);
-  const severity = hostedRasterIrq(a, b, rel, unit) ? "soft" : "hard";
-  return { unit, bothShare: false, kind: "unit_contention", severity, first: a, second: b };
+  const chained = chainedRasterIrq(a, b, rel, unit);
+  const severity = chained ? "soft" : "hard";
+  const how = chained ? { chained } : {};
+  return { unit, bothShare: false, kind: "unit_contention", severity, first: a, second: b, ...how };
 }
 
 /** The rule two modes on one unit fire, with the pair ordered as its text reads. */
@@ -185,7 +210,7 @@ function matchModes(p: Pair): Match | null {
 
 /** File a match under its rule and ordered pair, so one hit lists every unit it covers. */
 function addMatch(byKey: Map<string, Entry>, m: Match): void {
-  const key = `${m.kind}|${m.severity}|${m.first.name}|${m.second.name}|${m.bothShare}`;
+  const key = `${m.kind}|${m.severity}|${m.first.name}|${m.second.name}|${m.bothShare}|${m.chained ?? ""}`;
   let e = byKey.get(key);
   if (!e) {
     e = { ...m, units: [], relocatable: [] };
@@ -215,8 +240,13 @@ function contentionText(e: Entry, list: string): Pick<UnitHit, "rationale" | "re
     const host = [first.name, second.name].find((n) => n === CHAIN_HOST);
     const guest = host === first.name ? second.name : first.name;
     const rest = others ? "; for the other units, give one technique different ones" : "";
-    // Soft only when the chain host is in the set (hostedRasterIrq).
-    const hostedPair = !host && e.severity === "soft";
+    // Soft only when the chain host is in the set or the bands are disjoint (chainedRasterIrq).
+    if (e.chained === "bands")
+      return {
+        rationale: `Both ${first.name} and ${second.name} own ${list}: each arms the one raster compare for its own lines.`,
+        resolution: bandChainResolution(e, rest),
+      };
+    const hostedPair = !host && e.chained === "host";
     let resolution = `There is one raster compare. Run both as handlers in one interrupt chain (irq_chain_table): one technique owns $D012 and the other's handler becomes a chain entry that shares it${others ? "; for the other units, give one technique different ones (another sprite range, another voice)" : ""}.`;
     if (host)
       resolution = `${host} is the host: rewrite ${guest}'s raster handler(s) as entries in ${host}'s table, so the table alone programs $D012 and ${guest} runs inside it${rest}.`;
@@ -229,6 +259,11 @@ function contentionText(e: Entry, list: string): Pick<UnitHit, "rationale" | "re
     rationale,
     resolution: `Give one of them other units (another sprite range, another SID voice), or rewrite one to share the unit under the other's protocol.`,
   };
+}
+
+function bandChainResolution(e: Entry, rest: string): string {
+  const { first, second } = e;
+  return `Their lines do not meet (${first.name} ${first.band ?? ""}, ${second.name} ${second.band ?? ""}), so one raster compare serves both: chain the handlers, each arming the next one's line (a ring of handlers, or ${CHAIN_HOST}'s table), so that one setup programs $D012. A handler that runs past the next one's line delays that interrupt${rest}.`;
 }
 
 // The VIC scroll and pointer fields (#71): one of each, so no technique can
@@ -349,6 +384,7 @@ export function absorbInto(implied: ClaimSide, input: ClaimSide): ClaimSide {
   // Zero page is kept: bytes are checked one by one, not as a whole unit.
   return {
     name: implied.name,
+    band: implied.band ?? null,
     claims: implied.claims.filter((c) => c.unit === "zero_page" || !held.has(c.unit)),
   };
 }

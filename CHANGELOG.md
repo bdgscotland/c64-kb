@@ -5,10 +5,10 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 827, schema 39, tools 2.15.0, package 0.27.0.
+Data 843, schema 39, tools 2.17.0, package 0.29.0.
 
 **`c64_re_irq_chain` sees through a `JMP (pointer)` handler (tools
-2.15.0).** Commando's only interrupt handler is `$4134: JMP ($0406)`;
+2.17.0; numbered 2.15.0 on its branch before main reached 2.16.0).** Commando's only interrupt handler is `$4134: JMP ($0406)`;
 each raster part rewrites `$0406/$0407`, so all 11,374 entries landed on
 `$4134` and its five parts a frame were invisible. When a handler's first
 instruction is `JMP ($xxxx)`, a third run traces the pointer's two bytes:
@@ -24,6 +24,227 @@ while the KERNAL is mapped (Commando listed `$0000`, `$0334` and `$CA53`
 as installed handlers); `$FFFE` and `$FFFA` naming one RAM handler are
 both in `via` and the interrupt is named under unknowns.
 sprite-multiplex-game and raster-bars give the same result as before.
+
+**A sprite stretcher over the badlines, a $D012 poll that cannot enter one, and a hires FLI measured (data 843).** The disk demo's sprite stretcher was rebuilt on the text screen's own badlines after its FLD background turned out to paint bus noise (data 842), and what the rebuild measured over 151 traced frames is now on the stretcher's page as a variation: a badline forces every sprite's row to advance, so a row lasts at most eight lines and the rows are spread by an accumulator that counts the forced advances; a `$D012` poll re-syncs on the sprite stall every line, exit read at cycles 1 to 7 whatever sprites still fetch; and the poll cannot enter the badline itself, which is the new pitfall `d012_poll_cannot_enter_badline_under_sprites` in `pitfalls/raster-and-badline.md`, with the line-before handling and the wait-by-number that the trace confirmed. `fli_image` gains a hires four-page variation from the demo's title part: every line forced, pixel-exact against its converter on both models, 12,841 cycles a frame on PAL, and an honest open question about a first build that forced every second line and broke where UFLI does not.
+
+**A dispatcher race, a BPL slip, and four techniques measured further by the disk demo's builds (data 842).** The C64-KB demo grew to twelve parts on disk overnight, and what its new parts measured lands here rather than in the demo alone. `irq_row_armed_after_beam_passed` (pitfalls/raster-and-badline) is the frame a table-driven dispatcher loses when a handler returns below the row it just armed: 89 of 825 frames in the linecrunch part, found by a trace of the music call with the part number attached, fixed by comparing the beam with the armed row and running the entry at once, and re-measured to one call in 788. `bpl_countdown_index_above_127` (pitfalls/cpu) is the countdown that runs once when its index starts above 127. `kefrens_bars` gains the one-stamp-a-line form with several bars and its bracket (10,204 PAL, 10,472 NTSC); `rotozoomer_charset`'s chunky variation is now measured (44 cycles a sample, 195 a character, a 64 by 64 window at one step every two frames from a 256-character set); `sprite_stretcher_d017` gains the three-sprite figures (a nine-cycle DMA stall from cycle 55, an advance that shows two lines after the line that decides it, a clear at 19 and set at 27 that repeat the row, and a pass that keeps its entry phase); `fld_flexible_line_distance` records an FLD region that showed the CPU's bus byte as a colour in VICE, unexplained and not established on hardware; `pal_ntsc_detection`'s CIA-timed form is measured with interrupts on ($B3xx against $BDxx); and the KickAssembler reference gains four notes on multi-label binding, macro scope, locked lists and where the symbol file goes.
+
+**The showcase demo is C64-KB, six screens on one tune with two more held back, and it replaces MEASURED.** The five-part demo built from the KB's techniques took the knowledge base's name and moved from `demos/measured` to `demos/c64-kb`. Every part was pushed further since the last entry: a colour plasma round the logo, eight DYSP sprites crossing both side borders on PAL (five on NTSC) with a 2x2 scroller and raster bars, a sprite chain, a palette wave and a luminance dissolve over the fire, and twenty-four multiplexed balls on the sprites-only screen; the sequencer now calls each part's frame work from the tail of its line-255 interrupt and counts the frames that arrive late. Tune A, "Lists (darker)" (C minor, 150 BPM), plays throughout; two further tunes, "Stabs" (G minor, 166.7 BPM) and "After" (C minor, 125 BPM), are compiled into the same pooled 2,133-byte image, copied under the KERNAL at start and read with the KERNAL banked out, but the sequencer's switches to them are held back because the maintainer has not approved them by ear; tune A's break drives the filter cutoff from voice 3's envelope (`sid_env3_filter_envelope`). The end screen grades 29 of 29 on PAL and NTSC and the fault build is rejected; each part's own bracket reads worst/typical 11,195/10,453, 13,914/13,273, 27,538/13,148, 31,926/31,540 and 7,933/6,442 cycles on PAL and 11,770/11,018, 14,803/13,054, 31,028/13,924, 32,810/30,117 and 9,149/7,147 on NTSC, and the harness meter over part 5's first 200 frames reads worst 3,134 PAL and 6,648 NTSC. The five standalone runners pass their files (19, 51, 24, 13 and 27 checks) and the music runner grades green for all three tunes on both models. `verify.sh` shoots inside every part on both models and grades all five clean (23, 16, 14, 10 and 13 of the lines that count), exit 0; the part 1 and 2 pins were re-taken for this timeline, part 1's as facts that hold at any frame and part 2's derived from the part's own tables at the state read off the shot. The tune sources, the instrument bank, the multi-tune compiler and the gate script ship in `demos/c64-kb/music/`, and the compiler regenerates the shipped data byte for byte.
+
+**Six pitfalls, two technique variations and a luminance dissolve recipe, harvested from a five-part demo's builders (data 841).** The pitfalls, each with the figure that found it: a colour map whose last bytes land in the character window's glyph 255 shows as stripes where the idle fetch draws it; an SEI held across a band's entry line lets that line become a badline (+26 to +40 cycles in 12 of 884 frames); an equality raster poll under a dispatcher's latency spins whole frames where a ">=" poll does not; a per-frame rebuild of a KERNAL-vectored interrupt table loses a frame whenever two entries sit under about four lines apart; sprite pointers written before a screen fill that covers $07F8 leave no sprites; a test cycle limit that lands before the grading frame reads as a pass. `sprite_multiplex_24` gains a measured fixed-row variation (nine rows twenty lines apart, 24 balls, worst 8,294 PAL / 9,176 NTSC); `dysp_side_border_sprites` gains the stall-table finding (the recipe's 16-entry table covers four-sprite sets only; all 256 sets follow a BA-window union rule, band constant equal in 793 of 793 PAL frames with eight sprites). New technique `luminance_dissolve` on the transitions page, proposed from the technique graph's compatibility census: cells visited in a 10-bit LFSR order each step three places down the luminance ladder, and its recipe `kickassembler/luminance-dissolve` measured on both models (period 1,023, worst fade frame 7,490 PAL, black in 84 frames PAL and 100 NTSC, a fault build that skips the luminance step fails its check).
+
+**#110: two road techniques and the speedcode road recipe (data 840).**
+Simon Nicol's unreleased 1989 Martech road (a bitmap fast fill whose
+speedcode is patched where the colour changes) was built and measured
+against the racing starter's character road:
+- The speedcode road's full redraw is 37,628 PAL / 38,033 NTSC cycles,
+  and patching six edges on every line costs 88,000-285,000 cycles a
+  picture.
+- Its edges are no smoother than the character road's, and it needs
+  about 45 KB.
+- It loses for a full game with kerbs.
+
+`techniques/effects-vector-3d.md` gains `speedcode_bitmap_road` and
+`char_row_road`, and `recipes/kickassembler/speedcode-road.md` pins the
+speedcode road on PAL and NTSC. Both are anchored to
+`badline_cycle_loss`.
+**lfsr_random no longer claims the SID (data 839; #112, maintainer
+decision).** The technique claimed SID voice 3, its readback and
+`$D418` (init) and CIA1 timer A, and listed their registers, because
+its first recipe seeded from voice 3; every program that listed it got
+an init-order note and shared SID registers against music techniques
+whatever its seed. The LFSR step touches no hardware: its Claims line is
+`none`, its Uses registers line is gone, and the two recipes that seed
+from voice 3 (oscar64/lfsr-random, lfsr-random-seed2) declare the SID
+in their own `claims:` line. `lfsr_random` beside
+`sid_play_routine_pattern` now reports no SID conflict.
+
+**The pitfall-anchor check exempts four techniques and fails on any
+other unanchored one (data 838; #117).** Maintainer decision: the four
+the #19 triage judged to need no pitfall (dig_and_refill,
+world_state_bits, wcf_packer, runtime_relocation) are listed in
+scripts/check-pitfall-anchors.ts with their reasons; any other technique
+no pitfall names now fails the check (it only listed them before), as
+does an exemption that is gone or has since been anchored. It reads 242
+techniques, 238 anchored, 4 exempt, 0 missing.
+
+**Voice 3 gets a hard restart when an effect hands it back (data 837;
+#120).** A music note within two frames of a sound effect ending had no
+hard restart and could start about 33 ms late (one lead note on PAL
+frame 916). The effect's end now gates voice 3 off with AD and SR at 0
+and hands it to the music two calls later, gating any note the music
+started meanwhile from its first wavetable row. The harness counts every
+note, hand-backs included: all parts on time on PAL, NTSC and the 6581;
+in the SID log every gate had AD and SR at 0 for at least 39,238 cycles
+before it. The worst play call falls to 1,215 PAL / 1,223 NTSC (was
+1,250); every page quoting it carries the new figure with a clause, and
+the per-feature table's "all off" line (1,019, stale since before #118)
+is now 1,075.
+
+**The music player starts a note's gate before its AD and SR (data 836; #118).**
+The player wrote AD and SR 155-175 cycles before the gate, which undoes
+the hard restart for attack-0 instruments; with each part moved onto
+voice 3 and ENV3 read after every call (PAL, 2,000 calls), the old
+order started 146 of 163 drum, 81 of 139 bass and 0 of 43 lead notes on
+time, gate first all of them (NTSC and the 6581 alike). The harness now
+fails a note that does not start in its own call. The worst play call
+rose from 1,198 to 1,250 cycles PAL (1,174 to 1,250 NTSC); the Cost line,
+per-feature table and every page quoting 1,198 carry the new figure
+with a clause. sid-env3-filter's copy takes the same order. The MEASURED
+demo's copy (#119) and a late note right after an effect hands voice 3
+back (#120) are open.
+
+**The music player writes each note's gate before its AD and SR
+(#118).** `music-player.md` wrote AD and SR 155 to 175 cycles before the
+gate, so attack-0 notes waited out the ADSR bug's counter wrap despite
+the hard restart. Its harness now reads ENV3 after every call and
+passes only if every voice-3 note starts inside its call; build switches
+put the bass or the lead on voice 3. Gate first: 163/163 drum, 139/139
+bass, 43/43 lead notes on time; the old order 146, 81 and 0 (PAL,
+reSID). The worst call rose from 1,198 to 1,250 cycles (PAL; NTSC 1,174
+to 1,250): `sid_play_routine_pattern`'s Cost line and the per-feature
+table in music-sid.md were re-measured. The copy in `sid-env3-filter.md`
+takes the same order; its attack samples rise one step, its rest's
+release starts a frame later, and its cycle rows rise 59 on note frames.
+The MEASURED demo's copy of the player keeps the old order (#119); a note within two frames of an effect's
+hand-back still starts without a hard restart (#120).
+
+**Four SID instrument techniques, and a note-start order bug in the
+music player (data 835; part of #55, #118).** New entries in
+sid-instruments.md, each with a recipe that plays through the #50
+player twice (as written, and with the feature off), a register trace
+equal to the program's log on 192 of 192 calls, and WAVs analysed in
+Python under the 6581 and 8580 models (reSID, not silicon):
+`sid_sync_lead` (heard pitch is the master's within 0.1 %),
+`sid_ring_mod_bell` (partials at 0.414 and 2.414 of the carrier),
+`sid_pwm_pad` (second-to-first harmonic follows |cos(pi w/4096)| within
+0.026 on average), `sid_hard_restart_drum` (hits start 0.2-1.1 ms after
+the gate, 33-35 ms without the restart). The #50 player writes a note's
+AD and SR about 150 cycles before its gate, which undoes the hard
+restart for attack 0: 0 of 80 hits on time, 80 of 80 with the gate
+first (#118). sid-env3-filter blamed its NTSC +8 cycles on the old CIA;
+a 6526 PAL run reads the same as the default, so it is the player's
+NTSC skip-counter path.
+
+**A plasma recipe, measured, for a technique that had only an estimate (data 834).** `kickassembler/plasma`: a full-screen colour-RAM plasma, one column term and two row terms, a quarter of the rows repainted each frame, run on PAL and NTSC and pinned at the same cycle count with a per-colour cell census. The row loop is 18 cycles a cell against the technique page's estimate of 30 to 40; the worst frame is 6,830 cycles PAL and 7,088 NTSC, the whole screen in one pass 22,574 (1.15 PAL frames), which is why it is a quarter a frame. A control with the row term dropped collapses to vertical stripes and fails the check. The `plasma` technique gains a measured Cost, a Recipes pointer and a Sources line. Built because the MEASURED demo now carries a plasma in its first part and the KB had no recipe behind it; nobody has watched it animate, the emulator is the only witness.
+
+**Chained raster interrupts and placed bands in the compatibility check
+(tools 2.16.0, package 0.29.0, data 833; #90, #112, #24).** Two owners
+of the raster compare whose bands (stated or placed) share no line are
+now a soft conflict with a "chain the handlers" resolution, not hard; a
+spec `name@lines` places a technique whose page band is movable (a
+placement against a stated band is refused and reported in
+`placements_refused`); `sprite_set` is soft when the partner claims
+sprites but does not change them mid-frame. Page fixes behind it:
+sideborder_open claimed `sprite_0-7` from its own recipe's timing
+sprites (the recipe now claims them); topbottom_border_open's RSEL
+write runs inside another handler in both composed recipes, so it
+shares the compare; sprite_border_scroller's band is movable. Both
+composed demo recipes now check as WARNINGS and the ground-truth test's
+12-string allowlist is gone; 29 topbottom_border_open pairs and 3
+sideborder_open pairs move from incompatible to warnings, none harder.
+music-during-load's longer loads were a late frame count: LOAD masks
+interrupts 21-44 frames while the drive finds the file, and the first
+interrupt after that is not counted; the masked stretch follows the
+disk's rotational position. production-planning cites Crawford's
+pre-programming phase (The Art of Computer Game Design, ch. 5).
+
+**The fighter patterns resolve as techniques; harness zero page (data
+832; #113, #114, #115).** `technique-lookup fighter_opponent_tables`
+and `fighter_guard_state` said not found although the sections existed
+on the enemy-behaviour page; TOURNEY's plan concluded from that there
+was no duel-opponent page. Both are now technique entries (logic.md,
+sprite.md) with the recipe's Cost figures and the recipe in their
+frontmatter. The harness said Oscar64's zero page is `$02-$52`; that is
+its register block, and its saved temporaries grow from `$53` with the
+program (`make zp` and `make claims` measure it); eight starter copies
+still said `$02-$52`. The platformer's claims are right for the
+platformer, and its Makefile now says what a derived project must
+rewrite. The enemy-behaviour page gives both opponent-step figures: the
+recipe's 295 cycles (measured) and TOURNEY's 652-702 (reported, not
+measured here).
+
+**Double-IRQ sync constants checked frame by frame (data 831; #111).**
+dysp's NTSC padding (12) let the second interrupt enter on cycle 38 in
+44 of 403 frames while the sprites moved, closing the right border on
+lines 51-80; padding 13 settles every frame, and a new `dysp@moving`
+pin fails the old value. vsp keeps its saved stack pointer in zero page,
+so its `LDX` is a cycle shorter and 11 was wrong on both models (the
+`$D011` write landed on cycle 23 in 84 PAL and 96 NTSC frames of a test
+build); now 12 PAL and 14 NTSC, which also explains the two NTSC cycles
+its sweep had left open. fld's padding is stable on PAL only and does
+not need fixing, since nothing after its sync counts cycles; the page
+says so. raster.md: the padding depends on the `LDX` mode and the model
+(11/13 absolute, 12/14 zero page), and a pinned frame where nothing
+moves can hide a wrong value.
+
+**Harness gaps from the game test, and music during disk loads (data
+830; #107, #108).** LOAD receives through ACPTR, so sprites over
+badlines hang it as they hang a sequential read: measured from 3
+sprites on PAL and 4 on NTSC; the serial-I/O pitfall and the
+compatibility check now name LOAD. The plan gate reads the by-phase
+compatibility output and `name ×N`. Every `**Measured frame:**` line on
+a design is kept (the extractor kept one per phase and region). The
+shmup-vertical panel showed four of its five rows (row 24 under the
+border): the split runs 8 lines higher with RSEL 0, sprites stop at
+line 179, and the starter passes 61/61 checks and its phases, stage,
+game-over, joystick and long-play runs. New recipe `music-during-load`:
+over a 4 KB load a CIA1-timer-driven tune loses 28-35 % of its frames
+(the KERNAL's `$DC0D` polls clear timer A's flag too), a raster-driven
+one 12-18 %, and a CIA2 frame clock with catch-up none; technique
+`music_during_kernal_load`. New recipe `lfsr-seed-cia`: a seed from the
+frame count and CIA1 timer A, no SID. `memory-map 02A7` answered
+nothing because five regions shared the heading "Unused"; they are
+renamed and a test refuses a repeated region name.
+
+**Nine VIC effects measured, and a recipe that read uninitialised RAM
+(data 829; #19 group V, #109).** New KickAssembler recipes pinned on
+PAL and NTSC, each checked by script against a model: FPP in three
+forms (write windows measured: `$D018` by cycle 15, a restart on 54-57,
+a hold on 58-62 PAL / 58-64 NTSC), line doubling with the unread odd
+rows used as a second colour RAM, chunky 4x4 FLI (the forced write must
+land on cycle 14 exactly), a character zoomer by `$D018` (renamed from
+bitmap_zoomer: the item describes a character zoomer), a charset
+rotozoomer (drawing into the charset on screen tore in 10 of 10 shots),
+glenz EOR-filled vectors, a grid raycaster (8.8 steps drop exact
+columns from 2,115 to 930), UFLI with a sprite underlay (NUFLI's layout
+has no specification here). badline_synchronization gains a table of
+every member's measured write cycle; it said the row counter increments
+on each badline. fli-image's forced write lands on cycle 14, not 15
+(20,057 writes traced). trainer-hooks' search read RAM the program
+never wrote, so VICE's random power-on bits made it find 19 candidates
+about once in 38 runs; its pin now clears random RAM, and its timing
+moved off the pinned screen.
+
+**The double buffer's redraw is counted, and briefings drop a found
+technique that conflicts with a forced one (tools 2.15.0, package
+0.28.0; #106, #97).** screen_double_buffer_d018's Cost was 57 cycles
+(flip and pointer copy); plan-budget neither counted nor named the
+hidden-page redraw, so the game test's T6 regressed. Now
+`cycles_per_item=814` per 40-byte row (the steepest step over 0-25-row
+builds, PAL and NTSC, screen on) plus 57; with no count, the recipe's
+full redraw, 13,196. game-briefing runs check-compatibility on its
+selection and drops a technique found only by search that hard-conflicts
+with a forced one (new optional `conflicts_left_out`).
+
+**tech-tech steady on NTSC, LOAD's missing-file pulse, drive timing in
+drive cycles, and every recipe's claims declared (data 828; #100, #101,
+#103, #104).** tech-tech's NTSC band used PAL's sync padding (11): on a
+65-cycle line both `$D012` reads fell in line 111, so the second
+interrupt's one-cycle entry jitter reached line 116's `$D011` write
+while the wave moved. Padding 13 and entry delay 189 put all 47 writes
+on cycle 14 in every NTSC frame (516 frames traced); a new
+`tech-tech@moving` pin fails the old listing. KERNAL LOAD of a missing
+file gets the same 68-drive-cycle CLK pulse as OPEN (from the ROM
+bytes); load-asset-runtime now blanks the screen around each LOAD, and
+the pitfall lists LOAD. The old listing never hung in 1,252 runs, but
+only because its bus turnaround landed on three safe raster lines.
+drive-job-queue timed its jobs with VICE drive-trace stamps, which are
+host catch-up times; timed with the drive CPU's own `sw` clock each job
+is 2-5 % longer (seek 130,809 cycles, was 125,859). vice-reference
+gains "Timing drive code". Seven loader and cartridge recipes gain
+`claims:` lines (tape-turbo-loader from a trace, six derived from the
+listing); the ingest listing scan now warns on none.
 
 **Loaders, storage and I/O measured, and three more toolchains in the
 listing gate (data 827; #19 group L, #102).** New recipes run on PAL

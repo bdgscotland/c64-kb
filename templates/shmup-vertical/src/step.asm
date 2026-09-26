@@ -16,7 +16,7 @@
 .const P_END     = $80          // waves.c: the path opcodes
 .const P_LOOP    = $81
 .const P_FIRE    = $82
-.const MAX_Y     = 187          // mux.asm MAX_SY: lower is off the playfield
+.const MAX_Y     = 179          // mux.asm MAX_SY: lower is off the playfield
 
 en_state: .fill NE, 0
 en_n:     .fill NE, 0           // steps left in the current MOVE

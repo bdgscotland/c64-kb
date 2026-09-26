@@ -7,6 +7,9 @@ techniques: [sparkle_irq_loader]
 file_formats: [PRG, D64]
 uses_registers: [D011, D012, D018, D019, D01A, D020, D021, DC0D, DD00, DD02, DD0D]
 uses_kernal: []
+claims: [cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), cia2_timer_a (init), cia2_timer_b (init), cia2_tod (init), cia2_vic_bank (owns), vic_raster_irq (owns), irq_vector_fffe (owns), zero_page $10-$20 (owns)]
+claims_basis: derived-listing
+ram: [screen2=$8400-$87E7, colour=$D800-$DBE7, data=$2000-$7FFF, data2=$A000-$BFFF]
 ---
 
 <!-- doc-type: recipe -->
@@ -587,6 +590,14 @@ default in x64sc 3.10; it is written out because the loader runs its own
 code in the emulated 1541 and does nothing without it. Add `-model ntsc`
 for the NTSC run. `:mode=1` and `:mode=2` build the two `$DD00` variants;
 rebuild the disk after each.
+
+The frontmatter's `claims:` is read from the pinned listing
+(`claims_basis: derived-listing`), not from a `claims-watch` trace: the
+watch autostarts a PRG, and this program is loaded by the Sparkle disk,
+which this repository does not build. The `$DD00` stores of `:mode=1`
+and `:mode=2` are outside it; the plain store of `:mode=2` also writes
+the serial bus bits the loader owns, which is the failure this page
+shows.
 
 ## Expected output
 

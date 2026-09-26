@@ -8,6 +8,10 @@ file_formats: [CRT]
 uses_registers: [DE00, D020, D021]
 uses_kernal: [IOINIT, RAMTAS, RESTOR, CINT, CHROUT]
 devices: [magic_desk]
+claims: [expansion_io1 (owns)]
+claims_basis: derived-listing
+harness: [$02FF]
+ram: [state=$02FC-$02FE, switch=$0334-$0347]
 ---
 
 <!-- doc-type: recipe -->
@@ -219,6 +223,10 @@ java -jar $KICKASS_JAR crt-banked.asm -o crt-banked.prg
 # The .prg named by -o is not written: the default segment is empty.
 cartconv -c crt-banked.crt     # exit 0; -f prints "Hardware ID: 19 (Magic Desk)"
 ```
+
+The frontmatter's `claims:` is read from the listing
+(`claims_basis: derived-listing`), not from a `claims-watch` trace: the
+watch autostarts a PRG, and this program boots from a cartridge.
 
 ## Expected output
 

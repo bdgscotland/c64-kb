@@ -11,6 +11,7 @@
 #   make gameover   the AP_GIVE_UP=1 build: three ships go, and the title after GAME OVER
 #                   must show no sprite; graded by expect-gameover.json
 #   make drive      the normal game played headless (harness/drive.py), stick on $DC00
+#   make gallery    shots/gallery.png: the normal game in play, for a README (GALLERY_SCRIPT)
 #   make joytest    the normal game played to GAME OVER and rebooted: the saved HI must show
 #   make longplay   a -dGOD=1 build played through the level's later loops, on lost frames
 #   make disk       build/shmup-vertical.d64
@@ -72,7 +73,7 @@ claims: $(D64)
 # The graded shot freezes on YSCROLL 3 only, so a broken entry in the split's
 # delay table (kernel.asm delay_tbl) for any other phase passes make shot
 # check. Each build here freezes on one phase; tools/phases.py shoots all
-# eight on both models and wants panel lines 215-250 identical to phase 3.
+# eight on both models and wants panel lines 207-246 identical to phase 3.
 PHASES := 0 1 2 3 4 5 6 7
 PRG_PHASES := $(foreach k,$(PHASES),build/$(NAME)-ph$(k).prg)
 build/$(NAME)-ph%.prg: $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
@@ -108,7 +109,12 @@ stage: $(PRG_STAGE) $(D64)
 # ---- drive, joytest, longplay: the normal game played headless ---------------------
 # harness/drive.py presses the stick on the real $DC00 and counts time in
 # emulated frames. The text is on the two playfield screens and the panel.
-DRIVE_SCREEN := 8000:0-20,8400:0-20,8800:21-23
+DRIVE_SCREEN := 8000:0-20,8400:0-20,8800:20-22
+
+# make gallery: shots/gallery.png, the normal build in play. Fire held, the
+# ship swept left 200 frames, then right: 60 frames in, the second wave of
+# bugs is over the river and the ship is firing into it.
+GALLERY_SCRIPT := "until:HI" wait:50 tap:fire wait:20 hold:fire+left wait:200 hold:fire+right wait:60
 
 # joytest: the normal build played on PAL and NTSC, fire held and the ship
 # swept, to GAME OVER; its save, and a reboot on the same fresh disk showing

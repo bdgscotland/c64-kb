@@ -22,7 +22,7 @@ deterministic once the mechanism is known.
 **Severity:** critical
 **Region:** both
 **Triggered by registers:** D011, D012
-**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance, speedcode_generation, big_font_2x2, dycp_scroller, sine_table_generation, scroll_panel_split, sprite_multiplex_game, software_sprite_preshifted, fld_flexible_line_distance, raster_profile_bars, reu_dma, pwm_digi, eight_way_scroll_double_buffer, sprite_color_swap_mid_line, solid_vector_3d, mode7_lookalike, vsp_glitch, pseudo_3d_road_raster, sprite_stretcher_d017, tech_tech_wobbler, dysp_side_border_sprites, memory_fill_copy, delay_loops
+**Triggered by techniques:** stable_raster_irq, sprite_multiplex_8, raster_bars, frame_sync_loop, double_irq, badline_synchronization, sideborder_open, fli_image, afli_image, ifli_image, soft_scroll_v, tile_map_render, dma_steal_avoidance, speedcode_generation, big_font_2x2, dycp_scroller, sine_table_generation, scroll_panel_split, sprite_multiplex_game, software_sprite_preshifted, fld_flexible_line_distance, raster_profile_bars, reu_dma, pwm_digi, eight_way_scroll_double_buffer, sprite_color_swap_mid_line, solid_vector_3d, mode7_lookalike, vsp_glitch, pseudo_3d_road_raster, sprite_stretcher_d017, tech_tech_wobbler, dysp_side_border_sprites, memory_fill_copy, delay_loops, char_row_road, speedcode_bitmap_road
 **Mitigated by techniques:** screen_blank_full_cpu
 
 ### Symptom
@@ -734,6 +734,517 @@ visible, so it plants the pattern deliberately.
 
 ---
 
+## charset_glyph_255_shows_in_fli_bug_columns — A table whose tail reaches glyph 255 of the character set is drawn in the three FLI-bug columns of every forced-badline line
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D011, D018
+**Triggered by techniques:** tech_tech_wobbler, fli_image, afli_image, plasma
+
+### Symptom
+
+In a text-mode effect that forces a badline on every line of a band, the
+three leftmost columns of the band carry thin light stripes, often
+diagonal, instead of the plain colour the FLI bug normally leaves there.
+They appear after a table or colour map is added somewhere else in the
+program, and go away when it is shortened. In a five-part KickAssembler
+demo built from the KB the plasma's 256-entry colour map was placed at
+`$3F00` in VIC bank 0 and first ran to `$3FFE`; the tech-tech band under
+the logo then showed light diagonal stripes in columns 0 to 2 of every
+band line. After the map was cut short, a fade that rewrote it in
+32-entry slices up to entry 254 brought the stripes back for the length
+of the fade.
+
+### Mechanism
+
+A badline forced on cycle 15 or later skips the c-accesses for the
+columns whose slot has passed, and those columns read `$FF` from the
+video matrix (`fli_image`, "Why it works"). In text mode a matrix byte of
+`$FF` sends the g-access to glyph 255 of the character set, the eight
+bytes at the charset base plus `$07F8` to `$07FF`. With the font at
+`$3800` that is `$3FF8` to `$3FFF`, the top of bank 0, and the last of
+the eight is the byte `idle_fetch_byte_shows_in_gaps` is about. The
+glyph's set bits are drawn as ink in those three columns on every
+forced-badline line, so whatever table ends in those eight bytes draws
+its tail across the band. The colour map reached `$3FFE` and so wrote
+seven of the eight rows of the glyph; the stripes were the map's values
+read as pixel rows. Which colour the FLI columns paint that ink in text
+mode was not established in the demo; the stripes read as light.
+
+### Fix
+
+Treat the last glyph of the character set as owned, like the idle byte,
+and keep every table short of it. The demo capped the plasma's sine at
+119 so the map ends at `$3F77`, well short of `$3FF8`; its setup zeroes
+the eight bytes `$3FF8` to `$3FFF`; and the fade that walks the map in
+32-entry slices stops at entry 238. Make the assembler catch growth:
+reserve the eight bytes as an explicit block, or `.errorif` any table
+that shares the page. Repeat the zeroing whenever the VIC bank changes;
+the address moves with it.
+
+### Worked example
+
+```text
+// Bank 0, font at $3800: glyph 255 is $3FF8-$3FFF. Own it at start-up.
+    ldx #7
+    lda #0
+!:  sta $3ff8,x
+    dex
+    bpl !-
+
+// A page-aligned table at $3F00 must end below $3FF8. The plasma's sine
+// tops out at 119, so the map has 120 entries and ends at $3F77.
+    * = $3f00
+cmap:   .fill 120, palette_for(i)
+    .errorif * > $3ff8, "table reaches glyph 255"
+
+// A fade that rewrites the map in slices must stop short as well:
+// the demo's stops at entry 238, not 254.
+```
+
+### Cross-references
+
+- `idle_fetch_byte_shows_in_gaps` above: the same eight bytes' last one
+  drawn on idle lines; this entry is the display-line case, where a
+  forced badline draws all eight.
+- Technique: `fli_image` in `techniques/bitmap-modes.md`, "Why it works":
+  the skipped c-accesses that read `$FF`.
+- Technique: `tech_tech_wobbler` in `techniques/effects-vector-3d.md`:
+  the forced-badline band the stripes appeared in.
+- Technique: `plasma` in `techniques/effects-vector-3d.md`: the colour
+  map that grew into the glyph.
+- Hardware: `hardware/vic-ii-reference.md`, the FLI note under the
+  badline section: "first three columns show grey".
+
+---
+
+## sei_in_main_spans_band_entry_line — A SEI in the main loop that spans the band interrupt's line delays the sync, and the first display line falls as a real badline
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011, D012
+**Triggered by techniques:** double_irq, sideborder_open, dysp_side_border_sprites, badline_synchronization
+
+### Symptom
+
+A side-border band that is cycle-exact in most frames loses its border,
+or its CIA bracket jumps, in a few frames a second with no pattern in
+the picture. In a five-part KickAssembler demo built from the KB the
+DYSP band's per-frame cycle count, a constant 9,540 on PAL, read +26 to
++40 in 12 frames of 884 traced. The fault appeared when the main loop
+grew: its table build had come to end near line 45, and it took the new
+table under `SEI`.
+
+### Mechanism
+
+The band's entry is a `double_irq` at line 45 to 49: the first interrupt
+lands with jitter, the second is taken from a known instruction, and the
+loop then rewrites YSCROLL on every line from 51 down so that no line of
+the band is a badline (`sideborder_open`). An interrupt that arrives
+while the CPU has I set is not lost, it is held until `CLI`, and a `SEI`
+in the main loop that happens to span line 45 holds the first interrupt
+past it. The second interrupt then syncs late, the YSCROLL rewrite
+starts late, and line 51, where the display begins with YSCROLL 3 still
+in `$D011`, is a badline: the VIC takes its 40 to 43 cycles
+(`badline_cycle_loss`) and the loop's next `DEC $D016` is off cycle 56.
+The demo's notes read the +26 to +40 as one badline; why the bracket
+sees less than the full 40 to 43 was not established. The frames hit are
+those in which the main loop's end drifted onto the entry line, which is
+why the fault looked random.
+
+### Fix
+
+Never hold `SEI` in the main loop across a line the band's entry
+interrupt needs. Either move the critical section into an interrupt
+that already runs at a safe line, or guard it with a raster read and
+skip the section when the beam is near the entry. The demo did both in
+turn: first the table adopt moved into the handler at line 236, and
+after the main loop grew again it adopts under `SEI` only when `$D012`
+is outside 38 to 52, 223 to 227 and 251 to 255, with the line-28 handler
+as the fallback. Re-measured, the band read 9,540 in 793 of 793 PAL
+frames and 9,840 in 420 of 420 NTSC frames.
+
+### Worked example
+
+```text
+// Main loop, before taking the new table: adopt only when the raster
+// is clear of the band entry (45-49), the bottom handler and the frame
+// wrap. Otherwise leave tab_ready set and let the line-28 handler do it.
+adopt_if_clear:
+    lda $d012
+    cmp #38
+    bcc !ok+
+    cmp #53
+    bcc !skip+          // 38..52: the entry's lines, do not hold SEI here
+    cmp #223
+    bcc !ok+
+    cmp #228
+    bcc !skip+          // 223..227
+    cmp #251
+    bcc !ok+
+!skip:
+    rts                 // the handler at 28 adopts on the next frame
+!ok:
+    sei
+    jsr adopt_table     // the critical section, well under a line
+    cli
+    rts
+```
+
+### Cross-references
+
+- `badline_cycle_loss` above: the 40 to 43 cycles line 51 costs once
+  the YSCROLL rewrite is late.
+- `raster_irq_first_line_jitter` above: why the entry is a double
+  interrupt in the first place; a held interrupt defeats the second half.
+- Technique: `double_irq` and `sideborder_open` in `techniques/raster.md`:
+  the entry and the per-line YSCROLL rewrite.
+- Technique: `dysp_side_border_sprites` in `techniques/raster.md`: the
+  band measured here, 9,540 PAL and 9,840 NTSC a frame.
+
+---
+
+## raster_poll_equality_misses_under_dispatch_latency — A `CMP $D012 / BNE` poll for a run's first line, entered through a dispatcher a hundred cycles late, misses the line and spins a whole frame
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D012
+**Triggered by techniques:** raster_bars, irq_chain_table, topbottom_border_open
+
+### Symptom
+
+Raster bars or a border-opening run scheduled from a table-driven
+interrupt dispatcher show up one frame in two or three, and every other
+effect in the chain, the music included, slows with them. In a five-part
+KickAssembler demo built from the KB three polled runs were entered from
+dispatcher entries at lines 28, 205 and 244; traced at the dispatcher's
+jump, the bottom and open runs each spun a whole frame, "the cycle took
+three frames and the band ran once in three". The same runs also stopped
+one line short, so a `$D011` restore written for line 252 never ran.
+
+### Mechanism
+
+A KERNAL-vectored dispatcher takes the interrupt at the entry's line,
+saves the registers, acknowledges `$D019`, reads its table and jumps to
+the handler: about 100 cycles here, more than one raster line (63 PAL,
+65 NTSC). A poll for the run's first line written as an equality,
+`lda $d012 / cmp #line / bne`, therefore starts after that line has gone
+by. The raster compare register only equals that value again in the next
+frame, and the handler spins there with interrupts held, so every entry
+behind it, including the sequencer's frame tick, is a frame late. The
+exit test had the same shape: a loop that leaves on equality with its
+last line leaves one line early when the count and the line are off by
+one, and the restore on 252 was never reached.
+
+### Fix
+
+Poll with a greater-or-equal test and give the entry two lines of lead:
+`lda $d012 / cmp #first / bcc` waits when the beam is still above the
+line and passes at once when the dispatcher was late. Count the lines of
+the run rather than testing the exit line for equality. Re-measured after
+the change, the dispatch cycle was exactly 19,656 cycles a frame on PAL,
+every entry on its line. Keep the compare inside one half of the frame;
+across line 255 the value wraps (`d012_wrap_around`) and a `>=` on the
+low byte alone inverts.
+
+### Worked example
+
+```text
+// Dispatcher entry armed at FIRST - 2. The handler lands about 100
+// cycles after the interrupt, one to two lines late. Wait for the line
+// with >=, so a late arrival falls straight through.
+bar_run:
+    ldx #0
+!wait:
+    lda $d012
+    cmp #FIRST
+    bcc !wait-          // still above FIRST: keep polling
+!line:
+    lda gradient,x
+    sta $d020
+    sta $d021
+    // ... pad to one line ...
+    inx
+    cpx #LINES          // count the lines; do not test $D012 for the last
+    bne !line-
+    rts
+
+// The fault, for contrast: `cmp #FIRST / bne !wait-` never passes if
+// FIRST went by during dispatch, and the handler holds the frame.
+```
+
+### Cross-references
+
+- `d012_wrap_around` above: the compare is nine bits; a `>=` on the low
+  byte is only safe inside one half of the frame.
+- `raster_irq_first_line_jitter` above: the latency that makes the
+  equality miss is the same jitter, made larger by the dispatcher.
+- Technique: `irq_chain_table` in `techniques/raster.md`: the
+  table-driven dispatcher whose latency this is.
+- Technique: `raster_bars` in `techniques/raster.md`: the polled run.
+
+---
+
+## irq_row_armed_after_beam_passed — A dispatcher that arms the next raster row only when the current handler returns loses the whole chain for a frame when that handler returns below the row
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D012
+**Triggered by techniques:** irq_chain_table, linecrunch, fld_flexible_line_distance, sprite_multiplex_24
+
+### Symptom
+
+An effect near the bottom of the screen stutters at some phases of its
+own motion and not others, and the music stalls with it. A linecrunch
+part in a twelve-part KickAssembler trackmo built from the KB lost 89
+whole frames of its 825 ("the bounce squash is slow and stalls the music
+and jittery"), in runs of one to three, periodic with its 128-frame
+state. A trace of the music call with the current part number attached
+showed gaps of exactly two frames; a second trace of the dispatcher's
+arming routine with the part's zero page attached showed the lost frame
+was always the one whose bottom write fell one or two lines below the
+next dispatcher row: 175 or 176 under a row at 176, 191 to 193 under
+192, and so on to 240.
+
+### Mechanism
+
+A table-driven dispatcher (`irq_chain_table`) arms the next entry's line
+in `$D012` after the current handler returns. A handler that polls for a
+line and writes there runs until that line; when the line it waits for
+sits just under the next table row, the handler returns after the beam
+has passed that row. The compare written into `$D012` cannot fire until
+the beam reaches the row in the next frame, so nothing else in the chain
+runs for the rest of this frame: not the later rows, and not the
+sequencer's line-255 entry that plays the music and calls the part's
+main. The same race hides in the simple case of the last row before
+line 255 (`irq_table_rebuilt_per_frame_loses_close_entries` describes a
+multiplexer meeting it), where the KB's demo sequencer already ran the
+line-255 entry by hand when its store landed past the line; the general
+form went unnoticed until a part's own poll produced it.
+
+### Fix
+
+After arming a row, compare the beam with it and run the entry at once
+when the beam is already past: read `$D019` (a pending compare means the
+store fired), then compare bit 7 of `$D011` with the row's ninth bit and
+`$D012` with its low byte. A row at or below the beam is ahead; one above
+it has gone. Never for the first row after line 255, which belongs to the
+next frame. A write of the current line to `$D012` still fires (measured
+on the line-255 case), so equality counts as ahead. Re-measured with the
+same music trace after the change, the part lost one call in 788, at its
+first frame. The handler side of the fix is to keep a polled line at
+least two lines above the next row, which the part's design should
+state; the dispatcher side is what protects every part.
+
+### Worked example
+
+```text
+// After jsr arm_next (which stored the row's line into $D012 and its
+// ninth bit into $D011): X = the table index just armed.
+    cpx #0
+    beq exit                 // the wrap row is next frame's
+    lda $d019
+    and #$01
+    bne exit                 // the compare fired: pending
+    lda $d011
+    and #$80
+    cmp row_bit7,x
+    bcc exit                 // beam page below the row's page: ahead
+    bne run_now              // beam page above: the row has gone
+    lda row_line,x
+    cmp $d012
+    bcs exit                 // row at or after the beam: ahead
+run_now:
+    jmp dispatch_body        // the handler, the advance, the arm, this check again
+```
+
+### Cross-references
+
+- `raster_poll_equality_misses_under_dispatch_latency` above: the other
+  way a polled run and a dispatcher lose a frame; there the poll misses
+  its line, here the poll ends below the next row.
+- `irq_table_rebuilt_per_frame_loses_close_entries` below: the same race
+  at close rows, met by a multiplexer.
+- Technique: `irq_chain_table` in `techniques/raster.md`: the dispatcher
+  whose arming this is.
+
+---
+
+## d012_poll_cannot_enter_badline_under_sprites — A $D012 poll run once a line under fetching sprites is held straight through a badline and exits on the line after the one it waited for
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D012, D011
+**Triggered by techniques:** sprite_stretcher_d017, raster_bars, badline_synchronization
+
+### Symptom
+
+A per-line effect that enters every line by polling `$D012` (read the
+line, compare until it changes) works on every line but one in eight:
+on the line after each badline its writes are missing, and everything
+written for that line lands one line late, or a whole line of the
+pattern is skipped. In the c64-kb demo's sprite stretcher (VICE 3.10,
+PAL and NTSC) the store trace showed the badline's colour store and the
+next line's write pair both absent, the pair after them landing at
+cycles 39 and 48 instead of 25 and 34, and one line in eight of the bar
+pattern doubled.
+
+### Mechanism
+
+A badline halts the CPU's reads from cycle 12 to 54; with sprites
+fetching, BA falls again at 55 and holds every read to cycle 1 of the
+next line. A poll that finishes its work on the line before the badline
+and reads `$D012` after that line's cycle 11 is held through both, and
+the read completes on the line AFTER the badline, which is the value it
+takes as its baseline. The compare loop then waits for that value to
+change, one more line on. The 6510 stops on the first read cycle while
+BA is low and lets a write cycle through, so any instruction that has a
+read left is stopped there; a store whose reads are done before 12
+lands its write, and a store whose last read falls on 12 or later has
+its write pushed to 55 or beyond, into the visible right edge. With no
+sprites fetching the second hold is absent and the baseline read
+completes at 55 with the badline's own number, so the same code behaves
+differently as sprites finish their rows.
+
+### Fix
+
+Do not poll into a badline. Give the badline its writes from the line
+before it, with every read of the storing instruction done before cycle
+12 (a store timed to land at 57 or later on that line, or at 2 to 5 of
+the badline when the sprite stall releases, both in the horizontal
+blank); compute the number of the line after the badline ahead of time
+(the pass on the line before has a delay slot for it); and wait for that
+line by number, `cpx $d012 / bne`, whose first read is held through the
+badline and the sprites and whose exit is within the first cycles of the
+line wanted. A cycle-stream model (every CPU cycle a read except a
+store's last; reads stall, writes proceed) over the poll's phase and
+each set of sprites still fetching picks the delays; the demo's is
+`plan/stretch_cycles.py` in its repository, and the 151-frame trace
+matched it.
+
+### Worked example
+
+```text
+// Y = the band index of this line; the badline is the next line.
+        tya                          // in the pass's delay slot
+        clc
+        adc #BAND_TOP + 2
+        sta tgt                      // the number of the line after the badline
+        ...                          // the pass's $D017 pair, the index on
+        iny
+        lda (barptr), y              // A = the colour of the line after
+        nop
+        nop
+        nop
+        bit $ea                      // seven cycles: the store lands at 57+ here
+        stx $d021                    //   or at 2 to 5 of the badline
+        ldx tgt
+!:      cpx $d012                    // held 12 to 54, then to the next line's 1
+        bne !-                       // exits within the wanted line's first cycles
+        sta $d021                    // by cycle 15, in the blank
+```
+
+### Cross-references
+
+- `badline_cycle_loss` above: the halt this rides on, and its 12 to 54
+  extent.
+- `vic_bus_takeover_on_dma` above: the sprite stall that follows it in
+  the same line.
+- `raster_poll_equality_misses_under_dispatch_latency` above: the other
+  way a `$D012` poll loses a line, at a dispatcher's entry.
+- Technique: `sprite_stretcher_d017` in `techniques/sprite.md`, the
+  variation over the badlines.
+
+---
+
+## irq_table_rebuilt_per_frame_loses_close_entries — A dispatcher table rebuilt every frame from the main loop loses a frame for any two entries armed under about four lines apart
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D012
+**Triggered by techniques:** irq_chain_table, sprite_multiplex_24, sprite_multiplex_game
+
+### Symptom
+
+A sprite multiplexer that writes its reposition interrupts as per-frame
+entries in a shared dispatcher table shows torn or missing sprites
+wherever two logical sprites are close in Y, and the entries behind
+them, a sequencer's line-255 tick among them, arrive a frame late. In a
+five-part KickAssembler demo built from the KB the first design of the
+24-ball part put one reposition entry at each ball's previous Y + 22 and
+rebuilt the table at the top of the main loop. Its notes: rows under
+about four lines apart lost a whole frame, the sequential walk delayed
+every row behind them including the sequencer's 255, and because the
+main loop ran at about raster line 90 (later on NTSC) a rebuild there
+skipped the rows already passed in every frame. The design was abandoned.
+
+### Mechanism
+
+A table-driven dispatcher walks its entries in order and arms the raster
+compare for entry n + 1 only when handler n returns, and the compare
+fires only at the start of a line. Interrupt entry, register save,
+acknowledge, table lookup and return cost about 100 cycles around the
+handler's own work, so when two entries lie fewer than about four lines
+apart the second's line has already passed by the time it is armed. The
+compare is next met a frame later, and every entry behind it in the walk
+waits with it. The per-frame rebuild adds a second fault of its own: the
+table is replaced at whatever line the main loop has reached, and an
+entry for a line already past in the current frame is not armed until
+the next. Together they cost the multiplexer a frame in every row where
+two balls sat close, which is the common case in a ring.
+
+### Fix
+
+Assemble the rows fixed and further apart than the dispatcher's
+latency, and let one handler take every entry due by its row from a
+running index (the "fixed reposition rows" variation of
+`sprite_multiplex_24`). The demo's rows sit twenty lines apart, each
+entry is due at its predecessor's Y + 22, so an entry runs at most eight
+lines late against a 31-line margin, and a compile-time proof holds the
+Y gap between a ball and the one eight places above it at 50 lines or
+more over all 256 offsets (the shipped minimum is 53). The schedule is
+triple-buffered so the build never straddles the row that publishes it.
+Measured per frame with 24 balls and a 16-band gradient: PAL worst
+8,294, NTSC worst 9,176. If entries must change per frame, arm them from
+a handler that runs before the first of them, never from the main loop
+at an unknown line.
+
+### Worked example
+
+```text
+// One handler serves every fixed reposition row. Entries are sorted by
+// due line; take every entry due before this row's line + 2.
+rp_run:
+    ldy rp_idx
+!next:
+    lda sched_due,y
+    cmp row_limit           // the row's stub stores its line + 2 here
+    bcs !done+
+    ldx sched_slot,y        // hardware sprite times two
+    lda sched_y,y
+    sta $d001,x
+    lda sched_x,y
+    sta $d000,x
+    iny
+    bne !next-
+!done:
+    sty rp_idx
+    rts
+```
+
+### Cross-references
+
+- `raster_poll_equality_misses_under_dispatch_latency` above: the same
+  dispatcher latency, seen by a polled run instead of a table walk.
+- `sprite_dma_overflow` in `pitfalls/sprite.md`: what a slot re-armed
+  after its line has passed looks like on screen.
+- Technique: `irq_chain_table` in `techniques/raster.md`: the
+  dispatcher.
+- Technique: `sprite_multiplex_24` in `techniques/sprite.md`, "Variation:
+  fixed reposition rows": the design that replaced the per-frame table.
+
+---
+
 ## badline_every_line_block_length — A loop that forces a badline on every line breaks when its block is not exactly the free cycles
 
 **Severity:** high
@@ -875,3 +1386,196 @@ entered from the double IRQ at a traced delay, one store per line.
 - Technique: `vsp_glitch` in `techniques/raster.md`: the late badline a write before cycle 55 makes.
 - Recipe: `recipes/kickassembler/linecrunch.md`, "The write-cycle sweep".
 - Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.4, §3.14.5.
+
+---
+
+## fpp_write_outside_window — An FPP line split in two, blank at the left, or showing the wrong pixel row
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011, D018
+**Triggered by techniques:** fpp_flexible_pixel_position, char_zoomer_d018
+
+### Symptom
+
+In an FPP band, some lines show the old charset on their left cells and
+the new one on the rest; or the first one to three cells of a line are
+blank; or a whole line shows the next pixel row of the source instead of
+the one chosen. A one-cycle change in the loop switches between these
+and a clean band.
+
+### Mechanism
+
+Each form of FPP needs its `$D011` write inside a window, and every form
+needs its `$D018` write early enough. Measured in VICE x64sc 3.10, PAL
+c64c and NTSC, with `recipes/kickassembler/fpp.md` swept one cycle at a
+time (store-trace cycles, Bauer's numbering); the results were the same
+on both models except where the table says:
+
+| Write | Cycle | Result |
+|---|---|---|
+| `$D018` for line L | up to 15 of L | whole line from the new charset |
+| | 16 + c | cells 0 to c from the old charset |
+| `$D011`, badline form (YSCROLL = L & 7 on line L) | up to 11 | full badline, pixel row 0 |
+| | 12, 13 | cells 0, or 0 and 1, blank: the VIC reads `$FF` as the pointer before it has the bus (the FLI bug) |
+| | 14 on | RC not reset: the line shows pixel row 1, with three blank cells moving right one cell a cycle |
+| `$D011`, restart form | 54 to 57 | row restarts |
+| | 52, 53 | a late badline instead, which holds the CPU to cycle 54 and breaks a cycle-counted loop |
+| `$D011`, RC-held form | 58 to 62 (PAL), 58 to 64 (NTSC) | RC held at 7 |
+| | the line's last cycle | nothing held |
+
+In the badline form a block that runs late is pulled by the stall to a
+write on cycle 11, the last that works, and stays there: it passes in
+VICE with no margin.
+
+### Fix
+
+Pick the form, then put each write on one cycle inside its window, away
+from the edges, and confirm with a store trace of `$D011` and `$D018`:
+every band write on the same cycle, every frame. In the badline form set
+the entry into the first block by trace rather than leaving it to the
+stall; the recipe's writes land on cycles 6 and 2 (PAL), 5 and 1 (NTSC).
+Check the picture line by line, not by eye: a split at cell 1 is one
+character wide.
+
+### Worked example
+
+From `recipes/kickassembler/fpp.md`, mode 0: one 20-cycle block per band
+line (22 on NTSC), the charset first, then the YSCROLL that makes the line
+a badline.
+
+```text
+    lda d18 + 6 + k
+    sta $d018                    // charset for line 60 + k: cycle 2 (PAL)
+    stx $d011                    // YSCROLL = (60 + k) & 7: cycle 6 (PAL)
+    ldx #$18 | ((61 + k) & 7)
+    Delay(6)                     // 8 on NTSC
+```
+
+### Cross-references
+
+- Technique: `fpp_flexible_pixel_position` in `techniques/raster.md`.
+- Technique: `linecrunch` in `techniques/raster.md`: the RC-held write.
+- Pitfall: `linecrunch_write_outside_window`, the same window for a crunch.
+- Recipe: `recipes/kickassembler/fpp.md`, the three sweep sections.
+- Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.3 to §3.14.6.
+
+---
+
+## doubled_row_skips_a_screen_row — A doubled text row uses up two rows of screen and colour RAM
+
+**Severity:** medium
+**Region:** both
+**Triggered by registers:** D011
+**Triggered by techniques:** line_doubling_and_colour_ram_double_buffer
+
+### Symptom
+
+Text rows made 16 lines tall by the doubled-line write show rows 0, 2, 4
+... of the screen: every second row of the text and of its colours never
+appears, and the last rows of a 25-row screen are unreachable. In bitmap
+mode, by the same rule, the second half of a doubled row would show the
+next row's graphics in the first row's colours (not measured here).
+
+### Mechanism
+
+The write on cycles 54 to 57 of a row's last line wraps RC to 0 and the
+row is drawn again from its latched pointers and colours, but the VIC's
+cycle-58 step still loads VCBASE from VC, which has counted the 40 cells
+of the half just drawn (Bauer §3.7.2, §3.14.5). Each 8-line half moves
+the row base on by one row. Measured in VICE x64sc 3.10, PAL c64c and
+NTSC, with `recipes/kickassembler/line-doubling.md`: with the write the
+rows shown from line 52 in 8-line halves are 1, 1, 3, 3, 5, 5, 7, 7 (PAL,
+buffer 1); built `:nodbl=1`, with the write aimed at RAM, they are 1, 2,
+3, 4, 5, 6, 7, 8.
+
+### Fix
+
+Lay the screen and colour data out in every second row, or use the
+skipped rows on purpose: they are a second colour RAM, picked by starting
+the display one row on with a single crunched line (the recipe's
+buffer 1). Put the text for doubled row j in screen row 2j (or 2j + 1).
+
+### Worked example
+
+From `recipes/kickassembler/line-doubling.md`: row j of buffer b is
+screen row 2j + b, so the refill steps 80 bytes a row.
+
+```text
+    lda ptr
+    clc
+    adc #80                     // the buffer's next row: two screen rows on
+    sta ptr
+```
+
+### Cross-references
+
+- Technique: `line_doubling_and_colour_ram_double_buffer` in `techniques/raster.md`.
+- Technique: `linecrunch` in `techniques/raster.md`: the one-line crunch that picks the odd rows.
+- Recipe: `recipes/kickassembler/line-doubling.md`, "The doubling write cycle".
+- Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.5.
+
+---
+
+## mid_row_badline_write_off_by_one — A mid-row forced badline one cycle early freezes every row; one cycle late shifts the colours
+
+**Severity:** high
+**Region:** both
+**Triggered by registers:** D011, D018
+**Triggered by techniques:** chunky_4x4_fli_mode, fli_image, ufli_sprite_underlay
+
+### Symptom
+
+A 4 × 4 chunky or FLI-style screen that refetches colours halfway down
+each character row shows the same row over and over from the second row
+down; or its leftmost cells show the colours of the half-row above, with
+the light grey FLI-bug cells one or more cells in from the left edge.
+
+### Mechanism
+
+The `$D011` write that forces the mid-row badline must make the
+condition true on cycle 14 exactly. Earlier, the VIC's cycle-14 check
+sees it and resets RC to 0; RC never reaches 7 in that row, VCBASE is not
+moved on in cycle 58, and every later row is fetched from the same
+VCBASE. Later, RC is left alone but the c-accesses start later, so the
+leftmost cells keep the colours already in the buffer. Measured in VICE
+x64sc 3.10, PAL c64c and NTSC alike, with
+`recipes/kickassembler/chunky-4x4.md` (blocks right in cells 3-39 of rows
+1-24, of 3,552):
+
+| Write cycle | Result |
+|---|---|
+| 11, 12, 13 | 444 right: every row from 1 on shows row 1 |
+| 14 | 3,552 right; cells 0-2 of the bottom half light grey (the FLI bug) |
+| 15, 16, 17 | 3,507, 3,462, 3,417: 1, 2, 3 cells keep the top half's colours |
+
+### Fix
+
+Put the write on cycle 14 and confirm it with a store trace of `$D011`
+on every forced line. Enter the loop from a stable raster; the forced
+badline's own stall then re-times each row, so a correct first row keeps
+the rest correct. Write `$D018` for the new screen before cycle 15 of the
+line and restore it after the stall.
+
+### Worked example
+
+From `recipes/kickassembler/chunky-4x4.md`, one row:
+
+```text
+    lda #D18B
+    sta $d018                   // screen B: cycle 8
+    lda #$3f
+    sta $d011                   // YSCROLL 7 on line 55 + 8r: cycle 14
+    lda #D18A
+    sta $d018                   // screen A again after the stall: cycle 60
+    lda #$3b
+    sta $d011
+```
+
+### Cross-references
+
+- Technique: `chunky_4x4_fli_mode` in `techniques/bitmap-modes.md`.
+- Technique: `fli_image` in `techniques/bitmap-modes.md`.
+- Pitfall: `fpp_write_outside_window`, the same cycles for a badline on every line.
+- Recipe: `recipes/kickassembler/chunky-4x4.md`, "The forced write cycle".
+- Source: Christian Bauer, VIC-II article, §3.7.2, §3.14.6.

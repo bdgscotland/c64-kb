@@ -205,7 +205,7 @@ What the warnings mean for this program:
 - `unit_contention (hard)` scroll_panel_split x sprite_multiplex_game on
   `vic_raster_irq`: resolved as the tool says, one chain. kernel.asm owns
   `$D012`: the frame IRQ (line 252) arms the multiplexer's zones, the last
-  zone arms the split (line 212), the split arms the frame IRQ. Adding
+  zone arms the split (line 204), the split arms the frame IRQ. Adding
   `irq_chain_table` to the list, the tool's own resolution, adds two more
   hard conflicts instead of clearing this one (a tool finding), so it is
   not listed; the verdict stays INCOMPATIBLE for the combination as named.
@@ -298,8 +298,9 @@ No member states a byte figure that can be summed.
 ```
 
 Measured by the meter (`make shot check`, VICE x64sc 3.10, the script's
-240 play frames): worst 11,681 cycles and typical (the median) 8,374 on
-PAL; worst 11,875 and typical 8,733 on NTSC. The bracket is the C main
+240 play frames): worst 11,678 cycles and typical (the median) 8,379 on
+PAL; worst 11,873 and typical 8,734 on NTSC (after #107; 11,681, 8,374,
+11,875 and 8,733 before it). The bracket is the C main
 loop's whole frame (CIA2 timer A) plus every IRQ outside it (CIA2 timer B,
 summed by kernel.asm); badlines and sprite DMA inside either are in the
 figures. The split IRQ starts timer B only after its panel writes, so C
@@ -409,7 +410,9 @@ The graded script's worst frame is not the game's worst case. `make stage`
 bolts, dots and a kill share those frames, and meters play frames 150-399.
 Swept over 16 timings (-dSD=0,8,16,24 x -dSX=8,16,24,32), its worst frame
 is 15,064 cycles on PAL and 15,237 on NTSC, typical 9,280 and 9,967 (SD 24,
-SX 16, which `make stage` runs), and no run lost a frame. At 7974a7a the
+SX 16, which `make stage` runs), and no run lost a frame. After #107
+moved the split up 8 lines, that variant measures 15,066 and 15,241,
+typical 9,289 and 9,973; the sweep was not re-run. At 7974a7a the
 same sweep gave 15,991 and 16,136. It is not play's heaviest frame (above):
 `make longplay` covers that. Its verdict fails on an overrun or an unrestored bullet cell,
 and stage-expect.json on a worst over the frame. Before enemy fire the
@@ -444,8 +447,10 @@ is what keeps the dots below the draw.
 - Characters: `$C0-$CF` a dot, `$D0-$D3` a bolt, over open water (no
   merge); `$F2-$F7` the dots' and `$F8-$FB` the bolts' reserved glyphs;
   `$FF` blank (the idle byte).
-- Colour RAM: every playfield cell `$0F` (multicolour, yellow), panel rows
-  white; text on the playfield sets its cells below 8 (hires).
+- Colour RAM: rows 0-19 `$0F` (multicolour, yellow), rows 20-24 white:
+  the panel shows rows 19-23, and the rule on row 19 shares the playfield's
+  `$0F` (light grey in hires). Playfield row 20 is never shown. Text on
+  the playfield sets its cells below 8 (hires).
 - Zero page: Oscar64's `$02-$56` (measured by claims-watch); the kernel
   uses none. `$02FF` the verdict byte. CIA2 timer A the meter, timer B the
   IRQ time.
@@ -492,14 +497,14 @@ Mutations, each run through its target (the review's are in its report):
 | No `hold_screen()` before the start-up read | a release shot at 6,000,000 cycles | the title text is gone (it was there) |
 
 `make check` first runs `make phases`: the game frozen on each of the eight
-YSCROLL phases, PAL and NTSC, with panel lines 215-250 compared to the
+YSCROLL phases, PAL and NTSC, with panel lines 207-246 compared to the
 graded phase-3 shot.
 
 `expect.json` checks the border and four text rows, the meter (240 frames,
 worst within a frame), the ship's and all ten bugs' bounding boxes (so the
 multiplexer shows eleven sprites), four pixels that place the river's banks
-at 30 rows scrolled, the split (line 214 playfield, line 216 panel grey),
-the panel's rule, background and two lives, and the panel and playfield
+at 30 rows scrolled, the split (line 206 playfield, line 208 panel grey),
+the panel's rule, a blank row, its fifth row whole and two lives, and the panel and playfield
 identical on PAL and NTSC. FORCE_FAULT starts the ship 16 pixels right: it
 shoots 4 instead of 5 (400 points), is rammed instead of shot, ends at X
 136, and check.py fails the verdict, the text and the ship's box.
@@ -537,13 +542,13 @@ loops, and fails on a lost frame.
   recorded; Bauer's 2 if it was the exec trace's, as the figures below were) in 4 frames of every
   12 and the panel's first row showed playfield characters. The split now
   has its own vector entry, as short as the recipe's pushes. Its writes
-  then start between cycle 57 of line 214 and cycle 1 of line 215 (PAL; 57
+  then start between cycle 57 of line 214 and cycle 1 of line 215 (the split before #107; PAL; 57
   to 65 on NTSC; Bauer's numbering, remeasured for c64-kb issue #82; an
   earlier version gave the exec trace's 58 to 0 and 58 to 64), and `$D016` goes last so `$D018` lands four cycles
   earlier. Freezing the game on each of the eight phases gave panel lines
   215-250 pixel-identical to YSCROLL 3 on PAL and NTSC, and 14 consecutive
   frames of each phase on each model showed a clean panel row.
-- Sprites stop at Y 187 (last line 208). Measured in the review of this
+- Before #107, sprites stopped at Y 187 (last line 208). Measured in the review of this
   starter (VICE x64sc 3.10, eight sprites pinned at one Y, scrolling, 16
   shots a Y spread over the phases): sprites ending on line 213 (Y 192)
   left the panel clean, 0 of 16 on each model; sprites on line 214 (Y 193)
@@ -552,6 +557,21 @@ loops, and fails on a lost frame.
   from cycles 58-0 to cycles 5-11 of line 215. So line 214 is the hazard;
   187 keeps 5 lines of margin. Enemies that fly lower vanish at line 208.
   The same run showed the panel clean at every phase met while scrolling.
+- #107: the panel showed four rows. It started on line 215, so its fifth
+  row started on badline 247 and only lines 247-250 of it were above the
+  border (`RSEL` = 1 ends the display at 250), in every shot and in both
+  #22 game-test runs. The split now runs 8 lines higher: the panel starts
+  on line 207 (still YSCROLL 7, so the delay table is unchanged), shows
+  screen rows 19-23 on lines 207-246, and sets `RSEL` = 0 so the border
+  closes on 247 over row 24. A start 4 lines higher with YSCROLL 3 was
+  tried first and failed `make phases` at YSCROLL 4-7: the forced badline
+  on line 211 re-started row 19, which the playfield was still in, and the
+  whole panel moved 8 lines down. The playfield ends on line 206; colour
+  RAM row 20 is white, as the panel's score row. The sprite limit moved
+  with the split, measured again with 8 sprites pinned in the game frozen
+  on each phase: last line 205 (Y 184) clean on all 16, line 206 (Y 185)
+  broken on 8 of 8 PAL and 4 of 8 NTSC. `MAX_SY` is 179 (last line 200),
+  and 8 sprites there were clean on all 16; `P_MAX_Y` is 178.
 - Bullets move up 7 lines a frame while the playfield moves down 1, so a
   bolt stays on rows 2-5 of its cell at every phase: one glyph per bullet.
 - The meter cannot be read in the panel: check.py reads text on the

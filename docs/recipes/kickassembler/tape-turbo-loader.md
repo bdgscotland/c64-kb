@@ -7,6 +7,9 @@ techniques: [tape_turbo_loader]
 file_formats: [PRG, TAP]
 uses_registers: [D011, D012, D020, DC06, DC07, DC0D, DC0F, DD04, DD05, DD06, DD07, DD0E, DD0F]
 uses_kernal: [CHROUT]
+claims: [vic_raster_irq (init), zero_page $02-$15+$FB-$FE (owns)]
+harness: [cia2_timer_a, cia2_timer_b, $02FF]
+ram: [buf=$4000-$41F3]
 ---
 
 <!-- doc-type: recipe -->
@@ -807,6 +810,13 @@ less than the 1,540,608 the script summed for the same span, which is
 the poll's position inside the first and last pulse. The measured pulses
 sit within 8 cycles of the 256 and 512 the file holds: that is the
 polling loop's own granularity, `LDA`, `AND`, `BEQ`, nine cycles round.
+
+The frontmatter's `claims:`, `harness:` and `ram:` come from a
+`claims-watch` trace of that PAL run. `npm run claims:recipes` skips
+this page (runs.json has no tape keys), so the trace was taken by hand:
+the watch's four trace lines plus `tapectrl 1` in the command file,
+the options above, `-monlog`, and `claims-watch --recipe ... --log`.
+It passed with 0 violations; the picture matched the committed one.
 
 With the four `-ds` options left out, so VICE's default tape speed
 error and wobble apply, the PAL run read `LEADIN 10201`, `CYCLES

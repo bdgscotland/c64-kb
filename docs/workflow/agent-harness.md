@@ -343,6 +343,20 @@ frame in three runs: the three screens and CIA1 timer A readings must
 match. Measured 2026-09-24: `FIRE AT FRAME 0065` and timer A `$10F6` on
 PAL, three of three.
 
+## make gallery
+
+`make gallery` writes `shots/gallery.png`, a PAL picture of the normal
+build in play for a README: no verdict, meter or debug text. `drive.py`
+plays the starter's `GALLERY_SCRIPT` and VICE writes its exit screenshot
+when the steps end (`DRIVE_EXITSHOT`). The machine is then stopped at
+raster line 0, so the picture is a whole frame, and the same script gives
+the same PNG byte for byte (VICE x64sc 3.10, 2026-09-24: five starters,
+two runs each from fresh `new-project` copies, equal to
+`docs/figures/starters/`). A starter whose moment a fixed stick cannot
+reach sets `GALLERY_DRIVER` to its own player; the beat-em-up's
+`tools/gallery.py` adds `fight:FRAMES`, its autopilot's bot on the real
+stick.
+
 ## The frame meter
 
 `meter/frame_meter.h` (Oscar64) and `meter/frame_meter.asm` (KickAssembler

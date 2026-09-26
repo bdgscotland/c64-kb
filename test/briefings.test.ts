@@ -1398,6 +1398,7 @@ describe("gameBriefing on the #22 section 4.1 shmup brief (#97)", () => {
       1,
     ],
     ["sprite_collision_detect", "Sprite-sprite and sprite-background collision", "sprite", "low", 1],
+    ["sprite_multiplex_8", "8-sprite multiplexer", "sprite", "medium", 3],
     ["text_mode_overlay_render", "Playfield + moving-piece overlay in text mode", "render", "low", 2],
     [
       "mixed_sprite_char_actors",
@@ -1485,6 +1486,17 @@ describe("gameBriefing on the #22 section 4.1 shmup brief (#97)", () => {
       starter: "shmup-vertical",
     });
     for (const t of FEATURES) await f.linkArchetypeFeatures("vertical_shmup", t);
+    // Both multiplexers own the one raster compare, as their pages claim:
+    // check-compatibility calls the pair a hard unit_contention (#97).
+    for (const owner of ["sprite_multiplex_game", "sprite_multiplex_8"]) {
+      await f.linkClaims({
+        owner,
+        ownerKind: "Technique",
+        unit: "vic_raster_irq",
+        mode: "owns",
+        basis: "derived-listing",
+      });
+    }
   });
 
   afterAll(async () => f.close());
@@ -1512,6 +1524,21 @@ describe("gameBriefing on the #22 section 4.1 shmup brief (#97)", () => {
       "The brief loads data from disk while it runs: LOAD a file to an address the program chooses",
     );
     expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
+  });
+
+  it("drops sprite_multiplex_8, found by search, for its hard conflict with the forced sprite_multiplex_game (#97)", async () => {
+    // The #22 run-2 brief got sprite_multiplex_8 from the live graph's vector
+    // search; this seeded graph has no vectors, so the brief names it.
+    const r = await gameBriefing("A vertical shooter whose sprite multiplexer handles 8 sprites");
+    expect(r.structured.archetype?.name).toBe("vertical_shmup");
+    const got = r.structured.proposed_techniques.map((t) => t.name);
+    expect(got).toContain("sprite_multiplex_game");
+    expect(got).not.toContain("sprite_multiplex_8");
+    const game = r.structured.proposed_techniques.find((t) => t.name === "sprite_multiplex_game");
+    expect(game?.conflicts_left_out?.map((c) => c.name)).toEqual(["sprite_multiplex_8"]);
+    const hard = r.structured.compatibility.conflicts;
+    expect(hard.some((c) => [c.a, c.b].includes("sprite_multiplex_8"))).toBe(false);
+    expect(r.text).toContain("**sprite_multiplex_8**, a hard");
   });
 
   it("still forces text_mode_overlay_render for a text-mode playfield", async () => {

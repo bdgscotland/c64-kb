@@ -752,13 +752,14 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     // joystick_autorepeat, joystick_edge_detect, jump_arc_table.
     expect(pal.unknown).toEqual([]);
     // tile_map_render 268 + tile_grid_collision 2,345 + object_pool 380 + decimal_print 1,361
-    // + sid_play_routine_pattern 1,198 (kickassembler-music-player's worst call;
-    // its typical 779, the median call, is the low end) + sfx_engine_beside_music 50-258
+    // + sid_play_routine_pattern 1,223 (kickassembler-music-player's worst call;
+    // its typical 768, the median call, is the low end; 1,198 and 779 before #118,
+    // 1,250 and 784 before #120) + sfx_engine_beside_music 50-258
     // + the #37 figures from the platformer's profile builds: frame_sync_loop 314,
     // joystick_autorepeat 73, jump_arc_table 66, fixed_point_8_8 31; joystick_edge_detect
     // 114 (oscar64-joystick-input, port read included, #54; the platformer's 76 is the
     // split alone and is prose on the page).
-    expect([pal.low, pal.high]).toEqual([5781, 6408]);
+    expect([pal.low, pal.high]).toEqual([5770, 6433]);
     expect(pal.fixed_losses.badlines).toBe(1075);
     expect(pal.verdict).toBe("fits");
     // #45 gave the file transfers Cost lines and #37 error_channel_check (81,421,
@@ -780,7 +781,7 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     // soft_scroll_v was unknown until then: 46, the step and the $D011 write.
     const pal = play(plan(recipeTechniques("oscar64-simple-shmup")));
     expect(pal.unknown).toEqual([]);
-    expect(pal.high).toBe(5301 + 1198 + 46);
+    expect(pal.high).toBe(5301 + 1223 + 46);
     expect(pal.verdict).toBe("fits");
   });
 
@@ -793,8 +794,8 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
       { name: "char_scroll_buffer_h", reason: "included_by", by: "soft_scroll_h" },
     ]);
     // raster_bars 1,471 (#32: measured in kickassembler-raster-bars, NTSC; 990 was an estimate)
-    // + sid_play_routine_pattern 1,198 + soft_scroll_h 7,938.
-    expect(pal.high).toBe(1471 + 1198 + 7938);
+    // + sid_play_routine_pattern 1,223 + soft_scroll_h 7,938.
+    expect(pal.high).toBe(1471 + 1223 + 7938);
     expect(pal.unknown).toEqual([]);
     expect(pal.to_measure).toEqual([]);
     expect(pal.verdict).toBe("fits");
@@ -897,11 +898,12 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
 
   it("the #22 game test's play list with counts puts its measured worst frame inside the range (#95)", () => {
     // DELTA STRIKE's list (game-test-22 result.md). Its measured worst play
-    // frame, PAL, meter: 16,965. Without counts the low end was 19,712.
+    // frame, PAL, meter: 16,965. Without counts the low end was 19,712. The
+    // game copied 0, 3 or 6 rows a frame into the hidden page (#106).
     const list = [
       "scroll_panel_split",
       "soft_scroll_v",
-      "screen_double_buffer_d018",
+      "screen_double_buffer_d018 ×0-6",
       "sprite_multiplex_game",
       "wave_director",
       "object_pool",
@@ -924,6 +926,45 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
       low: 75,
       high: 5955,
     });
+  });
+
+  it("the #22 run-2 shooter list counts the hidden-page redraw, with or without a row count (#106)", () => {
+    // DELTA PATROL's play list (game-test-22 result-2.md, PLAN.md's plan-budget
+    // command). Until #106 screen_double_buffer_d018 was charged 57, the flip
+    // and pointer copy alone, and the 1,716-1,776 cycles of its three rows a
+    // frame were in no figure and not named unknown (T6).
+    const list = (redraw: string) => [
+      "scroll_panel_split",
+      "soft_scroll_v",
+      redraw,
+      "sprite_multiplex_game",
+      "wave_director",
+      "object_pool",
+      "char_bullets",
+      "per_frame_hitbox",
+      "sfx_in_player",
+      "sid_play_routine_pattern",
+      "joystick_edge_detect",
+      "lfsr_random",
+    ];
+    const opts = { region: "PAL" as const, sprites_per_line: 8, sprite_lines: 63 };
+    const redrawOf = (p: PhaseBudget) => p.contributors.find((c) => c.name === "screen_double_buffer_d018");
+    // No count: the recipe's whole-page redraw plus the flip.
+    const uncounted = play(plan(list("screen_double_buffer_d018"), opts));
+    expect(uncounted.unknown).not.toContain("screen_double_buffer_d018");
+    expect(redrawOf(uncounted)).toMatchObject({ charge: "cycles_per_frame", low: 13196, high: 13196 });
+    // Three rows a frame: 57 + 3 × 814, above the game's 1,776 plus 57 for flip and copy.
+    const counted = play(plan(list("screen_double_buffer_d018 ×3"), opts));
+    expect(redrawOf(counted)).toMatchObject({
+      charge: "per_item",
+      low: 2499,
+      high: 2499,
+      per_item: { base: 57, each: 814 },
+    });
+    expect(redrawOf(counted)?.high).toBeGreaterThanOrEqual(1776 + 57);
+    // The measured worst play frame, 16,284 PAL, is inside the counted range.
+    const fixed = counted.fixed_losses.badlines + counted.fixed_losses.sprite_dma;
+    expect(counted.high + fixed).toBeGreaterThanOrEqual(16284);
   });
 
   it("every composition's output parses with the tool's schema", () => {

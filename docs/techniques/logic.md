@@ -1346,6 +1346,88 @@ is not a per-frame figure.
 
 ---
 
+## fighter_opponent_tables — A one-on-one opponent from tables: reaction delay line, range bands, choice rows, feint follow-up
+
+**Complexity:** low
+**Region:** both
+**Requires:** lfsr_random
+**Cost:** cycles_per_frame=295, cycles_per_frame_typical=120
+**Cost basis:** measured-vice
+**Cost measured on:** oscar64-fighter-opponent (one opponent step, worst a decision frame; screen blanked, interrupts off; the recipe's minimal opponent, see Cycle budget)
+**Cost includes:** lfsr_random
+**Claims:** none
+**Claims basis:** derived-listing
+
+The design, its checks and what breaks without it are the pattern of the
+same name in `game-design/enemy-behaviour-and-difficulty.md`. This entry
+is the mechanism and its cost, so that `technique-lookup` and the
+briefings can name it; an earlier version of the KB had only the pattern
+section, which no lookup reads (#113).
+
+### Why
+
+A computer fighter can read the joystick on the frame the player moves.
+Answering on that frame is unbeatable. The opponent has to throw that
+advantage away in a controlled amount, and the amount is the difficulty.
+
+### How
+
+1. **Delay line.** Every frame, write the player's action (idle,
+   forward, back, attack, guard) into a 32-byte ring at `tick & 31`. The
+   opponent reads `(tick - delay) & 31`. The level table is the delay:
+   20, 14, 9 and 5 frames in the recipe.
+2. **Range band.** Sort the distance into close (a blade can land), mid
+   and far (nothing reaches).
+3. **Choice row.** One row per (seen action, band): three thresholds out
+   of 256 for attack, guard and feint. One `lfsr_random` byte picks the
+   action; at or above the third threshold it is a step.
+4. **Range keeping.** A step moves toward a preferred distance, in or
+   out, for a fixed number of frames.
+5. **Feint follow-up.** A feint sets a flag. If the next decision sees
+   the player guarding, the opponent attacks without a roll.
+6. **Commitment.** An action runs its full length before the next
+   decision; nothing cancels it.
+
+### Why it works
+
+The delay line makes the opponent answer the past, so a fast player
+attack is over before it is seen. The rows make its tendencies data: a
+different opponent is a different table, and the same code runs at
+every level. Commitment stops it flickering between choices and holds
+it to the player's rule.
+
+### Variations
+
+- A longer ring for delays above 31 frames (the mask grows with it).
+- More bands or more seen actions (crouch, jump): more rows, same code.
+- A per-level row set as well as a per-level delay, for an opponent that
+  changes style and not only speed.
+
+### Cycle budget
+
+Measured in the recipe with CIA2 timer A around each of 2,400
+`opponent_step` calls, less an empty start and stop, interrupts off and
+the screen blanked (Oscar64 -O2, VICE x64sc, PAL and NTSC the same):
+295 cycles worst, a decision frame, and 120 mean. That step is the
+minimal opponent: the delay line, the bands, five seen actions by three
+bands of rows, the feint flag, commitment, and an X-only step on one
+floor.
+
+It is not the figure for a full game's opponent. TOURNEY, a fighter
+built from the KB in #48, reported 652 cycles worst on PAL and 702 on
+NTSC for its opponent with the same four features (32-frame delay line,
+distance bands, commit-to-action, feint follow-up) (#115: reported
+there, not measured here; its code is not in this repository, so what
+the extra cycles pay for is not known). Budget with the recipe's 295
+only for an opponent as small as the recipe's; for a fuller one, budget
+about twice that until it is measured.
+
+### Recipes
+
+- `recipes/oscar64/fighter-opponent.md` — four 600-tick bouts that differ only in the delay, choice and hit counts checked against a Python model, step and resolve cycles printed on both models
+
+---
+
 ## ghost_target_tile_ai — Maze-chase ghosts that steer by target tiles: look-ahead, no reversing, per-ghost targets and a scatter/chase timer
 
 **Complexity:** medium

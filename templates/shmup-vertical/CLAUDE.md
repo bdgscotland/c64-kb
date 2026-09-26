@@ -27,13 +27,15 @@ What will bite you here:
 
 - `src/kernel.asm` owns the raster IRQ (`$FFFE`, KERNAL banked out). Add a
   split as a new body in its chain; do not install a second handler.
-- No sprite may reach raster line 214 (sprites stop at Y 187, last line
-  208): a sprite there delays the panel split's writes (measured: 16 of
-  16 PAL shots broken with eight sprites on it; lines 209-213 were clean).
+- No sprite may reach raster line 206 (sprites stop at Y 179, last line
+  200): a sprite there delays the panel split's writes (measured: eight
+  sprites on it broke the panel at 8 of 8 phases on PAL and 4 of 8 on
+  NTSC; ending on line 205 was clean). Before #107 the split was 8 lines
+  lower and these were 214, Y 187 and 208.
   `make check` runs `make phases`, which compares the panel at all eight
   YSCROLL phases; keep it passing after touching the split.
 - NTSC has little time to spare. `make stage` meters a staged heavy
-  stretch (worst 15,237 of 17,095 cycles on NTSC), but play reaches
+  stretch (worst 15,241 of 17,095 cycles on NTSC), but play reaches
   heavier frames: `make joytest` and `make longplay` play the game with
   fire held and a sweep and fail on any lost frame (`LOST_FRAMES`, `$02FD`).
   In play's heaviest frames the work ended 7 lines before the frame IRQ
@@ -124,8 +126,12 @@ make run              # windowed VICE, for a human
 - A KickAssembler part called from C is a raw blob at its own `* =` address,
   `$0880` or above; `build/asm.h` gives C its labels as `ASM_<LABEL>`
   (`ASM_<SCOPE>_<LABEL>` inside a scope). Pass arguments through bytes in the
-  blob, not Oscar64's zero page (`$02` up; the top depends on the program:
-  `make zp` lists what the build's code touches).
+  blob, not Oscar64's zero page. Its registers are `$02`-`$52`; its saved
+  temporaries start at `$53` and grow with the program (the platformer's main
+  reaches `$54`). `make zp` lists what the build's code touches and `make
+  claims` measures what the run writes; the `zero_page` item in CLAIMS_ARGS
+  covers both. An earlier version said `$02` to `$52`, which is the registers
+  only.
 - The meter takes CIA2 timer A. Do not open RS-232 (device 2) while it runs.
 - The KERNAL serial routines end in `CLI` (ROM bytes `58 60` / `58 18` at
   `$EDAB`, `$EDB5`, `$EDDB`, `$EE82`). After any disk call, `SEI` again if

@@ -103,17 +103,25 @@ describe.skipIf(!hasPil)("check.py", () => {
   });
 });
 
-/** A project with hello's shipped PLAN.md, and a stub c64-kb whose check-compatibility prints `verdict`. */
-function gateProject(verdict: string): { dir: string; kb: string; env: NodeJS.ProcessEnv } {
+/**
+ * A project with hello's shipped PLAN.md (or `plan`), and a stub c64-kb whose
+ * check-compatibility prints `verdict` and writes its arguments to args.txt.
+ */
+function gateProject(verdict: string, plan?: string): { dir: string; kb: string; env: NodeJS.ProcessEnv } {
   const dir = mkdtempSync(join(tmpdir(), "harness-gate-"));
-  copyFileSync(join(root, "templates", "hello", "PLAN.md"), join(dir, "PLAN.md"));
+  if (plan === undefined) copyFileSync(join(root, "templates", "hello", "PLAN.md"), join(dir, "PLAN.md"));
+  else writeFileSync(join(dir, "PLAN.md"), plan);
   const kb = join(dir, "kb");
   mkdirSync(join(kb, "src"), { recursive: true });
   writeFileSync(join(kb, "src", "cli.ts"), "");
   writeFileSync(join(kb, "VERSION"), "KB_DATA_VERSION=123\n");
   const bin = join(dir, "bin");
   mkdirSync(bin);
-  writeFileSync(join(bin, "npx"), `#!/bin/sh\necho '# Compatibility: x'\necho '**Verdict:** ${verdict}'\n`);
+  const args = join(dir, "args.txt");
+  writeFileSync(
+    join(bin, "npx"),
+    `#!/bin/sh\nprintf '%s\\n' "$@" > "${args}"\necho '# Compatibility: x'\necho '**Verdict:** ${verdict}'\n`,
+  );
   chmodSync(join(bin, "npx"), 0o755);
   // A commit hook sets GIT_DIR, which would give the stub checkout this repository's commit.
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
@@ -171,6 +179,81 @@ describe("plan-gate.py", () => {
     expect(r.out).toContain("the starter's shipped plan, check-compatibility not re-run: WARNINGS");
     writeFileSync(join(p.dir, "PLAN.md"), `${readFileSync(join(p.dir, "PLAN.md"), "utf8")}\nedited\n`);
     expect(gate(p).status).toBe(1);
+  });
+
+  // #107: the by-phase output and "name ×N", as the #22 game test pasted them.
+  const WARN = "WARNINGS, the worst phase or what crosses phases."; // no quote: the stub echoes it
+  const PHASED = [
+    "# Plan: shooter",
+    "",
+    "## Techniques",
+    "",
+    "| Technique | Why |",
+    "|---|---|",
+    "| `char_bullets` ×14 | bullets |",
+    "| sprite_multiplex_game | enemies |",
+    "| kernal_load_to_address:transition | next level |",
+    "",
+    "## Compatibility",
+    "",
+    "# Compatibility by phase: char_bullets + sprite_multiplex_game + kernal_load_to_address",
+    "",
+    `**Verdict:** ${WARN}`,
+    "",
+    "## Phase: play",
+    "",
+    "### Compatibility: char_bullets + sprite_multiplex_game",
+    "",
+    "**Verdict:** COMPATIBLE",
+    "",
+    "## Budget",
+    "",
+    "# Budget plan: undetermined",
+    "",
+    "Techniques: char_bullets ×14, sprite_multiplex_game, kernal_load_to_address:transition",
+    "",
+    "## play (PAL, 19656 cycles a frame): undetermined",
+    "",
+    "Range 15930-23535 + 1075 fixed cycles; floor 1075.",
+    "",
+  ].join("\n");
+  const argsOf = (p: { dir: string }): string[] =>
+    readFileSync(join(p.dir, "args.txt"), "utf8").trim().split("\n");
+
+  it("accepts the by-phase output and name ×N, and re-runs on plan-budget's list", () => {
+    const p = gateProject(WARN, PHASED);
+    const r = gate(p);
+    expect(r.status).toBe(0);
+    expect(r.out.trim()).toBe(
+      "plan-gate: PLAN.md passes (check-compatibility re-run on KB data 123: WARNINGS)",
+    );
+    expect(argsOf(p)).toEqual([
+      "tsx",
+      "src/cli.ts",
+      "check-compatibility",
+      "char_bullets ×14",
+      "sprite_multiplex_game",
+      "kernal_load_to_address:transition",
+    ]);
+  });
+
+  it("re-runs a design's by-phase output with --design", () => {
+    const plan = PHASED.replace(
+      "by phase: char_bullets + sprite_multiplex_game + kernal_load_to_address",
+      "by phase: Vertical shooter (`shmup_vertical_game`)",
+    );
+    const p = gateProject(WARN, plan);
+    expect(gate(p).status).toBe(0);
+    expect(argsOf(p).slice(3)).toEqual(["--design", "shmup_vertical_game"]);
+  });
+
+  it("still refuses a by-phase plan whose table lacks a technique", () => {
+    const p = gateProject(WARN, PHASED.replace("| sprite_multiplex_game | enemies |\n", ""));
+    const r = gate(p);
+    expect(r.status).toBe(1);
+    expect(r.out).toContain(
+      "technique 'sprite_multiplex_game' is in the pasted output but not in the Techniques table",
+    );
   });
 
   it("warns and checks the structure only when the checkout is unreachable", () => {

@@ -1906,9 +1906,13 @@ value 3 sat in 18 of 34,816 bytes; after one death one of them held 2,
 and it held 1 after the next. The `DEC` scan then found one site, and
 the `LDA` patch kept the game running for eight deaths with the counter
 at 3 (measured in VICE x64sc 3.10, both models). The first search pass
-is the costly one: 1,483,115 cycles on PAL and 1,495,095 on NTSC for
+is the costly one: 1,483,117 cycles on PAL and 1,495,097 on NTSC for
 34,816 bytes in Oscar64 C, about 43 cycles a byte with the screen on
-(CIA1 timers A and B chained); the later passes visit only candidates.
+(CIA1 timers A and B chained; 1,483,115 and 1,495,095 before the
+recipe moved the count off its screen and changed its layout); the
+later passes visit only candidates. The first count depends on
+power-on RAM: VICE's default random RAM gave 19 instead of 18 on a
+few runs (the recipe's "Expected output").
 An assembler loop would be several times faster (not measured here).
 
 ### Recipes

@@ -135,8 +135,8 @@ void display_init(void)
     vic.spr_mcolor1 = VCOL_WHITE;
     memset(PF0, G_WATER, 1000);
     memset(PF1, G_WATER, 1000);
-    memset(COLOUR, PF_CRAM, 21 * 40);               // playfield rows 0-20
-    memset(COLOUR + 21 * 40, VCOL_WHITE, 4 * 40);   // panel rows 21-24
+    memset(COLOUR, PF_CRAM, 20 * 40);               // playfield rows 0-19 (row 20 is never shown)
+    memset(COLOUR + 20 * 40, VCOL_WHITE, 5 * 40);   // panel rows 20-24
     panel_draw();
 }
 
@@ -171,12 +171,14 @@ void put_dec(char *p, unsigned v, char digits)
     }
 }
 
-// ---- the panel: rows 20-24 of the screen at $8800 ------------------------------
-// Row 20 is a rule, drawn in colour RAM row 20's colour, which the playfield
-// shares (pitfall-free only because the playfield's value, $0F, reads as
-// light grey in hires). Rows 21-23 hold text; row 24 is cut by the border.
-#define SCORE_AT (PANEL + 21 * 40 + 8)          // five digits; the sixth is always 0
-#define HI_AT    (PANEL + 21 * 40 + 26)
+// ---- the panel: rows 19-23 of the screen at $8800 ------------------------------
+// Lines 207-246, five whole rows. Row 19 is a rule, drawn in colour RAM row
+// 19's colour, which the playfield shares (pitfall-free only because the
+// playfield's value, $0F, reads as light grey in hires). Rows 20 and 22 hold
+// text; 21 and 23 are blank. Before #107 the panel was rows 20-24 from line
+// 215, and row 24 showed only lines 247-250 above the border.
+#define SCORE_AT (PANEL + 20 * 40 + 8)          // five digits; the sixth is always 0
+#define HI_AT    (PANEL + 20 * 40 + 26)
 static char shown_lives = 0xff;
 // The score's digits change once a frame, in panel_update, however many
 // kills the frame had: the frames with most kills are the heaviest.
@@ -185,9 +187,9 @@ static char score_due;
 void panel_draw(void)
 {
     memset(PANEL, G_WATER, 1000);
-    memset(PANEL + 20 * 40, G_RULE, 40);
-    put_text(PANEL, 21, 2, "SCORE 000000         HI 000000");
-    put_text(PANEL, 23, 2, "LIVES");
+    memset(PANEL + 19 * 40, G_RULE, 40);
+    put_text(PANEL, 20, 2, "SCORE 000000         HI 000000");
+    put_text(PANEL, 22, 2, "LIVES");
     put_dec(SCORE_AT, score, 5);
     put_dec(HI_AT, hiscore, 5);
     score_due = 0;
@@ -231,8 +233,8 @@ void panel_update(void)
     }
     if (lives != shown_lives) {
         for (char i = 0; i < 5; i++) {
-            PANEL[23 * 40 + 8 + i] = i < lives ? G_LIFE : G_WATER;
-            COLOUR[23 * 40 + 8 + i] = VCOL_CYAN;
+            PANEL[22 * 40 + 8 + i] = i < lives ? G_LIFE : G_WATER;
+            COLOUR[22 * 40 + 8 + i] = VCOL_CYAN;
         }
         shown_lives = lives;
     }

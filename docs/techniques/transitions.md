@@ -403,3 +403,112 @@ frame.
 - `recipes/kickassembler/screen-dissolve.md`
 
 ---
+
+## luminance_dissolve — Fade a colour-RAM picture to black cell by cell in LFSR order, each visit one step down the luminance table
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D012
+**Requires:** lfsr_random, colour_fade
+**Cost:** cycles_per_frame=7490, cycles_per_frame_typical=6185, bytes_code=684, bytes_data=1269
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-luminance-dissolve (the worst of the 84 fade frames on PAL, 60 visits with their LFSR pulls, skips and the seed test, screen on, from the listing's CIA1 timer A bracket; typical is the last fade frame, when most visits find a black cell and leave early; NTSC at 50 visits 6,544 worst and 6,176 last over 100 fade frames; bytes_code is the code without the autopilot block; bytes_data is the 16-byte step table, the 1,000-byte picture and 13 bytes of state, with 240 bytes of page padding after the table. The same design in a five-part KickAssembler demo built from the KB, with a sequencer and a sprite interrupt inside the bracket, read 7,928 to 8,036 worst over three runs on PAL and 7,015 to 7,279 on NTSC)
+**Claims:** none
+**Claims basis:** derived-listing
+
+### Why
+
+`colour_fade` darkens every cell in lockstep, so the picture dims as a
+whole; `screen_dissolve_lfsr` replaces cells one at a time but needs a
+second picture in RAM to replace them with. A fade that should look
+granular, an old picture going dark in scattered grains rather than
+dimming evenly, is the two put together: visit the cells in a maximal
+LFSR order and step each visited cell down the luminance order instead
+of copying a target. It needs no target screen and no black frame in
+the middle, it touches colour RAM only, and the shapes stay where they
+are until their colour reaches black. It was proposed from the
+technique graph's compatibility census and measured in a demo part.
+
+### How
+
+1. Take `colour_fade`'s luminance order of the sixteen colours, dark to
+   bright: 0 6 9 2 11 8 4 14 12 5 10 3 15 13 7 1. Build a sixteen-entry
+   table, indexed by colour, that maps each colour to the one three
+   places down the order and the three darkest to black:
+   0 15 0 12 2 4 0 3 9 0 14 6 8 10 11 5. (The demo part ranked 4 before
+   8 and 7 before 13, a variant of the same order; its table was
+   0 15 0 12 9 8 0 10 2 0 14 6 4 3 11 5.)
+2. Take the 10-bit Galois LFSR of `screen_dissolve_lfsr`, the polynomial
+   x^10 + x^7 + 1 in `lfsr_random`'s right-shifting form, seeded with
+   any non-zero value. Its period is 1,023; the demo measures it once at
+   start-up by stepping until the seed recurs, and checks the count.
+3. Each frame pull N states. A state of 1,000 to 1,023 is not a cell:
+   pull again. For each cell read its colour nibble at `$D800 + i`, look
+   the nibble up in the step table and write the result back. Visit cell
+   0, which no state names, each time the seed recurs.
+4. Stop when no lit cell is left. The demo counts lit cells once before
+   the first frame and decrements the count when a visit reaches black,
+   with a cap of 200 frames as a guard.
+
+N is chosen from the raster line count: 60 on PAL and 50 on NTSC. The
+whole screen was black after 84 frames on PAL and 100 on NTSC, 1.68 s
+and 1.67 s, measured in the demo; a cell at white needs five visits, so
+five sweeps of 1,023 pulls, 86 frames at 60 and 103 at 50 by arithmetic,
+is the bound, and the last lit cell went out a little before it.
+
+### Why it works
+
+A maximal LFSR is a permutation of its non-zero states, so one sweep
+visits every cell once (`screen_dissolve_lfsr`, "Why it works"), and
+every cell has taken the same number of steps at the end of each sweep.
+The picture therefore darkens evenly on average while the order within
+a sweep looks random, which is the grain. Stepping down a luminance
+order rather than a hue order means a cell never gets brighter on the
+way, the same guarantee `colour_fade` rests on, and three places at a
+time makes the brightest colour black in five visits instead of fifteen,
+so the fade finishes in about five sweeps. A cell already black maps to
+black, so an extra visit costs nothing but the cycles. Colour RAM holds
+one nibble a cell, so a visit is one read and one write and there is
+nothing to tear: a cell is never half-way between two colours.
+
+### Variations
+
+**Step one place.** Fifteen visits for a white cell and fifteen sweeps:
+a slower, smoother fade at the same cost a frame. Not built.
+
+**Dissolve to a palette.** Replace the step table with one that moves
+each colour one place towards its target colour in a second palette, and
+the picture crossfades in grain to a recoloured version of itself
+instead of to black. Not built.
+
+**Sprites alongside.** The demo stepped its six sprites' colour
+registers down the same table every eight frames and switched them off
+at black, so the sprites and the field reached black together.
+
+### Cycle budget
+
+Not raster critical; the visits can run anywhere in the frame. Measured
+in the demo with CIA1 timer A around one fade frame, the sequencer and
+sprite interrupts inside the bracket: PAL at N = 60 worst 7,928 to 8,036
+over three runs and the last frame 5,720 to 7,329; NTSC at N = 50 worst
+7,015 to 7,279 and last 4,952 to 6,909. That is about 130 cycles a visit
+with the pulls and skips, and the frames differ because the 24 wasted
+pulls fall where the sequence puts them. The census of lit cells on the
+first call is about 14,000 cycles once and was not bracketed.
+
+### Pitfalls
+
+- `lfsr_zero_state_lockup` (`pitfalls/cpu.md`): the seed must be
+  non-zero, and cell 0 has to be visited by hand.
+- `colour_ram_index_past_last_cell_hits_cia1`
+  (`pitfalls/text-mode-render.md`): the skip of states 1,000 and above
+  is what keeps the write inside colour RAM.
+- A count of lit cells decremented on the wrong flag runs the fade to
+  its cap: the demo's first build tested `bne` after a `sta`, which sets
+  no flags, and every fade ran 200 frames until the compare was moved.
+
+### Recipes
+
+- `recipes/kickassembler/luminance-dissolve.md`
+
+---

@@ -1,0 +1,200 @@
+{
+  "note": "Part 2 TWIST at frame 300 (t_last = 299: the odd half, rows 11 to 19, was drawn with t 299 and the even half, rows 4 to 10 and 20, with t 298, on BOTH models since both half-copy). A bitmap pixel (xb, yb) is vic_x xb + 24, line yb + 51; band line L is bitmap row 36 + L. Screen RAM rolls two rows a frame: after setup's own sweep and 300 frames the last full sweep wrote offset 24, so row r has ink ink_tab[(r - 24) & 15] and paper pap_line[((r + 24) & 15) + column / 4] (ink light blue, cyan, light green, yellow, white; paper black, blue, brown, red, purple; two rows a step). The border bars are 13 entries 20 lines apart from line 10; bar position 150 at frame 300 (one step every second frame), colour bar_tab[(entry - 150) & 15]. The runner puts the verdict colour on $D020 from line 130 down after selfcheck, so the verdict is read at (2, 200) and the bar checks sit above line 130. Twister edges from the recipe's phase script, verified against the shot before pinning.",
+  "checks": [
+    {
+      "name": "verdict, read in the lower border (line 130 down; the bars keep the top): selfcheck read the order, the registers, the pointers, three bitmap rows, a screen RAM cell and $D020 back",
+      "type": "verdict",
+      "at": [2, 200]
+    },
+    {
+      "name": "band line 0 (row 4, even half, phase 42, ink light green on paper black): first lit pixel bitmap x 133",
+      "type": "pixel",
+      "vic_x": 157,
+      "line": 87,
+      "colour": 13
+    },
+    {
+      "name": "band line 0 (row 4, even half, phase 42, ink light green on paper black): x 132 unlit, the paper shows",
+      "type": "pixel",
+      "vic_x": 156,
+      "line": 87,
+      "colour": 0
+    },
+    {
+      "name": "band line 0 (row 4, even half, phase 42, ink light green on paper black): last lit pixel x 186",
+      "type": "pixel",
+      "vic_x": 210,
+      "line": 87,
+      "colour": 13
+    },
+    {
+      "name": "band line 0 (row 4, even half, phase 42, ink light green on paper black): x 187 unlit, the paper shows",
+      "type": "pixel",
+      "vic_x": 211,
+      "line": 87,
+      "colour": 0
+    },
+    {
+      "name": "band line 0: solid face 0 spans x 133 to 141 in the row ink light green",
+      "type": "rect",
+      "vic_x": 157,
+      "line": 87,
+      "width": 9,
+      "height": 1,
+      "colour": 13
+    },
+    {
+      "name": "band line 40 (row 9, even half, phase 18, ink light blue on paper brown): first lit pixel bitmap x 132",
+      "type": "pixel",
+      "vic_x": 156,
+      "line": 127,
+      "colour": 14
+    },
+    {
+      "name": "band line 40 (row 9, even half, phase 18, ink light blue on paper brown): x 131 unlit, the paper shows",
+      "type": "pixel",
+      "vic_x": 155,
+      "line": 127,
+      "colour": 9
+    },
+    {
+      "name": "band line 40 (row 9, even half, phase 18, ink light blue on paper red): last lit pixel x 164",
+      "type": "pixel",
+      "vic_x": 188,
+      "line": 127,
+      "colour": 14
+    },
+    {
+      "name": "band line 40 (row 9, even half, phase 18, ink light blue on paper red): x 165 unlit, the paper shows",
+      "type": "pixel",
+      "vic_x": 189,
+      "line": 127,
+      "colour": 2
+    },
+    {
+      "name": "band line 100 (row 17, odd half, phase 15, ink white on paper brown): first lit pixel bitmap x 128",
+      "type": "pixel",
+      "vic_x": 152,
+      "line": 187,
+      "colour": 1
+    },
+    {
+      "name": "band line 100 (row 17, odd half, phase 15, ink white on paper brown): x 127 unlit, the paper shows",
+      "type": "pixel",
+      "vic_x": 151,
+      "line": 187,
+      "colour": 9
+    },
+    {
+      "name": "band line 100 (row 17, odd half, phase 15, ink white on paper brown): last lit pixel x 156",
+      "type": "pixel",
+      "vic_x": 180,
+      "line": 187,
+      "colour": 1
+    },
+    {
+      "name": "band line 100 (row 17, odd half, phase 15, ink white on paper brown): x 157 unlit, the paper shows",
+      "type": "pixel",
+      "vic_x": 181,
+      "line": 187,
+      "colour": 9
+    },
+    {
+      "name": "paper only left of the column: row 4 columns 12 to 15 are one four-column group, blue at offset 8",
+      "type": "rect",
+      "vic_x": 120,
+      "line": 83,
+      "width": 32,
+      "height": 8,
+      "colour": 6
+    },
+    {
+      "name": "paper cell row 2 column 0 is red (offset 8: black, blue, brown, red, purple on the diagonal)",
+      "type": "pixel",
+      "vic_x": 28,
+      "line": 71,
+      "colour": 2
+    },
+    {
+      "name": "paper cell row 22 column 36 is red at offset 8",
+      "type": "pixel",
+      "vic_x": 316,
+      "line": 231,
+      "colour": 2
+    },
+    {
+      "name": "border bar at line 40 (entry 1, position 6) is grey",
+      "type": "pixel",
+      "vic_x": 8,
+      "line": 40,
+      "colour": 12
+    },
+    {
+      "name": "border bar at line 100 (entry 4, position 6) is dark grey",
+      "type": "pixel",
+      "vic_x": 8,
+      "line": 100,
+      "colour": 11
+    },
+    {
+      "name": "ball 1 (near, white, sprite 3 at 224,146) over ball 0 (far, grey, sprite 5 at 213,142): white on top at the overlap's middle",
+      "type": "pixel",
+      "vic_x": 228,
+      "line": 152,
+      "colour": 1
+    },
+    {
+      "name": "ball 1 over ball 0: white on top at the overlap's left, lower half",
+      "type": "pixel",
+      "vic_x": 226,
+      "line": 155,
+      "colour": 1
+    },
+    {
+      "name": "ball 1 over ball 0: white on top, lower half",
+      "type": "pixel",
+      "vic_x": 230,
+      "line": 156,
+      "colour": 1
+    },
+    {
+      "name": "ball 0's grey rim outside ball 1's ellipse (the 18 grey pixels the recipe counts)",
+      "type": "pixel",
+      "vic_x": 226,
+      "line": 147,
+      "colour": 12
+    },
+    {
+      "name": "ball 2 (near, white, sprite 1 at 201,139) over ball 0: white on top",
+      "type": "pixel",
+      "vic_x": 220,
+      "line": 152,
+      "colour": 1
+    },
+    {
+      "name": "ball 1's white ellipse: bounding box from its column 1 (search starts at vic_x 225 to keep ball 2's white out)",
+      "type": "sprite",
+      "vic_x": 225,
+      "line": 147,
+      "width": 23,
+      "height": 21,
+      "colour": 1,
+      "search": {
+        "vic_x": 225,
+        "line": 146,
+        "width": 26,
+        "height": 27
+      }
+    },
+    {
+      "name": "the whole display (vic_x 24 to 343, lines 51 to 250) is the same on PAL and NTSC: both models half-copy the same halves and roll the same rows at frame 300",
+      "type": "same",
+      "area": {
+        "vic_x": 24,
+        "line": 51,
+        "width": 320,
+        "height": 200
+      }
+    }
+  ]
+}

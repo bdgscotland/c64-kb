@@ -46,7 +46,7 @@ C64.
 // the shift can be read off the picture cell by cell.
 
 // Region: both. Measured in VICE x64sc: the shift is N = VSP_PAD - 194 on
-// PAL and VSP_PAD - 202 on NTSC, for N = 1 to 40. 204 and 212 give N = 10.
+// PAL and VSP_PAD - 200 on NTSC. 204 and 210 give N = 10.
 // :pad=N and :npad=N on the command line override them for a sweep.
 
 BasicUpstart2(start)
@@ -54,10 +54,11 @@ BasicUpstart2(start)
 .var padVar = cmdLineVars.get("pad")
 .var ntscVar = cmdLineVars.get("npad")
 .const VSP_PAD_PAL  = (padVar == null) ? 204 : padVar.asNumber()
-.const VSP_PAD_NTSC = (ntscVar == null) ? 212 : ntscVar.asNumber()
+.const VSP_PAD_NTSC = (ntscVar == null) ? 210 : ntscVar.asNumber()
 
 .const SYNC_LINE = 48            // stable raster here; YSCROLL 7, not a badline
-.const SYNC_PAD  = 11            // as measured for stable-raster-irq and fli-image
+.const SYNC_PAD_PAL  = 12        // SAVED_SP is zero page: one cycle less than
+.const SYNC_PAD_NTSC = 14        // an absolute LDX, one more pad (issue #111)
 .const BOTTOM    = 252           // below the display: YSCROLL back to 7
 
 .const SCREEN   = $0400
@@ -176,10 +177,10 @@ ib_set:
     .for (var i = 0; i < 40; i++) { nop }
 }
 
-.macro Irq2(pad) {
+.macro Irq2(sync, pad) {
     ldx SAVED_SP
     txs
-    Delay(SYNC_PAD)
+    Delay(sync)
     lda $d012
     cmp $d012
     beq !+
@@ -191,8 +192,8 @@ ib_set:
 
 irq1_pal:  Irq1(irq2_pal)
 irq1_ntsc: Irq1(irq2_ntsc)
-irq2_pal:  Irq2(VSP_PAD_PAL)
-irq2_ntsc: Irq2(VSP_PAD_NTSC)
+irq2_pal:  Irq2(SYNC_PAD_PAL, VSP_PAD_PAL)
+irq2_ntsc: Irq2(SYNC_PAD_NTSC, VSP_PAD_NTSC)
 
 irq_done:
     lda #<irq_bottom
@@ -213,7 +214,7 @@ java -jar KickAss.jar vsp.asm -o vsp.prg
 ```
 
 Produces `vsp.prg`, `$0801` to `$0A52`, 596 bytes on disk.
-`java -jar KickAss.jar vsp.asm -o vsp.prg :pad=200 :npad=208` builds
+`java -jar KickAss.jar vsp.asm -o vsp.prg :pad=200 :npad=206` builds
 another shift for a sweep.
 
 ## Expected output
@@ -248,11 +249,15 @@ display window is black. Row 0 is the same on both models: 902 white and
 | 238 to 242 | blank but for column 30 | normal |
 | 243 and up | blank | row `r` shows screen RAM row `r - 1` |
 
-NTSC gives the same sequence eight cycles later: 200 and 201 lose one and
-two columns of row 0, 202 loses the row, and 203 to 210 shift by
-`VSP_PAD - 202` (not measured past 210). Three lines of 65 cycles against
-63 account for six of the eight; the other two are where the sync lands on
-the longer line, not analysed here.
+NTSC gives the same sequence six cycles later: 198 and 199 lose one and
+two columns of row 0, 200 loses the row, and 201 to 208 shift by
+`VSP_PAD - 200` (not measured past 208). Three lines of 65 cycles against
+63 account for all six. The NTSC sweep was run with the earlier sync
+padding of 11 and read eight cycles later (200, 201, 202, 203 to 210);
+the padding of 14 puts the write two cycles later for the same
+`VSP_PAD` (store trace: 212 wrote on 24 before, 26 after), so the values
+above are the measured ones minus two. An earlier version left the other
+two cycles unexplained; they were the sync (issue #111).
 
 ### What the page's model predicts, and what was not settled
 
@@ -315,6 +320,24 @@ double interrupt as in `stable-raster-irq.md` (sync on line 48, which is
 not a badline with YSCROLL 7) and a counted delay. `detect_region` reads
 the last raster line's low byte ($37 on PAL, $06 or $05 on NTSC) and the
 bottom interrupt arms the PAL or the NTSC pair.
+
+**The sync padding.** `SAVED_SP` is in zero page, so its `LDX` takes
+three cycles, one fewer than the absolute one in `stable-raster-irq.md`,
+and the padding is one more to keep the two `$D012` reads across the end
+of line 47: 12 on PAL, and 14 on NTSC, whose 65-cycle line ends two
+cycles later. Measured with a test build whose main loop is `nop / nop /
+inc $fb / bit $fb / jmp` instead of `jmp *`, so that `irq2` enters on
+either cycle (exec trace of `irq2` and the instruction after its `beq`,
+store trace of `$D011`, 8,000,000 cycles; the monitor's CYC as printed):
+on PAL `irq2` entered on 38 in 84 frames and 39 in 169, the post-sync
+instruction ran on cycle 3 of line 48 in all 253, and the write was on
+cycle 24 of line 51 in all 253; on NTSC 96 and 189, cycle 3 in all 285,
+the write on 24 in all 285. An earlier version used a padding of 11 on
+both models: with the same test loop the jitter passed through, and the
+write was on 23 in the 84 PAL and 96 NTSC frames that entered on 38.
+The listing's own `jmp *` loop entered on 39 in every traced frame on
+both models, so its pictures never showed the fault and are unchanged
+by the fix.
 
 **Scrolling with it.** Change the delay by one cycle per character and
 XSCROLL (`$D016` bits 0-2) for the pixels in between; the screen RAM never

@@ -12,6 +12,7 @@
 #   make gameover     the AP_GIVE_UP=1 build: the bot never fights, three lives
 #                     go, GAME OVER shows; graded by expect-gameover.json
 #   make drive        the normal game played headless (harness/drive.py; README "Driving it headless")
+#   make gallery      shots/gallery.png: the normal game in play, for a README (tools/gallery.py)
 #   make disk         build/beat-em-up.d64
 #   make claims       c64-kb's claims-watch over the autopilot build
 #   make clean
@@ -96,3 +97,9 @@ gameover: $(PRG_OVER)
 # drivetest: the normal build, stick on $DC00: fire on the title starts a game.
 DRIVE_SCREEN := C800:21-24
 DRIVE_STEPS  := "until:PRESS FIRE" tap:fire "until:LIVES 3" "until:LIVES 2" print
+
+# make gallery: shots/gallery.png, the normal build in play. tools/gallery.py
+# plays the autopilot's fight on the real stick (fight:FRAMES); 681 frames in,
+# the hero kicks the stage 1 brute.
+GALLERY_DRIVER := tools/gallery.py
+GALLERY_SCRIPT := "until:PRESS FIRE" tap:fire "until:LIVES 3" fight:681

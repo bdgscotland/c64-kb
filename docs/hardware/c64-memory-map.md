@@ -773,7 +773,7 @@ TI$ in BASIC formats the jiffy clock as "HHMMSS".
 **Default use:** Cassette and serial-bus workspace
 **Bank-switchable:** No
 
-### $00A9-$00AD — Tape header / file workspace
+### $00A9-$00AD — Tape header / file workspace ($A9-$AD)
 
 **Default use:** Workspace for OPEN, LOAD, SAVE tape protocols
 **Bank-switchable:** No
@@ -791,7 +791,7 @@ Also used as a temporary pointer by the screen-editor scroll
 ($E8F0-$E9ED). Verified against kernal-901227-03 and a SAVE/LOAD round
 trip in VICE x64sc.
 
-### $00B0-$00B1 — Tape header / file workspace
+### $00B0-$00B1 — Tape header / file workspace ($B0-$B1)
 
 **Default use:** Workspace for OPEN, LOAD, SAVE tape protocols
 **Bank-switchable:** No
@@ -1216,9 +1216,9 @@ at boot.)
 **Default use:** 1 = PAL, 0 = NTSC. Written once by CINT ($FF5B: waits for $D012 = 0 after the VIC table set raster compare 311, then stores $D019 bit 0), read by IOINIT at $FDDD to pick the CIA #1 Timer A jiffy latch ($4025 PAL / $4295 NTSC) and by RS-232 OPEN at $F42C to pick the baud table. Leave it alone: RUN/STOP-RESTORE ($FE66) re-runs IOINIT but not CINT, so an overwritten flag is not re-derived and the jiffy clock and RS-232 timing switch to the other region (measured in VICE x64sc: storing 0 here and calling $FF84 on a PAL machine moves the Timer A latch from $4025 to $4295). Bit-exact in 901227-02 and -03; -01 has no detector and leaves this byte alone.
 **Bank-switchable:** No
 
-### $02A7-$02FF — Unused
+### $02A7-$02FF — Unused page-2 RAM (89 free bytes)
 
-**Default use:** Free for user code. No KERNAL or BASIC ROM write touches this range (census of absolute operands in 901227-03 / 901226-01); the only reads are two `BIT $02A9` skip idioms at $EFCF and $F6FD that discard the value. RAMTAS clears it at reset. An earlier version of this page lumped $02A2-$02A6 into this range as "extra RS-232 workspace, safe if RS-232 is not in use"; five of those bytes belong to the tape driver, the screen editor and the PAL/NTSC flag.
+**Default use:** Free for user code. No KERNAL or BASIC ROM write touches this range (census of absolute operands in 901227-03 / 901226-01); the only reads are two `BIT $02A9` skip idioms at $EFCF and $F6FD that discard the value. RAMTAS clears it at reset. The headless verifiers in this repo put their result byte at $02FF (`runtime/vice-reference.md`, "Verifying a run without a human"). An earlier version of this page lumped $02A2-$02A6 into this range as "extra RS-232 workspace, safe if RS-232 is not in use"; five of those bytes belong to the tape driver, the screen editor and the PAL/NTSC flag. Re-checked for issue #108: a byte scan finds 71 places where two ROM bytes read as an address in $02A7-$02FF; besides the two `BIT`s, the nine behind a load, store or read-modify-write opcode byte all fall inside other instructions (the two behind a store opcode are `CMP #$DE` / `BNE` at $E67C and `BCS` / `LDA #$02` at $F1ED). An earlier version of this page named this heading, the one at $0313 and the one at $FFF6 all "Unused"; the graph keys a region by its name, so only $FFF6-$FFF9 survived the ingest and `memory-map 02A7` found no region (the #22 game test, issue #108). The two "Tape header / file workspace" headings at $00A9 and $00B0 collided the same way.
 **Bank-switchable:** No
 
 ### $0300-$0301 — IERROR (BASIC error vector)
@@ -1293,7 +1293,7 @@ that the same init writes at $54). The default target is $B248 = LDX
 with the routine address before calling USR(). An earlier version said
 USR() sets this vector.
 
-### $0313-$0313 — Unused
+### $0313-$0313 — Unused byte in the vector page
 
 **Default use:** Unused
 **Bank-switchable:** No
@@ -2118,7 +2118,7 @@ entered via the reset vector at $FFFC.
 | $FFF0 | PLOT    | Read/set cursor row/col               |
 | $FFF3 | IOBASE  | Return base address of CIA #1         |
 
-### $FFF6-$FFF9 — Unused
+### $FFF6-$FFF9 — Unused ROM bytes (RRBY)
 
 **Default use:** Four bytes not reached by any code: $52 $52 $42 $59 in 901227-03
 **Bank-switchable:** Yes

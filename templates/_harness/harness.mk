@@ -23,6 +23,10 @@
 #   DRIVE_SCREEN     where make drive and drivetest read screen text (harness/drive.py; default 0400:0-24)
 #   DRIVE_STEPS      drivetest's steps: the normal build played headless, joystick on $DC00
 #   DRIVE_DISK       a .d64 drivetest attaches (a fresh copy each run)
+#   GALLERY_SCRIPT   make gallery's steps: the normal build played to the moment its
+#                    presentation picture shows; the last step's end is the moment
+#   GALLERY_DRIVER   what plays GALLERY_SCRIPT (default harness/drive.py); a starter's own
+#                    tool takes the same arguments and imports drive.py (HARNESS_DIR is set)
 #   SOUND_SINK       off (default, +sound: fastest), dump or wav. With off, and with
 #                    VICE's dummy sink, $D41B and $D41C (OSC3, ENV3) read wrong values;
 #                    a program that reads them sets SOUND_SINK := dump (the output goes
@@ -123,7 +127,7 @@ shot_disk = @cp $(D64) $(1:.png=.d64)
 shot_disk_flags = -8 $(1:.png=.d64) -drive8wobbleamplitude 0 -drive8wobblefrequency 0
 endif
 
-.PHONY: all build run run-auto shot check selftest watch watchtest disk claims zp released clean plan-gate tools verify-targets drive drivetest joyprobe
+.PHONY: all build run run-auto shot check selftest watch watchtest disk claims zp released clean plan-gate tools verify-targets drive drivetest joyprobe gallery
 .DELETE_ON_ERROR:
 
 all: plan-gate build
@@ -378,6 +382,21 @@ drivetest: $(PRG) $(DRIVE_DISK)
 	$(if $(DRIVE_DISK),@cp $(DRIVE_DISK) build/drivetest.d64)
 	$(if $(DRIVE_DISK),DRIVE_DISK=build/drivetest.d64) $(DRIVE) $(PRG) $(DRIVE_STEPS)
 	@echo "drivetest: PASS"
+
+# gallery: shots/gallery.png, a PAL picture of the normal build in play for a
+# README: no verdict, no meter. GALLERY_SCRIPT plays to the moment; VICE's exit
+# screenshot is written when the steps end, with the machine stopped at raster
+# line 0, so the picture is a whole frame. drive.py counts emulated frames, so
+# the same script gives the same picture every run.
+GALLERY_SCRIPT ?=
+GALLERY_DRIVER ?= $(HARNESS_DIR)/drive.py
+gallery: $(PRG)
+	@test -n '$(strip $(GALLERY_SCRIPT))' || { echo "gallery: set GALLERY_SCRIPT in the Makefile"; exit 2; }
+	@mkdir -p shots
+	@rm -f shots/gallery.png
+	HARNESS_DIR='$(HARNESS_DIR)' DRIVE_EXITSHOT=shots/gallery.png DRIVE_SCREEN='$(DRIVE_SCREEN)' DRIVE_SOUND=$(SOUND_SINK) X64SC='$(X64SC)' $(TIMEOUT) $(VICE_TIMEOUT) $(PYTHON) $(GALLERY_DRIVER) $(PRG) $(GALLERY_SCRIPT)
+	@test -s shots/gallery.png || { echo "gallery: FAIL, VICE wrote no shots/gallery.png"; exit 1; }
+	@echo "gallery: shots/gallery.png"
 
 # joyprobe: drive.py's own proof. A KickAssembler program waits for fire on
 # $DC00; drive.py presses it at the same frame in three runs. The press must

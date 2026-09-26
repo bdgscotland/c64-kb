@@ -1,0 +1,10 @@
+build/
+local.mk
+.DS_Store
+*.log
+*.sym
+__pycache__/
+# shots/ is what make shot and verify.sh write; the committed pictures are
+# screenshots/ (the end screen and one shot inside each part) and test/shots/
+# (the standalone runners frozen at frame 300).
+shots/

@@ -32,9 +32,11 @@ The first cell is the technique's snake_case name as the tools print it.
 ## Compatibility
 
 Command: `npx tsx src/cli.ts check-compatibility <technique> <technique> ...`
+(`name:transition` or `name:init` checks by phase, `name ×N` is accepted;
+use the same list for plan-budget)
 
 ```text
-FILL: paste the whole output here. It starts "# Compatibility:".
+FILL: paste the whole output here. It starts "# Compatibility:" or "# Compatibility by phase:".
 ```
 
 What the warnings mean for this program:

@@ -30,7 +30,7 @@ Pages live in `docs/game-design/designs/`, one design per file. The marker
 | `**Realised by:**` | no | `REALISED_BY` edges to canonical recipe names (`<toolchain>-<recipe>`). |
 | `**Region:**` | no | `PAL`, `NTSC` or `both`: the region the budget uses when the caller names none. |
 | `**Composes:**` | yes | `COMPOSES` edges, one per technique and phase. |
-| `**Measured frame:**` | no | the node's `measured` property. More than one line is allowed. |
+| `**Measured frame:**` | no | the node's `measured` property. More than one line is allowed, for the same phase and region too. |
 
 Every name is MATCHed at ingest, never created. A name that matches no
 node is warned about and counted in the ingest summary as dropped.
@@ -81,6 +81,13 @@ a parenthetical: the basis word first (`measured-vice`, `derived-listing`,
 `arithmetic`, `estimated`), then the instrument and where the figures are.
 A malformed line is refused whole, because part of it would read as the
 whole measurement.
+
+Several lines are allowed, and two lines may give the same phase and
+region: each line is its own measurement (another build, instrument or
+run) with its own basis and source, and `c64_plan_budget` prints each
+beside the prediction. Within one line a phase and region appear once.
+Before #107 the extractor kept only the first line's figure for a phase
+and region and warned, although this page allowed more than one line.
 
 - `worst` is the largest frame the run recorded, in CPU cycles.
 - `typical` is a common frame. Say in prose what it is: a mean, or one

@@ -122,12 +122,14 @@ describe("listing scan: what counts as declared", () => {
 
 // The measurement behind "false positives are low": every recipe page in
 // docs/, scanned against the Claims lines as the extractor reads them. The
-// 69 recipes with claims: pass the claims watch (npm run claims:recipes),
+// recipes whose claims: come from a trace pass the claims watch (npm run claims:recipes),
 // so a warning on one of them would be a false positive by that measure:
 // there are none. (Tech-tech was one until #88: its `sta $dd0d` wrote the
 // byte just read from $DC0D; it now writes $7F and claims the CIA2 units
-// init.) The four listed have no claims: key and do store to those units.
-// Update this list when a page changes, and say why.
+// init.) Until #104 seven pages had no claims: key and stored to those
+// units; they now have one, from a hand-run claims-watch trace
+// (tape-turbo-loader) or from the listing (claims_basis: derived-listing)
+// where the watch cannot boot them. A new warning here is a page to fix.
 describe("listing scan over the real recipe pages", () => {
   const docs = join(import.meta.dirname, "..", "docs");
   const md = (d: string) =>
@@ -151,22 +153,13 @@ describe("listing scan over the real recipe pages", () => {
     return out;
   }
 
-  it("warns on exactly the recipes measured on 2026-09-24", () => {
+  it("warns on no recipe page", () => {
     const techniques = techniqueClaims();
     const warned = new Set<string>();
     for (const f of md(join(docs, "recipes"))) {
       const p = relative(docs, f);
       if (scanRecipePage(readFileSync(f, "utf8"), p, techniques).length > 0) warned.add(p);
     }
-    expect([...warned].sort()).toEqual([
-      "recipes/kickassembler/bitfire-dd00-bank.md",
-      "recipes/kickassembler/bitfire-level-stream.md",
-      "recipes/kickassembler/crt-banked.md",
-      // Not runnable by claims-recipes (the driver is patched in outside the listing), so no claims: key.
-      "recipes/kickassembler/easyflash-eapi.md",
-      "recipes/kickassembler/easyflash-save.md",
-      "recipes/kickassembler/sparkle-dd02-bank.md",
-      "recipes/kickassembler/tape-turbo-loader.md",
-    ]);
+    expect([...warned].sort()).toEqual([]);
   });
 });

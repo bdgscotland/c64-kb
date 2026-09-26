@@ -272,8 +272,16 @@ Commitment. An action runs its full length before the next decision. The opponen
 an attack into a guard, which is the player's rule too, and it cannot flicker between choices
 from frame to frame.
 
-Cost, measured in the recipe (Oscar64 -O2, screen blanked, the same on PAL and NTSC): one
-opponent frame is 120 cycles on average and 295 at worst, the worst being a decision frame.
+Cost. Two figures, for two opponents:
+
+| Opponent | Worst step | Includes | Rung |
+|---|---|---|---|
+| The recipe's minimal one | 295 cycles (mean 120), PAL and NTSC | the delay line, three bands, five by three choice rows, the feint flag, commitment, an X-only step on one floor | measured in the recipe (Oscar64 -O2, screen blanked, interrupts off) |
+| TOURNEY's, from #48 | 652 PAL, 702 NTSC | the same four features (32-frame delay line, distance bands, commit-to-action, feint follow-up); the report does not say what else it does | reported in #115, not measured here; its code is not in this repository |
+
+A budget built on 295 is about half of a full fighter's figure. An earlier version gave only
+the recipe's figure (#115). The technique entry is `fighter_opponent_tables` in
+`../techniques/logic.md`.
 
 ### What breaks when it is skipped
 
@@ -329,7 +337,8 @@ box offset forward from the anchor leaves the back of the body box in place, so 
 lands. The recipe has one floor and one facing each way, tests X only, and does not show either.
 
 Cost, measured in the recipe: resolving both fighters' blades against body or guard boxes is 41
-cycles on average and 364 at worst, the worst being a hit with its push-apart.
+cycles on average and 364 at worst, the worst being a hit with its push-apart. The technique
+entry is `fighter_guard_state` in `../techniques/sprite.md`.
 
 ### What breaks when it is skipped
 

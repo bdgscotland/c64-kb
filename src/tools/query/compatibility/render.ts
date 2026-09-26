@@ -26,6 +26,17 @@ function renderVerdict(r: Output, closureOnly: readonly string[]): string {
   if (closureOnly.length > 0) {
     out += `Checked with ${closureOnly.length} implied prerequisite(s): ${closureOnly.join(", ")}.\n\n`;
   }
+  return out + renderPlacements(r);
+}
+
+/** The bands the caller placed (#90), and any placement not used. */
+function renderPlacements(r: Output): string {
+  const placed = r.data_coverage.filter((d) => d.placed_band !== undefined);
+  let out = "";
+  if (placed.length > 0)
+    out += `Placed by the caller: ${placed.map((d) => `${d.technique} on lines ${d.placed_band ?? ""} (page: ${d.raster_band ?? "no band"})`).join("; ")}. The line rules read these bands as stated.\n\n`;
+  for (const p of r.placements_refused ?? [])
+    out += `Placement not used: ${p.input}: ${p.why}. The page's band stands.\n\n`;
   return out;
 }
 
@@ -73,7 +84,7 @@ function renderBandSeparated(r: Output): string {
   if (r.band_separated.length === 0) return "";
   let out = `\n## Separated by raster band (info)\n`;
   for (const s of r.band_separated) {
-    out += `- **${s.a}** (lines ${s.a_band}) and **${s.b}** (lines ${s.b_band}) share no raster line, so ${s.rules.join(", ")} does not apply. Keep each on its own lines: the check trusts the bands the pages state.\n`;
+    out += `- **${s.a}** (lines ${s.a_band}) and **${s.b}** (lines ${s.b_band}) share no raster line, so ${s.rules.join(", ")} does not apply. Keep each on its own lines: the check trusts the bands the pages state and the placements given.\n`;
   }
   return out;
 }

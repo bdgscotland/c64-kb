@@ -26,6 +26,7 @@ import { fetchCompatibilityFacts } from "./fetch.ts";
 import { renderCompatibility } from "./render.ts";
 import { evaluateCompatibility } from "./rules.ts";
 import { stateRules } from "./state-rules.ts";
+import { readPlacements } from "./placement.ts";
 
 type Output = CompatibilityCheckOutput;
 type Verdict = Output["verdict"];
@@ -40,8 +41,13 @@ interface PhaseResult {
   text: string;
 }
 
-async function checkPhase(phase: BudgetPhase, techniques: string[]): Promise<PhaseResult> {
-  const { closureOnly, ...evaluation } = evaluateCompatibility(await fetchCompatibilityFacts(techniques));
+async function checkPhase(
+  phase: BudgetPhase,
+  techniques: string[],
+  placements: ReadonlyMap<string, string>,
+): Promise<PhaseResult> {
+  const facts = { ...(await fetchCompatibilityFacts(techniques)), placements };
+  const { closureOnly, ...evaluation } = evaluateCompatibility(facts);
   const structured: Output = { techniques, ...evaluation };
   return { phase, structured, text: renderCompatibility(structured, closureOnly) };
 }
@@ -64,6 +70,13 @@ export function membersByPhase(
     add(parsed.name, parsed.phase);
   }
   return by;
+}
+
+/** Placements refused in any phase, each once. */
+function refusedOf(results: readonly PhaseResult[]): Pick<Output, "placements_refused"> {
+  const seen = new Map<string, NonNullable<Output["placements_refused"]>[number]>();
+  for (const r of results) for (const p of r.structured.placements_refused ?? []) seen.set(p.input, p);
+  return seen.size > 0 ? { placements_refused: [...seen.values()] } : {};
 }
 
 function worstVerdict(verdicts: readonly Verdict[]): Verdict {
@@ -93,6 +106,7 @@ function merge(
     ),
     data_coverage: [...coverage.values()],
     not_found: unique(results.flatMap((r) => r.structured.not_found)),
+    ...refusedOf(results),
     verdict: worstVerdict([...results.map((r) => r.structured.verdict), crossVerdict]),
   };
 }
@@ -151,11 +165,12 @@ interface PhasedHead {
 export async function checkPhasedCompatibility(
   by: ReadonlyMap<BudgetPhase, string[]>,
   head: PhasedHead,
+  placements: ReadonlyMap<string, string> = new Map(),
 ): Promise<CompatibilityCheckResult> {
   const results: PhaseResult[] = [];
   for (const phase of BUDGET_PHASES) {
     const techniques = by.get(phase);
-    if (techniques && techniques.length > 0) results.push(await checkPhase(phase, techniques));
+    if (techniques && techniques.length > 0) results.push(await checkPhase(phase, techniques, placements));
   }
   const cross = await crossPhase(by);
   const structured: Output = {
@@ -185,8 +200,10 @@ export async function checkDesignCompatibility(
     const known = (await knownGameDesigns()).join(", ") || "(none in this graph)";
     throw new Error(`no GameDesign is named "${designName.trim()}"; known: ${known}`);
   }
-  return checkPhasedCompatibility(membersByPhase(design.composes, extra), {
+  const { specs, placements } = readPlacements(extra);
+  const head = {
     design: { name: design.name, title: design.title, source_doc: design.source_doc },
     title: `${design.title} (\`${design.name}\`)`,
-  });
+  };
+  return checkPhasedCompatibility(membersByPhase(design.composes, specs), head, placements);
 }

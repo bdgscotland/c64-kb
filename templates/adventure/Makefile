@@ -10,6 +10,7 @@
 #   make gen        re-run tools/gen.py (world tables, packed text, pictures, script, model)
 #   make disktest   SAVE, a cold reset, LOAD and the same state back, on a true-drive 1541
 #   make drive      the release build played headless (harness/drive.py; README "Driving it headless")
+#   make gallery    shots/gallery.png: the release build in play, for a README (GALLERY_SCRIPT)
 #   make clean
 NAME   := adventure
 C_MAIN := src/main.c
@@ -64,6 +65,10 @@ gen:
 # make drivetest: the release build played through harness/drive.py: fire on
 # the title (the stick on $DC00), a typed command, a new room.
 DRIVE_STEPS := "until:PRESS RETURN OR FIRE" tap:fire "until:EXITS: N." "type:GO NORTH" "until:A SHED" print
+
+# make gallery: shots/gallery.png, the release build in play: the garden's
+# picture strip, the opening text, GO NORTH and its answer.
+GALLERY_SCRIPT := "until:PRESS RETURN OR FIRE" tap:fire "until:EXITS: N." "type:GO NORTH" "until:A SHED"
 
 # The disk test, on a true-drive 1541 (DISK_MODEL=pal or ntsc):
 #  1. DISKTEST=1 plays the script up to its SAVE on a fresh copy of the release

@@ -942,6 +942,19 @@ end address returned in X/Y is that pointer after the last store.
   as line 170; the screen was not blanked (`$D011` bit 4 still set,
   text drawn in a mid-transfer picture). `raster_irq_during_serial_io`
   has the fix, which is to clear `$D01A` around the call.
+- **Sprites on during LOAD.** LOAD receives through ACPTR, so sprites
+  over badlines hang it as they hang a sequential read: measured from
+  3 sprites on PAL and 4 on NTSC in VICE x64sc
+  (`sprites_over_badlines_hang_serial_io`). Write 0 to `$D015` around
+  the call.
+- **Music across the load.** A tune driven once per interrupt falls
+  behind during LOAD: 13 to 18 % of frames lost from a raster
+  interrupt and 28 to 35 % from a CIA1 timer A interrupt over a
+  4,096-byte load, the second worse because ACPTR's `$DC0D` polls
+  acknowledge timer A's flag as well as timer B's.
+  `music_during_kernal_load` in `techniques/music-sid.md` keeps the
+  tune in time with a CIA2 frame clock and a catch-up; measured in
+  `recipes/kickassembler/music-during-load.md`.
 - **From Oscar64.** `krnio_load(fnum, device, channel)` in
   `kernalio.c` passes X = Y = 0 to LOAD, so with secondary 0 it loads
   to `$0000`; it is only useful with secondary 1. To choose the address
@@ -955,6 +968,9 @@ end address returned in X/Y is that pointer after the last store.
 - `recipes/kickassembler/file-io-roundtrip.md` (write and read side;
   the LOAD measurements above came from a scratch program that is not a
   recipe)
+- `recipes/kickassembler/music-during-load.md` (a 4,096-byte file
+  saved and loaded three times under a music interrupt; steps lost
+  per driver, PAL and NTSC)
 - `recipes/oscar64/load-asset-runtime.md` (a 2 KB charset built in
   RAM, saved as a PRG on the first run, loaded with secondary 0 to
   `$3800` and shown; the I flag, the raster IRQ and `$D011` measured
@@ -1381,9 +1397,12 @@ and reads into buffer 1; the code survived the four jobs and a seek.
 Bus time, PAL, VICE 3.10 (rung 1): 132,742 host cycles for the three
 `M-W` commands carrying 68 bytes, and 163,545 for the single `M-R` that
 read them back, about 135 ms and 166 ms. On the drive side, in drive
-cycles at 1 MHz: the seek 125,859, the successful read 224,071, the
-failed read before the seek 902,630 and the track-40 failure 766,533;
-the failures are the controller's retries and bumps. A loader that
+cycles at 1 MHz from the monitor's drive stopwatch (PAL; NTSC within
+1%): the seek 130,809, the successful read 229,776, the failed read
+before the seek 916,220 and the track-40 failure 778,154; the failures
+are the controller's retries and bumps. An earlier version gave
+125,859, 224,071, 902,630 and 766,533, read from drive-trace stamps,
+which are host-clock catch-up times, not drive cycles (#103). A loader that
 uploads a few hundred bytes therefore spends a noticeable fraction of a
 second on the upload alone, which is why resident loaders upload once.
 

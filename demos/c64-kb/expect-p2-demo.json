@@ -1,0 +1,145 @@
+{
+  "note": "Part 2 mid-demo at verify.sh's cycle counts (PAL 32,000,000, NTSC 28,000,000): different frames on the two models, so every check is per model and there is no PAL-vs-NTSC 'same' strip. Written by plan/pin-p2-demo.py (a builder's script, not in the public tree) from the part's tables at the state read off the shots: PAL: rows 0 to 13 at offset 5, rows 14 to 24 at offset 4, bar position 5, band line 1 phase 9 (ink cyan), band line 100 phase 43 (ink light green); NTSC: rows 0 to 14 at offset 4, rows 15 to 24 at offset 3, bar position 11, band line 0 phase 52 (ink light blue), band line 100 phase 25 (ink cyan). Ink ink_tab[(row - offset) & 15], paper pap_line[((row + offset) & 15) + column / 4], bar bar_tab[(entry - position) & 15]; twister edges from the recipe's phase script. An exit shot is torn at the beam's line and the roll writes two rows a frame top to bottom, so each row's offset is read for itself and the bar position from the entries above the tear. Re-pin whenever the timeline moves (music or sync positions).",
+  "checks": [
+    {
+      "name": "verdict absent (mid-demo shot: the border carries the bars, the program has not reached the end screen; verify.sh does not count this line)",
+      "type": "verdict"
+    },
+    {
+      "name": "PAL border bar at line 40 (entry 1, position 5): light blue",
+      "type": "pixel",
+      "vic_x": 8,
+      "line": 40,
+      "colour": 14,
+      "models": ["pal"]
+    },
+    {
+      "name": "PAL border bar at line 200 (entry 9, position 5): light blue",
+      "type": "pixel",
+      "vic_x": 8,
+      "line": 200,
+      "colour": 14,
+      "models": ["pal"]
+    },
+    {
+      "name": "PAL paper cell row 2 column 0 at offset 5: red",
+      "type": "pixel",
+      "vic_x": 28,
+      "line": 71,
+      "colour": 2,
+      "models": ["pal"]
+    },
+    {
+      "name": "PAL paper cell row 22 column 36 at offset 4: blue",
+      "type": "pixel",
+      "vic_x": 316,
+      "line": 231,
+      "colour": 6,
+      "models": ["pal"]
+    },
+    {
+      "name": "PAL paper only left of the column: row 4 columns 12 to 15, brown at offset 5",
+      "type": "rect",
+      "vic_x": 120,
+      "line": 83,
+      "width": 32,
+      "height": 8,
+      "colour": 9,
+      "models": ["pal"]
+    },
+    {
+      "name": "PAL paper only below the band: row 22 columns 0 to 3, red at offset 4",
+      "type": "rect",
+      "vic_x": 24,
+      "line": 227,
+      "width": 32,
+      "height": 8,
+      "colour": 2,
+      "models": ["pal"]
+    },
+    {
+      "name": "PAL the twister column is there: band line 1 (phase 9) first lit pixel bitmap x 136 in row 4 ink cyan (offset 5)",
+      "type": "pixel",
+      "vic_x": 160,
+      "line": 88,
+      "colour": 3,
+      "models": ["pal"]
+    },
+    {
+      "name": "PAL the twister column is there: band line 100 (phase 43) last lit pixel bitmap x 186 in row 17 ink light green (offset 4)",
+      "type": "pixel",
+      "vic_x": 210,
+      "line": 187,
+      "colour": 13,
+      "models": ["pal"]
+    },
+    {
+      "name": "NTSC border bar at line 40 (entry 1, position 11): cyan",
+      "type": "pixel",
+      "vic_x": 8,
+      "line": 40,
+      "colour": 3,
+      "models": ["ntsc"]
+    },
+    {
+      "name": "NTSC border bar at line 200 (entry 9, position 11): dark grey",
+      "type": "pixel",
+      "vic_x": 8,
+      "line": 200,
+      "colour": 11,
+      "models": ["ntsc"]
+    },
+    {
+      "name": "NTSC paper cell row 2 column 0 at offset 4: red",
+      "type": "pixel",
+      "vic_x": 28,
+      "line": 71,
+      "colour": 2,
+      "models": ["ntsc"]
+    },
+    {
+      "name": "NTSC paper cell row 22 column 36 at offset 3: blue",
+      "type": "pixel",
+      "vic_x": 316,
+      "line": 231,
+      "colour": 6,
+      "models": ["ntsc"]
+    },
+    {
+      "name": "NTSC paper only left of the column: row 4 columns 12 to 15, red at offset 4",
+      "type": "rect",
+      "vic_x": 120,
+      "line": 83,
+      "width": 32,
+      "height": 8,
+      "colour": 2,
+      "models": ["ntsc"]
+    },
+    {
+      "name": "NTSC paper only below the band: row 22 columns 0 to 3, purple at offset 3",
+      "type": "rect",
+      "vic_x": 24,
+      "line": 227,
+      "width": 32,
+      "height": 8,
+      "colour": 4,
+      "models": ["ntsc"]
+    },
+    {
+      "name": "NTSC the twister column is there: band line 0 (phase 52) first lit pixel bitmap x 130 in row 4 ink light blue (offset 4)",
+      "type": "pixel",
+      "vic_x": 154,
+      "line": 87,
+      "colour": 14,
+      "models": ["ntsc"]
+    },
+    {
+      "name": "NTSC the twister column is there: band line 100 (phase 25) last lit pixel bitmap x 184 in row 17 ink cyan (offset 3)",
+      "type": "pixel",
+      "vic_x": 208,
+      "line": 187,
+      "colour": 3,
+      "models": ["ntsc"]
+    }
+  ]
+}

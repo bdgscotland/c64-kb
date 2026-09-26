@@ -1,0 +1,76 @@
+{
+  "note": "Part 5 SPRITES inside the demo at an arbitrary frame: 24 balls on an open ellipse (X 45 to 299 on the cosine, Y 36 to 244 on the sine, the Y phase swinging 45 degrees each way once per 256 steps so the ring leans and opens again) over eight sprites, one fixed reposition row every twenty lines, a sixteen-band gradient on $D021 rolling one band every four frames. Nothing in the window is fixed from frame to frame, so the pins are: the side borders stay the sequencer's black ($D020 is never written by the part), the window holds only the ring's colours and the balls' three (plus the 8565 grey dot, light grey, where a row writes $D021), and it is lit almost everywhere (two of the ten rows can be black: the window is 320 by 235, so at least 30,000 of 75,200 pixels are not black at any phase). PAL and NTSC are shot at different frames, so 'same' is asked only of the border. Windows in which part 5 is on screen and not yet fading: about 77M to 91M cycles PAL, 81M to 94M NTSC (the part starts about 2M later than before 2026-09-24; verify.sh's 82M and 86M are inside both).",
+  "checks": [
+    {
+      "name": "verdict absent (mid-demo shot, border is black, program has not reached end screen)",
+      "type": "verdict"
+    },
+    {
+      "name": "left border black: the part writes $D021, never $D020",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": 0,
+      "line": 50,
+      "width": 20,
+      "height": 150
+    },
+    {
+      "name": "right border black",
+      "type": "rect",
+      "colour": 0,
+      "vic_x": 348,
+      "line": 50,
+      "width": 12,
+      "height": 150
+    },
+    {
+      "name": "left border the same on both models",
+      "type": "same",
+      "area": { "vic_x": 0, "line": 50, "width": 20, "height": 150 }
+    },
+    {
+      "name": "the window holds only the gradient's eight colours, the balls' three and the grey dot, and is lit over at least 30,000 of its pixels",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 28,
+      "width": 320,
+      "height": 235,
+      "background": 0,
+      "min": 30000,
+      "colours": [0, 6, 9, 2, 11, 8, 4, 14, 1, 15, 12]
+    },
+    {
+      "name": "the ellipse's X runs 45 to 299 at every phase, so the 21 columns left of it (vic_x 24 to 44) hold gradient only, no ball colour",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 28,
+      "width": 21,
+      "height": 235,
+      "background": 0,
+      "min": 0,
+      "colours": [0, 6, 9, 2, 11, 8, 4, 14]
+    },
+    {
+      "name": "and the 21 columns right of it (vic_x 323 to 343: X 299 plus the sprite's 23) hold gradient and the 8565 dot's light grey only, never a ball's white or grey",
+      "type": "ink",
+      "vic_x": 323,
+      "line": 28,
+      "width": 21,
+      "height": 235,
+      "background": 0,
+      "min": 0,
+      "colours": [0, 6, 9, 2, 11, 8, 4, 14, 15]
+    },
+    {
+      "name": "the ellipse's Y runs 36 to 244, so lines 28 to 36 hold gradient only above every ball",
+      "type": "ink",
+      "vic_x": 24,
+      "line": 28,
+      "width": 320,
+      "height": 9,
+      "background": 0,
+      "min": 0,
+      "colours": [0, 6, 9, 2, 11, 8, 4, 14]
+    }
+  ]
+}

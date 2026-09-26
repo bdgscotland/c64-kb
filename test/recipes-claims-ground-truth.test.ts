@@ -48,6 +48,7 @@ async function loadTechniques(f: FalkorService): Promise<void> {
 describe("recipes against their own technique sets", () => {
   let f: FalkorService;
   const recipeSets = new Map<string, string[]>();
+  const recipeBands = new Map<string, Map<string, string>>();
 
   beforeAll(async () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
@@ -58,8 +59,11 @@ describe("recipes against their own technique sets", () => {
     await loadTechniques(f);
     for (const abs of markdownUnder(path.join(DOCS, "recipes"))) {
       const key = path.relative(DOCS, abs);
-      const techniques = extract(abs).flatMap((e) => (e.type === "implements" ? [e.technique] : []));
+      const implemented = extract(abs).flatMap((e) => (e.type === "implements" ? [e] : []));
+      const techniques = implemented.map((e) => e.technique);
       if (techniques.length > 0) recipeSets.set(key, techniques);
+      const bands = implemented.flatMap((e) => (e.band ? [[e.technique, e.band] as const] : []));
+      if (bands.length > 0) recipeBands.set(key, new Map(bands));
     }
     warn.mockRestore();
   }, 120000);
@@ -153,30 +157,34 @@ describe("recipes against their own technique sets", () => {
     );
   });
 
-  // Issue #90: the two composed recipes of #1 chain two raster-compare
-  // owners in one ring and place a movable band clear of the others' lines,
-  // which the rules cannot see yet. Each string is a measured disagreement,
-  // not an accepted conflict; the list must end empty when #90 lands.
-  const KNOWN_DISAGREEMENTS_90 = new Set([
-    "recipes/kickassembler/fli-music-scroller.md: unit_contention fli_image × topbottom_border_open on vic_raster_irq",
-    "recipes/kickassembler/fli-music-scroller.md: cpu_vs_irq fli_image × topbottom_border_open on cpu_every_line, midframe_raster_irqs",
-    "recipes/kickassembler/fli-music-scroller.md: unit_contention fli_image × sprite_border_scroller on vic_raster_irq",
-    "recipes/kickassembler/fli-music-scroller.md: cpu_vs_irq fli_image × sprite_border_scroller on cpu_every_line, midframe_raster_irqs",
-    "recipes/kickassembler/one-part-demo.md: unit_contention sideborder_open × topbottom_border_open on vic_raster_irq",
-    "recipes/kickassembler/one-part-demo.md: cpu_vs_irq sideborder_open × topbottom_border_open on cpu_every_line, midframe_raster_irqs",
-    "recipes/kickassembler/one-part-demo.md: unit_contention sideborder_open × sprite_border_scroller on sprite_0-7, vic_raster_irq",
-    "recipes/kickassembler/one-part-demo.md: cpu_vs_irq sideborder_open × sprite_border_scroller on cpu_every_line, midframe_raster_irqs",
-    "recipes/kickassembler/one-part-demo.md: unit_contention sideborder_open × raster_bars on vic_raster_irq",
-    "recipes/kickassembler/one-part-demo.md: cpu_vs_irq sideborder_open × raster_bars on cpu_every_line, midframe_raster_irqs",
-    "recipes/kickassembler/one-part-demo.md: unit_contention topbottom_border_open × raster_bars on vic_raster_irq",
-    "recipes/kickassembler/one-part-demo.md: unit_contention sprite_border_scroller × raster_bars on vic_raster_irq",
-  ]);
+  // #90, from the real pages: the scroller's sprites are the side-border
+  // loop's constant set; unplaced, the movable band still keeps cpu_vs_irq.
+  it("sets no sprite contention between sideborder_open and sprite_border_scroller (#90)", async () => {
+    const pair = (await checkCompatibility(["sideborder_open", "sprite_border_scroller"])).structured;
+    expect(
+      pair.conflicts.filter((c) => c.shared.some((u) => u.startsWith("sprite_") && c.severity === "hard")),
+    ).toEqual([]);
+    expect(pair.conflicts.some((c) => c.kind === "sprite_set" && c.severity === "soft")).toBe(true);
+    expect(pair.conflicts.find((c) => c.kind === "cpu_vs_irq")?.severity).toBe("hard");
+    const placed = (
+      await checkCompatibility(["sideborder_open@248-272", "sprite_border_scroller@273-311,0-1"])
+    ).structured;
+    expect(placed.conflicts.filter((c) => c.severity === "hard")).toEqual([]);
+    expect(placed.band_separated.map((b) => b.rules)).toEqual([["cpu_vs_irq"]]);
+  });
 
   it("no recipe's technique set has a hard conflict of any kind", async () => {
     const failures: string[] = [];
     for (const [recipe, techniques] of [...recipeSets].sort()) {
       if (techniques.length < 2) continue;
-      const { conflicts } = (await checkCompatibility(techniques)).structured;
+      // A recipe's raster_bands: place its movable techniques where its trace ran them (#90).
+      const specs = techniques.map((t) => {
+        const band = recipeBands.get(recipe)?.get(t);
+        return band ? `${t}@${band}` : t;
+      });
+      const { conflicts, placements_refused } = (await checkCompatibility(specs)).structured;
+      for (const p of placements_refused ?? [])
+        failures.push(`${recipe}: placement refused ${p.input}: ${p.why}`);
       for (const c of conflicts) {
         const kind = c.underlying_kind ?? c.kind;
         if (c.severity !== "hard") continue;
@@ -184,8 +192,6 @@ describe("recipes against their own technique sets", () => {
         failures.push(`${recipe}: ${kind} ${c.a} × ${c.b}${via} on ${c.shared.join(", ")}`);
       }
     }
-    expect(failures.filter((f) => !KNOWN_DISAGREEMENTS_90.has(f))).toEqual([]);
-    // A known disagreement that no longer occurs is fixed: take it off the list.
-    expect([...KNOWN_DISAGREEMENTS_90].filter((k) => !failures.includes(k))).toEqual([]);
+    expect(failures).toEqual([]);
   }, 120000);
 });

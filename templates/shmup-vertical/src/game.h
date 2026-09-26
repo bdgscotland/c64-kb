@@ -61,7 +61,7 @@
 #define ACT_COL ((char *)ASM_ACT_COL)
 #define N_ACTORS 13             // mux.asm's N: the ship and NE enemies
 #define OFF_Y    0xff           // mux.asm's OFF_Y: not shown
-#define MAX_SY   187            // mux.asm's MAX_SY: lowest sprite Y shown
+#define MAX_SY   179            // mux.asm's MAX_SY: lowest sprite Y shown
 
 // ---- coordinates ---------------------------------------------------------
 // Horizontal positions are half X ("hx"): sprite X = 2 * hx, one byte for the

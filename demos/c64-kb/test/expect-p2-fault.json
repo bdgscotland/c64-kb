@@ -1,0 +1,99 @@
+{
+  "note": "Part 2 with -define FORCE_FAULT (the depth table complemented in place) at frame 300: the pass sorts the wrong way, so a far grey ball is drawn over a near white one and selfcheck returns 0. The stub then paints $D020 red, and the runner's verdict mode keeps that red from line 130 down while the bars keep the top, so the verdict and the red are read at y 200. The column, the colour roll and the bars are untouched by the fault: same twister edges (phase 42 at band line 0, 15 at band line 100, offset 24) as expect-p2.json.",
+  "checks": [
+    {
+      "name": "verdict (expected FAIL: this build grades itself red by design, so this check reports FAIL): read in the lower border",
+      "type": "verdict",
+      "at": [2, 200]
+    },
+    {
+      "name": "border is red from line 130 down: the stub's FAIL colour",
+      "type": "pixel",
+      "x": 2,
+      "y": 200,
+      "colour": 2
+    },
+    {
+      "name": "border is red at the right edge too",
+      "type": "pixel",
+      "x": 380,
+      "y": 200,
+      "colour": 2
+    },
+    {
+      "name": "ball 0 (far, grey) drawn OVER ball 1 (near, white) at the overlap's middle",
+      "type": "pixel",
+      "vic_x": 228,
+      "line": 152,
+      "colour": 12
+    },
+    {
+      "name": "ball 0 over ball 1 at the overlap's left, lower half",
+      "type": "pixel",
+      "vic_x": 226,
+      "line": 155,
+      "colour": 12
+    },
+    {
+      "name": "ball 0 over ball 1, lower half",
+      "type": "pixel",
+      "vic_x": 230,
+      "line": 156,
+      "colour": 12
+    },
+    {
+      "name": "ball 0 over ball 2 (near, white)",
+      "type": "pixel",
+      "vic_x": 220,
+      "line": 152,
+      "colour": 12
+    },
+    {
+      "name": "ball 1's white still shows beyond ball 0's small image",
+      "type": "pixel",
+      "vic_x": 244,
+      "line": 152,
+      "colour": 1
+    },
+    {
+      "name": "band line 0 (row 4, even half, phase 42, ink light green on paper black): first lit pixel bitmap x 133",
+      "type": "pixel",
+      "vic_x": 157,
+      "line": 87,
+      "colour": 13
+    },
+    {
+      "name": "band line 0 (row 4, even half, phase 42, ink light green on paper black): x 132 unlit, the paper shows",
+      "type": "pixel",
+      "vic_x": 156,
+      "line": 87,
+      "colour": 0
+    },
+    {
+      "name": "band line 0: solid face 0 spans x 133 to 141 in the row ink light green",
+      "type": "rect",
+      "vic_x": 157,
+      "line": 87,
+      "width": 9,
+      "height": 1,
+      "colour": 13
+    },
+    {
+      "name": "band line 100 (row 17, odd half, phase 15, ink white on paper brown): first lit pixel bitmap x 128",
+      "type": "pixel",
+      "vic_x": 152,
+      "line": 187,
+      "colour": 1
+    },
+    {
+      "name": "the whole display (vic_x 24 to 343, lines 51 to 250) is the same on PAL and NTSC: both models half-copy the same halves and roll the same rows at frame 300",
+      "type": "same",
+      "area": {
+        "vic_x": 24,
+        "line": 51,
+        "width": 320,
+        "height": 200
+      }
+    }
+  ]
+}

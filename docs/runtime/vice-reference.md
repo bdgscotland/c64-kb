@@ -1487,6 +1487,40 @@ Stores on other cycles fall in the horizontal blank or beyond x 383.
 `recipes/kickassembler/road-sprite-lines.md` found the same line: its
 probe traced on 15 shows from x 17.
 
+### Timing drive code
+
+The cycle a drive-side trace line prints (`trace exec 8:0600`, `trace
+store 8:1800`) is not a drive cycle. VICE runs the drive in catch-up
+steps, and the number is the host clock at the moment it brought the
+drive up to date: two `BIT $1800` passes seven drive cycles apart print
+one stamp (`recipes/kickassembler/fastloader-2bit.md`). A drive trace
+gives the order of events around each host access, not their times.
+
+The drive's own clock is the stopwatch at a drive stop. Arm drive
+breakpoints in the `-moncommands` file (`break 8:0600`, `break 8:0618`)
+and connect a client to `-remotemonitor` as in "Getting a prompt"; at
+each stop send `sw`, then `x`. A stop, and the reply to `sw`:
+
+```text
+#2 (Stop on  exec 0614)
+.8:0614  A5 01       LDA $01        - A:80 X:03 Y:00 SP:43 N.-B...C    3408372
+(8:$0614)
+Stopwatch:    3408372
+(8:$0614)
+```
+
+Checked on `recipes/kickassembler/drive-job-queue.md`, PAL and NTSC:
+from the routine's entry to its wait loop `sw` advanced 27, the sum of
+the eight instructions between them, then 6 per pass of `LDA $01` (3)
+and a taken `BMI` (3). The first drive stop's register line printed the
+host clock (3,358,170 on PAL) while `sw` printed 3,408,345; the ratio,
+1.01494, is the drive's 1 MHz over the PAL host's 985,248 Hz, and on
+NTSC it was 0.97773 against 1 MHz over 1,022,727 Hz. From the second
+drive stop on, the register line's column printed the same number as
+`sw`. Subtract two `sw` readings; do not read the column. The stops
+did not change the run: both screenshots matched the untraced ones
+pixel for pixel. Measured in VICE x64sc 3.10 (rung 1).
+
 ### Memory dump and save
 
 ```text

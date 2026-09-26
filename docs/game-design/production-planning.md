@@ -64,6 +64,14 @@ and should the project be aborted now rather than later. He says most of his
 own designs were aborted at that stage, and that no more than five or six
 playtesters should ever be used.
 
+A design that survives the evaluation is written down before any code, in
+what Crawford calls the pre-programming phase (chapter 5, "Pre-Programming
+Phase"). Until then the notes are sketches. Now the I/O structure and the
+game structure go on paper as the complete game documentation, written
+about what the player experiences rather than about technical matters.
+That document is then compared with the program-structure notes, and the
+program structure is changed to fit it where they disagree.
+
 A build order that fits both plans and the diaries:
 
 ```text

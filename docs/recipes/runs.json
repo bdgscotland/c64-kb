@@ -1623,6 +1623,30 @@
       "ntsc": "screenshots/fire-effect-ntsc.png"
     }
   },
+  "kickassembler/plasma": {
+    "cycles": 10000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/plasma.png",
+      "ntsc": "screenshots/plasma-ntsc.png"
+    }
+  },
+  "kickassembler/luminance-dissolve": {
+    "cycles": 4500000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/luminance-dissolve.png",
+      "ntsc": "screenshots/luminance-dissolve-ntsc.png"
+    }
+  },
   "kickassembler/dypp-sprite-scroller": {
     "cycles": 10000000,
     "models": [
@@ -1803,6 +1827,14 @@
       "ntsc": "screenshots/tech-tech-ntsc.png"
     }
   },
+  "kickassembler/tech-tech@moving": {
+    "cycles": 4005000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
   "kickassembler/dysp": {
     "cycles": 10000000,
     "models": [
@@ -1814,6 +1846,14 @@
       "pal": "screenshots/dysp.png",
       "ntsc": "screenshots/dysp-ntsc.png"
     }
+  },
+  "kickassembler/dysp@moving": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
   },
   "kickassembler/sid-env3-filter": {
     "cycles": 18000000,
@@ -2192,7 +2232,10 @@
       "pal",
       "ntsc"
     ],
-    "flags": [],
+    "flags": [
+      "-raminitrandomchance",
+      "0"
+    ],
     "shots": {
       "pal": "screenshots/trainer-hooks.png",
       "ntsc": "screenshots/trainer-hooks-ntsc.png"
@@ -2377,5 +2420,251 @@
   },
   "kickassembler/easyflash-eapi": {
     "skip": "the listing leaves the EAPI slot at 00:1:1800 empty; the driver is added by a build step outside the listing (ACME and the page's patch script), which the verifier has no key for. The pictures are under docs/figures and the Build section gives the exact commands"
+  },
+  "kickassembler/fpp": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/fpp.png",
+      "ntsc": "screenshots/fpp-ntsc.png"
+    }
+  },
+  "kickassembler/fpp@crunch": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      ":mode=1"
+    ]
+  },
+  "kickassembler/fpp@restart": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      ":mode=2"
+    ]
+  },
+  "kickassembler/line-doubling": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/line-doubling.png",
+      "ntsc": "screenshots/line-doubling-ntsc.png"
+    }
+  },
+  "kickassembler/line-doubling@later": {
+    "cycles": 8300000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/chunky-4x4": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/chunky-4x4.png",
+      "ntsc": "screenshots/chunky-4x4-ntsc.png"
+    }
+  },
+  "kickassembler/char-zoomer": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/char-zoomer.png",
+      "ntsc": "screenshots/char-zoomer-ntsc.png"
+    }
+  },
+  "kickassembler/char-zoomer@later": {
+    "cycles": 8200000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/rotozoomer": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/rotozoomer.png",
+      "ntsc": "screenshots/rotozoomer-ntsc.png"
+    }
+  },
+  "kickassembler/rotozoomer@later": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/glenz": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/glenz.png",
+      "ntsc": "screenshots/glenz-ntsc.png"
+    }
+  },
+  "kickassembler/glenz@later": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/raycaster": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/raycaster.png",
+      "ntsc": "screenshots/raycaster-ntsc.png"
+    }
+  },
+  "kickassembler/raycaster@later": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/ufli-underlay": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/ufli-underlay.png",
+      "ntsc": "screenshots/ufli-underlay-ntsc.png"
+    }
+  },
+  "kickassembler/music-during-load": {
+    "cycles": 60000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/music-during-load.png",
+      "ntsc": "screenshots/music-during-load-ntsc.png"
+    },
+    "disk": {
+      "name": "TEST,01"
+    }
+  },
+  "kickassembler/lfsr-seed-cia": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/lfsr-seed-cia.png",
+      "ntsc": "screenshots/lfsr-seed-cia-ntsc.png"
+    }
+  },
+  "kickassembler/sid-sync-lead": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-sync-lead.png",
+      "ntsc": "screenshots/sid-sync-lead-ntsc.png"
+    }
+  },
+  "kickassembler/sid-hr-snare": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [
+      "-sound",
+      "-sounddev",
+      "dump",
+      "-soundarg",
+      "/dev/null"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-hr-snare.png",
+      "ntsc": "screenshots/sid-hr-snare-ntsc.png"
+    }
+  },
+  "kickassembler/sid-ring-bell": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-ring-bell.png",
+      "ntsc": "screenshots/sid-ring-bell-ntsc.png"
+    }
+  },
+  "kickassembler/sid-pwm-pad": {
+    "cycles": 13000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "shots": {
+      "pal": "screenshots/sid-pwm-pad.png",
+      "ntsc": "screenshots/sid-pwm-pad-ntsc.png"
+    }
+  },
+  "kickassembler/speedcode-road": {
+    "cycles": 45000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/speedcode-road.png",
+      "ntsc": "screenshots/speedcode-road-ntsc.png"
+    }
   }
 }
