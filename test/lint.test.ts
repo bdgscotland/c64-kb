@@ -640,10 +640,10 @@ describe("lintStudyExpression — image-match (synthetic image)", () => {
   });
 });
 
-describe("lintStudyExpression — bare hex runs (no $ prefix, outside fences)", () => {
+describe("lintStudyExpression — bare hex runs (no $ prefix)", () => {
   // A bare hex run is 16+ two-digit hex tokens (no $ prefix) with at least
-  // one token containing a letter a–f, separated only by whitespace or commas,
-  // appearing outside a fenced code block.
+  // one token containing a letter a–f, separated only by whitespace or commas.
+  // Study pages carry no listings; byte runs are refused everywhere.
   const bareRun16 = Array.from({ length: 16 }, (_, i) => (0xa0 + i).toString(16)).join(" ");
   // "a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 aa ab ac ad ae af" — 16 tokens with letters
 
@@ -661,12 +661,22 @@ describe("lintStudyExpression — bare hex runs (no $ prefix, outside fences)", 
     expect(lintStudyExpression(STUDIED_HEADER + `Bytes: ${run15}\n`)).toEqual([]);
   });
 
-  it("is quiet when bare hex tokens appear inside a fenced block", () => {
-    // Inside a fence: covered by the mnemonic check if it has mnemonics,
-    // but a bare hex table inside a fence should not trigger the bare-run rule.
-    const page = STUDIED_HEADER + "```\n" + bareRun16 + "\n```\n";
-    // No mnemonics → mnemonic check is quiet too
-    expect(lintStudyExpression(page)).toEqual([]);
+  it("flags a bare hex dump inside a fenced block (fences do not exempt byte runs)", () => {
+    // A ```text fence with a 16-byte bare dump — no mnemonics, but byte runs
+    // are refused on study pages regardless of fencing.
+    const page = STUDIED_HEADER + "```text\n" + bareRun16 + "\n```\n";
+    const findings = lintStudyExpression(page);
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.message).not.toContain("mnemonic");
+  });
+
+  it("reports only the mnemonic finding when a mnemonic-flagged fence also has a byte run", () => {
+    // Fence has both a byte run AND mnemonics: mnemonic rule fires at the
+    // fence opening; byte-run rule is suppressed to avoid double-counting.
+    const page = STUDIED_HEADER + "```asm\n" + bareRun16 + "\n        lda #$01\n        sta $d015\n```\n";
+    const findings = lintStudyExpression(page);
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.message).toContain("mnemonic");
   });
 
   it("is quiet on a run of 16 pure-decimal tokens (no hex letters a–f)", () => {
@@ -688,6 +698,34 @@ describe("lintStudyExpression — bare hex runs (no $ prefix, outside fences)", 
   });
 });
 
+describe("lintStudyExpression — bare hex image-match (synthetic image)", () => {
+  // SYNTH_IMAGE = bytes 0x00..0x1f; bytes 0x0a-0x11 appear consecutively.
+  const bareInImage = "0a 0b 0c 0d 0e 0f 10 11"; // 8 tokens, hex letters, in SYNTH_IMAGE
+  const bareNotInImage = "a0 a1 a2 a3 a4 a5 a6 a7"; // 8 tokens, hex letters, NOT in SYNTH_IMAGE
+
+  it("flags a bare run of 8 bytes found verbatim in the image", () => {
+    const page = STUDIED_HEADER + `Bytes: ${bareInImage}\n`;
+    const findings = lintStudyExpression(page, SYNTH_IMAGE);
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.message).toContain("game binary");
+  });
+
+  it("is quiet on a bare run of 8 bytes NOT in the image", () => {
+    const page = STUDIED_HEADER + `Bytes: ${bareNotInImage}\n`;
+    expect(lintStudyExpression(page, SYNTH_IMAGE)).toEqual([]);
+  });
+
+  it("is quiet on a bare run of 7 bytes even if they are in the image", () => {
+    const page = STUDIED_HEADER + "Bytes: 0a 0b 0c 0d 0e 0f 10\n";
+    expect(lintStudyExpression(page, SYNTH_IMAGE)).toEqual([]);
+  });
+
+  it("skips image-match when no image supplied", () => {
+    const page = STUDIED_HEADER + `Bytes: ${bareInImage}\n`;
+    expect(lintStudyExpression(page)).toEqual([]);
+    expect(lintStudyExpression(page, null)).toEqual([]);
+  });
+});
 describe("lintStudyExpression — PAGE reference exists", () => {
   it("points at a page that exists in the repo", () => {
     const run = Array.from({ length: 16 }, (_, i) => (0xa0 + i).toString(16)).join(" ");

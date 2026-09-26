@@ -3,16 +3,16 @@
  *
  * Four checks on any page with frontmatter `kind: studied`:
  *   1. Fenced code blocks containing 6502 mnemonics are refused.
- *      A study page holds addresses, raster lines and layouts, not
- *      the game's disassembly.
  *   2. Any $-prefixed hex run of 16+ $XX bytes is refused.
- *   3. Any bare hex run of 16+ two-digit hex tokens (without $) with at
- *      least one token containing a letter a–f, outside a fenced block,
- *      is refused. This catches disassembly-style byte dumps in prose.
- *   4. When the caller supplies the game's binary (from
- *      data/games/manifest.json, gitignored; not in CI), any $-prefixed
- *      hex run of 8+ $XX bytes that appears verbatim in the image is
- *      refused. Runs shorter than 16 bytes not in the image are allowed.
+ *   3. Any bare hex run of 16+ two-digit tokens (without $) with at least
+ *      one token containing a letter a–f is refused.
+ *   4. When the caller supplies the game's binary, any hex run ($-prefixed
+ *      or bare) of 8+ bytes that appears verbatim in the image is refused.
+ *
+ * Checks 2–4 cover the full page (including fenced blocks): study pages
+ * carry no listings. When a fence is already flagged by the mnemonic rule
+ * (check 1), checks 2–4 are suppressed for content inside that fence to
+ * avoid reporting the same fence twice.
  *
  * Rule: study_expression
  * Page: docs/game-design/reference-game-sources.md
@@ -76,23 +76,6 @@ function findFencedBlocks(text: string): FenceBlock[] {
   return blocks;
 }
 
-/**
- * Text with the content lines of every fenced block replaced by empty
- * lines. The fence markers themselves are kept (they contain no hex).
- * Line numbers are unchanged, so charIndex → lineNo still works on the
- * result.
- */
-function blankFenceContents(text: string): string {
-  const allLines = text.split("\n");
-  const fenced = new Set<number>();
-  for (const block of findFencedBlocks(text)) {
-    for (let i = block.openLine + 1; i <= block.openLine + block.content.length; i++) {
-      fenced.add(i);
-    }
-  }
-  return allLines.map((l, i) => (fenced.has(i) ? "" : l)).join("\n");
-}
-
 // ── mnemonic detection ────────────────────────────────────────────────────────
 
 const MNEMONICS =
@@ -122,16 +105,31 @@ function mnemonicLineCount(lines: string[]): number {
   return lines.filter(isMnemonicLine).length;
 }
 
+/**
+ * 1-based line numbers of all lines (opening marker through closing marker)
+ * belonging to fences whose content contains 2+ mnemonic lines. Byte-run
+ * checks skip these lines to avoid double-reporting the same fence.
+ */
+function mnemonicFencedLines(text: string): Set<number> {
+  const skip = new Set<number>();
+  for (const block of findFencedBlocks(text)) {
+    if (mnemonicLineCount(block.content) < MIN_MNEMONIC_LINES) continue;
+    // opening marker, all content lines, closing marker (1-based)
+    const last = block.openLine + block.content.length + 2;
+    for (let line = block.openLine + 1; line <= last; line++) skip.add(line);
+  }
+  return skip;
+}
+
 // ── $-prefixed hex run detection ──────────────────────────────────────────────
 
 /**
  * A $XX hex byte: exactly 2 hex digits after $, not followed by a third.
- * Does NOT match 4-digit addresses like $C000 because the lookahead sees
- * a third hex digit immediately after the second.
+ * Does NOT match 4-digit addresses like $C000: the negative lookahead
+ * fails when a third hex digit immediately follows the second.
  */
 const HEX_BYTE_RE = /\$[0-9a-fA-F]{2}(?![0-9a-fA-F])/g;
 
-/** A maximal sequence of $XX bytes separated only by whitespace and/or commas. */
 interface HexRun {
   startIndex: number;
   bytes: number[];
@@ -163,14 +161,13 @@ function findHexRuns(text: string): HexRun[] {
   return runs;
 }
 
-// ── bare hex run detection (outside fences) ───────────────────────────────────
+// ── bare hex run detection ────────────────────────────────────────────────────
 
 /**
- * A bare two-digit hex token: exactly 2 hex digits, word-bounded,
- * not preceded by $ (already caught by the $-prefixed check), and not
- * preceded by another hex digit (which would make it part of a longer
- * address). This catches `a9 36 85 01` and `.byte a9,36,…` patterns
- * in prose without triggering on 4-digit addresses like `0850`.
+ * A bare two-digit hex token: exactly 2 hex digits at a word boundary, not
+ * preceded by $ (which the $-prefixed check already handles) and not
+ * preceded by another hex digit (which would make it part of a 4-digit
+ * address). Matches `a9`, `36`, `ff` but not `0850`, `$a9`, or `a936`.
  */
 const BARE_HEX_BYTE_RE = /(?<!\$)(?<![0-9a-fA-F])\b[0-9a-fA-F]{2}\b(?![0-9a-fA-F])/g;
 
@@ -179,11 +176,6 @@ interface BareHexRun {
   tokens: string[];
 }
 
-/**
- * Find maximal runs of bare 2-digit hex tokens separated only by whitespace
- * and/or commas in `text`. Returns all runs regardless of length; the caller
- * filters by length and hex-letter requirement.
- */
 function findBareHexRuns(text: string): BareHexRun[] {
   const runs: BareHexRun[] = [];
   const re = new RegExp(BARE_HEX_BYTE_RE.source, "g");
@@ -263,6 +255,15 @@ function hexRunFinding({ text, lines, startIndex, msg }: RunArgs): LintFinding {
 
 // ── check functions ───────────────────────────────────────────────────────────
 
+interface StudyCtx {
+  text: string;
+  lines: string[];
+  imageBytes: Buffer | null | undefined;
+  /** 1-based line numbers inside mnemonic-flagged fences: byte-run checks skip them. */
+  skip: Set<number>;
+  findings: LintFinding[];
+}
+
 function checkFences(text: string, lines: string[], findings: LintFinding[]): void {
   for (const block of findFencedBlocks(text)) {
     const n = mnemonicLineCount(block.content);
@@ -283,33 +284,30 @@ function checkFences(text: string, lines: string[], findings: LintFinding[]): vo
   }
 }
 
-function checkDollarHexRuns(
-  text: string,
-  lines: string[],
-  imageBytes: Buffer | null | undefined,
-  findings: LintFinding[],
-): void {
-  for (const run of findHexRuns(text)) {
+function checkDollarHexRuns(ctx: StudyCtx): void {
+  for (const run of findHexRuns(ctx.text)) {
+    const lineNo = lineNoOf(ctx.text, run.startIndex);
+    if (ctx.skip.has(lineNo)) continue;
     const len = run.bytes.length;
     if (len >= 16) {
-      findings.push(
+      ctx.findings.push(
         hexRunFinding({
-          text,
-          lines,
+          text: ctx.text,
+          lines: ctx.lines,
           startIndex: run.startIndex,
           msg:
-            `Hex run of ${String(len)} consecutive $XX bytes starting at line ${String(lineNoOf(text, run.startIndex))}. ` +
+            `Hex run of ${String(len)} consecutive $XX bytes starting at line ${String(lineNo)}. ` +
             `A study page holds addresses and layouts, not code or data extracts. Remove the byte sequence.`,
         }),
       );
-    } else if (len >= 8 && imageBytes != null && bytesInImage(run.bytes, imageBytes)) {
-      findings.push(
+    } else if (len >= 8 && ctx.imageBytes != null && bytesInImage(run.bytes, ctx.imageBytes)) {
+      ctx.findings.push(
         hexRunFinding({
-          text,
-          lines,
+          text: ctx.text,
+          lines: ctx.lines,
           startIndex: run.startIndex,
           msg:
-            `Hex run of ${String(len)} bytes at line ${String(lineNoOf(text, run.startIndex))} appears verbatim in the game binary. ` +
+            `Hex run of ${String(len)} bytes at line ${String(lineNo)} appears verbatim in the game binary. ` +
             `Remove it: a study page holds measurements, not the game's code or data.`,
         }),
       );
@@ -317,21 +315,35 @@ function checkDollarHexRuns(
   }
 }
 
-function checkBareHexRuns(text: string, lines: string[], findings: LintFinding[]): void {
-  const prose = blankFenceContents(text);
-  for (const run of findBareHexRuns(prose)) {
+function checkBareHexRuns(ctx: StudyCtx): void {
+  for (const run of findBareHexRuns(ctx.text)) {
+    const lineNo = lineNoOf(ctx.text, run.startIndex);
+    if (ctx.skip.has(lineNo) || !hasHexLetter(run.tokens)) continue;
     const len = run.tokens.length;
-    if (len < 16 || !hasHexLetter(run.tokens)) continue;
-    findings.push(
-      hexRunFinding({
-        text,
-        lines,
-        startIndex: run.startIndex,
-        msg:
-          `Bare hex run of ${String(len)} consecutive two-digit tokens starting at line ${String(lineNoOf(text, run.startIndex))}. ` +
-          `A study page holds addresses and layouts, not code or data extracts. Remove the byte sequence.`,
-      }),
-    );
+    const bytes = run.tokens.map((t) => parseInt(t, 16));
+    if (len >= 16) {
+      ctx.findings.push(
+        hexRunFinding({
+          text: ctx.text,
+          lines: ctx.lines,
+          startIndex: run.startIndex,
+          msg:
+            `Bare hex run of ${String(len)} consecutive two-digit tokens starting at line ${String(lineNo)}. ` +
+            `A study page holds addresses and layouts, not code or data extracts. Remove the byte sequence.`,
+        }),
+      );
+    } else if (len >= 8 && ctx.imageBytes != null && bytesInImage(bytes, ctx.imageBytes)) {
+      ctx.findings.push(
+        hexRunFinding({
+          text: ctx.text,
+          lines: ctx.lines,
+          startIndex: run.startIndex,
+          msg:
+            `Bare hex run of ${String(len)} bytes at line ${String(lineNo)} appears verbatim in the game binary. ` +
+            `Remove it: a study page holds measurements, not the game's code or data.`,
+        }),
+      );
+    }
   }
 }
 
@@ -346,9 +358,15 @@ function checkBareHexRuns(text: string, lines: string[], findings: LintFinding[]
 export function lintStudyExpression(text: string, imageBytes?: Buffer | null): LintFinding[] {
   if (!isStudiedPage(text)) return [];
   const findings: LintFinding[] = [];
-  const lines = text.split("\n");
-  checkFences(text, lines, findings);
-  checkDollarHexRuns(text, lines, imageBytes, findings);
-  checkBareHexRuns(text, lines, findings);
+  const ctx: StudyCtx = {
+    text,
+    lines: text.split("\n"),
+    imageBytes,
+    skip: mnemonicFencedLines(text),
+    findings,
+  };
+  checkFences(text, ctx.lines, findings);
+  checkDollarHexRuns(ctx);
+  checkBareHexRuns(ctx);
   return findings;
 }
