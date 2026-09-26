@@ -93,8 +93,10 @@ make run              # windowed VICE, for a human
   graded nothing (a `FAIL REFUSED` line says why). A script that calls it
   tests the exit code, never the text.
 - The normal build (no autopilot) plays headless through `make drive
-  STEPS='...'`: `harness/drive.py` presses the stick on the real `$DC00` and
-  counts time in frames, so a run repeats exactly.
+  STEPS='...'`: `harness/drive.py` presses the stick on the real `$DC00`
+  (`hold:`, `tap:`) and port 1 on `$DC01` (`hold1:`, `tap1:`), and counts
+  time in frames, so a run repeats exactly. Released, both read `$1F`: bits
+  5-7 are 0 under its VICE device, so mask them before testing the byte.
 - PAL shots use `-default`'s machine. Never pass `-model pal`: its palette
   differs, and `check.py` refuses the picture.
 - A program that reads `$D41B` or `$D41C` sets `SOUND_SINK := dump`; under
@@ -105,6 +107,10 @@ make run              # windowed VICE, for a human
   before line `DEADLINE_LINE`, and the SID must be written in at least
   `SID_FRAMES` frames. `make selftest` then runs `make watchtest`: the
   `OVERRUN=1` build must fail the deadline, the `NO_PLAYER=1` build the SID.
+  A store trace from power-on also sees the KERNAL's RAM test before the
+  program loads: three stores to each byte, from `$FD73`, `$FD7A` and `$FD81`
+  (traced at `$0880-$0887` in an Oscar64 build with the starters' blob
+  layout). Count only stores from your own code.
 - Read the error channel before a file you open for reading, and read the
   file only on `00`. On a missing file (`62`) the drive keeps no channel;
   a read then sends a TALK it answers with a 68-cycle CLK pulse, a badline
