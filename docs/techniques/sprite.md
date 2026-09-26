@@ -341,6 +341,7 @@ estimates. Before #72 one basis word covered the whole Cost line, so it said `de
 **Cost:** cycles_per_frame=16600, cycles_per_frame_typical=8995, irq_slots=17
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-sprite-multiplex-game (worst frame: arithmetic, a reversed sort, CPU cycles only; typical: the largest whole frame of sort, build and IRQs in 2,142 frames of play, timed wall-clock by a probe build, NTSC, screen on)
+**Cost includes:** sprite_slot_parking
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
 **Alternative to:** sprite_multiplex_24 (sprites anywhere on screen, a sort that stays cheap on game frames and IRQ code the game owns and can budget; the Oscar64 vspr path takes one IRQ per reused sprite and about 20 % of a PAL frame for 24 sprites)
@@ -469,6 +470,17 @@ read (arithmetic from the probe): at most 13 IRQs on PAL and 14 on NTSC
 give 8,785 and 8,995. `cycles_per_frame_typical=8995` is the NTSC figure.
 The smallest frame was 6,874 on PAL and 7,039 on NTSC.
 
+Both figures hold a parking slot policy (`sprite_slot_parking`), hence
+the Cost includes line. A parked slot is one more actor to the sort and
+the build, with no test in the IRQs; the 24-actor worst case counts more
+slots than a 16-slot game parks (arithmetic). The run-and-gun starter runs
+the two as one multiplexer of 16 slots, parked at Y 255 where its build's
+reject step drops them: its whole logic frame, sort, build and every IRQ
+included, is at most 3,049 cycles on PAL with one sprite shown and 15
+parked (templates/run-and-gun, measured in VICE x64sc). An earlier version
+had no includes line, and `c64_plan_budget` added parking's 5,334, its own
+recipe's whole fixed-group multiplexer, on top (run-and-gun KB-GAPS 3).
+
 ### Sources
 
 Cadaver, "Sprite multiplexing", https://cadaver.github.io/rants/sprite.html
@@ -500,9 +512,18 @@ families). cadaver/c64gameframework, https://github.com/cadaver/c64gameframework
 **Cost measured on:** kickassembler-sprite-slot-parking (worst frame, CPU cycles only: 16 slots in groups of 8, 4 and 4, group writes 414 + 218 measured with CIA2 timer A, screen off, group C taken as equal to B; 317 cycles of interrupt entry through $FF48, re-arm and $EA81 exit for the three parts by arithmetic; the insertion sort of 16 distinct Ys in reverse order, 4,155 measured, plus 12 for its JSR/RTS; the sprite DMA of parked slots not included, 358 more for the recipe's six at Y 0 on PAL)
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
-**Alternative to:** sprite_multiplex_game (a fixed slot count written unconditionally in fixed groups: constant IRQ cost and no build pass, but no reject of a ninth sprite on a band and no late guard, so an overloaded band loses sprites silently)
 
 ### Why
+
+Parking is a slot policy, not a multiplexer of its own: the multiplexer
+that writes the slots can be this page's fixed groups or
+`sprite_multiplex_game`, whose Cost line holds it. The run-and-gun starter
+parks its free slots under `sprite_multiplex_game` (templates/run-and-gun,
+`mux.asm`). An earlier version of this page named `sprite_multiplex_game`
+as an alternative, and `c64_check_compatibility` then called the pair a
+hard `unit_contention` on `sprite_0-7` and `vic_raster_irq` (run-and-gun
+KB-GAPS 4). What the fixed groups trade against that multiplexer is under
+"When not to use it".
 
 A multiplexer with a fixed number of virtual sprites has to do something
 with the slots nothing is using. Testing "in use" in the IRQ code makes its

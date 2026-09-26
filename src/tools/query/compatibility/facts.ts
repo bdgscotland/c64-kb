@@ -62,6 +62,12 @@ export interface CompatibilityFacts {
   serialPitfalls?: readonly SerialPitfall[];
   /** Recipes that build an input and run with the KERNAL out (#94). */
   recipeKernalOut?: readonly RecipeKernalOut[];
+  /**
+   * **Cost includes:** per technique, followed through techniques outside
+   * the set (run-and-gun gap 4): a technique whose figure holds another's
+   * work runs that work inside itself, so the two are not rival owners.
+   */
+  includes?: ReadonlyMap<string, readonly string[]>;
   /** Raster bands the caller placed, by technique ("name@lines", #90). */
   placements?: ReadonlyMap<string, string>;
 }

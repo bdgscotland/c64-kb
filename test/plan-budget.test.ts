@@ -55,6 +55,65 @@ describe("planBudget rules", () => {
     expect(b.verdict).toBe("undetermined");
   });
 
+  it("budgets a member that runs one frame in N on its own frame, not added to the others (run-and-gun gap 1)", () => {
+    const redraw = { cycles_per_frame: 13304, every_n_frames: 8, basis: "measured-vice" as const };
+    const logic = m("logic", { cycles_per_frame: 3049, basis: "measured-vice" });
+    const p = play(planBudget([m("row_map_redraw", redraw), logic], { screen: "off" }));
+    expect(p.contributors.map((c) => c.name)).toEqual(["logic"]);
+    expect(p.high).toBe(3049);
+    expect(p.occasional).toEqual([
+      expect.objectContaining({
+        name: "row_map_redraw",
+        every_n_frames: 8,
+        low: 13304,
+        high: 13304,
+        frame_high: 13304,
+      }),
+    ]);
+    expect(p.verdict).toBe("fits");
+    expect(p.notes.join(" ")).toMatch(/row_map_redraw runs one frame in 8/);
+    // A member that takes interrupts every frame is named: its IRQ work lands on that frame too.
+    const withIrq = play(
+      planBudget(
+        [
+          m("row_map_redraw", redraw),
+          m("mux", { cycles_per_frame: 8995, irq_slots: 17, basis: "arithmetic" }),
+          logic,
+        ],
+        { screen: "off" },
+      ),
+    );
+    expect(withIrq.occasional[0]?.irq_members).toEqual(["mux"]);
+    expect(withIrq.notes.join(" ")).toMatch(/mux takes interrupts every frame/);
+    expect(withIrq.notes.join(" ")).toMatch(/logic is assumed to skip that frame/);
+    // Without the key it is summed into every frame, as before.
+    const summed = play(
+      planBudget([m("row_map_redraw", { ...redraw, every_n_frames: undefined }), logic], { screen: "off" }),
+    );
+    expect(summed.high).toBe(16353);
+    expect(summed.occasional).toEqual([]);
+  });
+
+  it("puts the every-frame charges and fixed losses on the one-in-N frame, and calls it over past the frame", () => {
+    const fli = m("fli_image", { cycles_per_line: 63, basis: "estimated" }, { raster_band: "45-251" });
+    const redraw = m("row_map_redraw", {
+      cycles_per_frame: 13304,
+      every_n_frames: 8,
+      basis: "measured-vice",
+    });
+    const p = play(planBudget([fli, redraw], { screen: "off" }));
+    expect(p.high).toBe(13041);
+    expect(p.occasional[0]).toMatchObject({ name: "row_map_redraw", frame_high: 13041 + 13304 });
+    expect(p.verdict).toBe("over");
+    // With the screen on and a figure not measured with it on, the badline charge lands on that frame too.
+    const on = play(
+      planBudget([
+        m("row_map_redraw", { cycles_per_frame: 13304, every_n_frames: 8, basis: "measured-vice" }),
+      ]),
+    );
+    expect(on.occasional[0]?.frame_high).toBe(13304 + on.fixed_losses.badlines);
+  });
+
   it("multiplies a per-call figure by the calls a frame, low by the fewest and high by the most (#37)", () => {
     const b = planBudget([
       m("decimal_print", { cycles_per_frame: 1361, basis: "measured-vice" }, { calls: { low: 2, high: 7 } }),
@@ -965,6 +1024,27 @@ describe("planBudget on the shipped pages (design 2.1 validation)", () => {
     // The measured worst play frame, 16,284 PAL, is inside the counted range.
     const fixed = counted.fixed_losses.badlines + counted.fixed_losses.sprite_dma;
     expect(counted.high + fixed).toBeGreaterThanOrEqual(16284);
+  });
+
+  it("FIREBASE's fingerprint: the redraw is one frame in eight and parking is inside the multiplexer (run-and-gun gaps 1, 3)", () => {
+    // templates/run-and-gun KB-GAPS.md 1 and 3: plan-budget summed row_map_redraw
+    // (13,304) into every play frame and added sprite_slot_parking's 5,334 to
+    // sprite_multiplex_game's 8,995-16,600, range 36,916-47,124.
+    const p = play(
+      plan(["row_map_redraw", "soft_scroll_v", "sprite_multiplex_game", "sprite_slot_parking"], {
+        region: "PAL",
+      }),
+    );
+    expect(p.contributors.map((c) => c.name)).not.toContain("row_map_redraw");
+    expect(p.occasional).toEqual([expect.objectContaining({ name: "row_map_redraw", every_n_frames: 8 })]);
+    expect(p.excluded).toContainEqual(
+      expect.objectContaining({
+        name: "sprite_slot_parking",
+        reason: "included_by",
+        by: "sprite_multiplex_game",
+      }),
+    );
+    expect(p.contributors.map((c) => c.name)).not.toContain("sprite_slot_parking");
   });
 
   it("every composition's output parses with the tool's schema", () => {

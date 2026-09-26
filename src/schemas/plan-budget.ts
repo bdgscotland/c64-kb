@@ -11,26 +11,35 @@ import { CostBasisSchema } from "./cost-basis.ts";
 // (src/domain/budget.ts). A missing figure is never zero: it is listed in
 // unknown and to_measure, and the verdict is "undetermined".
 const BudgetVerdictSchema = z.enum(["fits", "over", "undetermined"]);
+const ContributorSchema = z.object({
+  name: z.string(),
+  low: z.number().int(),
+  high: z.number().int(),
+  every_frame: z.boolean(),
+  basis: CostBasisSchema,
+  charge: z.enum(["cycles_per_frame", "per_line", "band", "per_item"]),
+  // Present when low and high are one call's figure times this many (#37),
+  // or, on a per_item charge (#95), the items counted.
+  calls: z.object({ low: z.number().int(), high: z.number().int() }).optional(),
+  // per_item only (#95): low = base + calls.low × each, high = base + calls.high × each.
+  per_item: z.object({ base: z.number().int(), each: z.number().int() }).optional(),
+  measured_on: z.string().nullable(),
+  conditions: z.string().nullable(),
+});
 const PlanPhaseSchema = z.object({
   phase: z.enum(["play", "transition", "init"]),
   region: z.enum(["PAL", "NTSC"]),
   frame: z.number().int(),
   members: z.array(z.string()),
-  contributors: z.array(
-    z.object({
-      name: z.string(),
-      low: z.number().int(),
-      high: z.number().int(),
-      every_frame: z.boolean(),
-      basis: CostBasisSchema,
-      charge: z.enum(["cycles_per_frame", "per_line", "band", "per_item"]),
-      // Present when low and high are one call's figure times this many (#37),
-      // or, on a per_item charge (#95), the items counted.
-      calls: z.object({ low: z.number().int(), high: z.number().int() }).optional(),
-      // per_item only (#95): low = base + calls.low × each, high = base + calls.high × each.
-      per_item: z.object({ base: z.number().int(), each: z.number().int() }).optional(),
-      measured_on: z.string().nullable(),
-      conditions: z.string().nullable(),
+  contributors: z.array(ContributorSchema),
+  // Run-and-gun gap 1: members whose Cost states every_n_frames, spent on one
+  // frame in N. Not in low or high; frame_high is the frame each runs on.
+  occasional: z.array(
+    ContributorSchema.extend({
+      every_n_frames: z.number().int(),
+      frame_high: z.number().int(),
+      // Summed members that take interrupts every frame: their IRQ work lands on this frame, uncounted.
+      irq_members: z.array(z.string()),
     }),
   ),
   excluded: z.array(

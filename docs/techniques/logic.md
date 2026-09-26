@@ -140,7 +140,7 @@ the figure.
 
 **Complexity:** low
 **Region:** both
-**Requires:** tile_grid_collision, mob_priority
+**Requires:** mob_priority
 **Uses registers:** D01B
 **Cost:** cycles_per_frame=700
 **Cost basis:** measured-vice
@@ -158,6 +158,12 @@ map cell. Here the answer belongs to the character code: one 256-byte table
 per character set, `attr[screen code]`, and every cell showing that glyph
 behaves the same. A tree canopy hides the soldier wherever it is drawn,
 with no per-cell data and no code that knows where the trees are.
+
+It needs no tile map and no `tile_grid_collision`: it reads raw screen
+codes, and its recipe implements only it and `mob_priority`. An earlier
+version listed `tile_grid_collision` on the Requires line, so
+`c64_check_compatibility` implied `tile_map_render` for a map with no
+tiles (run-and-gun KB-GAPS 5).
 
 It is a separate entry from `tile_grid_collision` for two reasons. The
 table is keyed by the glyph, not the cell, so its size is fixed at 256

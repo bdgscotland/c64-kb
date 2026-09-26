@@ -750,10 +750,24 @@ select to read paddles on the other port pays `paddle_read`'s settle.
 **Complexity:** low
 **Region:** both
 **Uses registers:** DC00, D012
-**Requires:** joystick_edge_detect, lfsr_random, frame_sync_loop
+**Requires:** joystick_edge_detect, frame_sync_loop
 **Cost:** cycles_per_frame=68
 **Cost basis:** measured-vice
 **Cost measured on:** oscar64-attract-replay (longest step)
+**Claims:** cia1_port_a (reads)
+**Claims basis:** derived-listing
+
+The replay reads the port only to end the demo on a real press. The
+recipe stores `$FF` to `$DC00` before that read so that no keyboard
+column is selected; the store is the port read's, as in
+`joystick_edge_detect`, not a hold on the port. The seed is needed only
+by a game that draws random numbers (see "Why it works"): the run-and-gun
+starter has no generator and its demo repeats from the stream alone
+(templates/run-and-gun, `make fedrive`: the demo after 400 frames and the
+title 485 later, every run). An earlier version listed `lfsr_random` on
+the Requires line and no Claims line, so `c64_check_compatibility` implied
+the generator for every attract mode and called the three port readers
+writers of `$DC00` (run-and-gun KB-GAPS 30).
 
 ### Why
 
