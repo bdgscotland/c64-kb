@@ -2,7 +2,12 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, it, expect } from "vitest";
 import { extractGraphEntities } from "../src/graph/extract.ts";
-import { briefTokens, numberPhraseMissing, unaskedEffect } from "../src/tools/briefings/discovery.ts";
+import {
+  briefTokens,
+  coveredWords,
+  numberPhraseMissing,
+  unaskedEffect,
+} from "../src/tools/briefings/discovery.ts";
 import { describedReason, pickByBriefWords, seedsFor } from "../src/tools/briefings/archetype.ts";
 import { whyProposed } from "../src/tools/briefings/why-proposed.ts";
 
@@ -43,6 +48,43 @@ describe("a demo effect the game brief does not name (#41)", () => {
     );
     expect(unaskedEffect({ name: "multicolor_bitmap", category: "bitmap" }, knight)).toBe(false);
     expect(unaskedEffect({ name: "colour_fade", category: "effect" }, "fade the title out")).toBe(false);
+  });
+});
+
+describe("an effect is asked for by its own name (KB-GAPS 2)", () => {
+  it("a run-and-gun brief's walls are not a raycaster", () => {
+    const brief = "trees and walls block him";
+    expect(unaskedEffect({ name: "raycaster_grid_walls", category: "effect" }, brief)).toBe(true);
+    expect(unaskedEffect({ name: "raycaster_grid_walls", category: "effect" }, "a raycaster maze")).toBe(
+      false,
+    );
+  });
+});
+
+describe("brief words the archetype's fingerprint already answers (KB-GAPS 2)", () => {
+  const brief =
+    "vertical run and gun: a soldier walks up a jungle map, trees and walls block him, canopy draws over him, enemies through a sprite multiplexer";
+  const phrases = [
+    "row_map_redraw Coarse vertical scroll as a full playfield redraw from a raw row map",
+    "char_attribute_flags One attribute byte per character code: blocking, draw-behind priority and deadly terrain from one lookup",
+    "sprite_multiplex_game Game multiplexer in assembly: persistent sort, double-buffered table, zone IRQs, late guard",
+    "object_pool Fixed-slot object pool for enemies, bullets and effects",
+  ];
+  it("are the words a fingerprint technique's name or title holds, inflections included", () => {
+    const covered = coveredWords(briefTokens(brief), phrases, "Vertical Run-and-Gun");
+    for (const w of ["map", "block", "draw", "draws", "sprite", "multiplexer", "enemies", "enemie"])
+      expect([w, covered.has(w)]).toEqual([w, true]);
+    for (const w of ["walls", "jungle", "trees", "canopy", "soldier"])
+      expect([w, covered.has(w)]).toEqual([w, false]);
+  });
+
+  it("leave the archetype title's words live, since the title widens the search", () => {
+    expect(coveredWords(["vertical", "map"], phrases, "Vertical Run-and-Gun")).toEqual(new Set(["map"]));
+    expect(coveredWords(["vertical"], phrases)).toEqual(new Set(["vertical"]));
+  });
+
+  it("drops the verb run", () => {
+    expect(briefTokens("vertical run and gun")).not.toContain("run");
   });
 });
 

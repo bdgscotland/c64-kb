@@ -123,6 +123,10 @@ const STOP_WORDS = new Set([
   "once",
   "also",
   "least",
+  // A verb in a brief ("run and gun", "runs at 50 fps"); it matched
+  // relocated_code_block's "Code stored at one address and run at another"
+  // in the FIREBASE brief (KB-GAPS 2).
+  "run",
 ]);
 
 // Phrases whose nouns do not name a part. "Sprites on screen at once" is not
@@ -238,10 +242,12 @@ const GENERIC_NAME_WORDS = new Set([
  */
 export function unaskedEffect(t: { name: string; category: string }, description: string): boolean {
   const words = t.name.split("_").map(oneSpelling);
+  // An effect page's technique is asked for by its head word, the first
+  // distinctive word of its name. Any word of the name let "trees and walls
+  // block him" propose raycaster_grid_walls for a run-and-gun (KB-GAPS 2).
+  const head = words.find((w) => w.length >= 4 && !GENERIC_NAME_WORDS.has(w));
   const marks =
-    t.category === "effect"
-      ? words.filter((w) => w.length >= 4 && !GENERIC_NAME_WORDS.has(w))
-      : words.filter((w) => EFFECT_NAME_WORDS.has(w));
+    t.category === "effect" ? (head ? [head] : []) : words.filter((w) => EFFECT_NAME_WORDS.has(w));
   if (marks.length === 0) return false;
   const tokens = new Set(briefTokens(description));
   return !marks.some((w) => tokens.has(w));
@@ -282,6 +288,45 @@ function wordBase(t: string, tokens: readonly string[]): string {
     if (u.length < base.length && t.startsWith(u) && INFLECTIONS.has(t.slice(u.length))) base = u;
   }
   return base;
+}
+
+/** Whether `a` is `b` or an inflection of it, either way round ("draws" and "draw", "block" and "blocking"). */
+function sameWord(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  return long.startsWith(short) && INFLECTIONS.has(long.slice(short.length));
+}
+
+/** The words of a technique's name and title, or of an archetype's title, as the scorer splits them. */
+function phraseWords(phrase: string): string[] {
+  return oneSpelling(phrase.toLowerCase())
+    .split(/[^a-z0-9$.]+|_/)
+    .filter((w) => w.length >= 3);
+}
+
+/**
+ * The brief tokens that the archetype's fingerprint already answers: a word
+ * of a fingerprint technique's name or title, inflections included, unless
+ * the archetype's title holds it. Such a word says nothing more about the
+ * plan, so it proposes nothing beside the fingerprint. The FIREBASE
+ * brief's "map" (row_map_redraw) proposed tile_map_render, "block"
+ * (char_attribute_flags' "blocking") relocated_code_block, "sprite"
+ * (sprite_multiplex_game) multi_sprite_object and "draw" (its "draw-behind")
+ * per_frame_hitbox (KB-GAPS 2). Pure.
+ */
+export function coveredWords(
+  tokens: readonly string[],
+  phrases: readonly string[],
+  archetypeTitle = "",
+): Set<string> {
+  const words = phrases.flatMap(phraseWords);
+  // The archetype's title is added to the search to widen it (seedsFor), so
+  // its words stay live: "Vertical" is how vertical_shmup's road-shooter
+  // brief reaches vehicle_control.
+  const title = phraseWords(archetypeTitle);
+  return new Set(
+    tokens.filter((t) => !title.some((w) => sameWord(t, w)) && words.some((w) => sameWord(t, w))),
+  );
 }
 
 function recipeBonusFor(recipeCount: number): number {
@@ -345,7 +390,11 @@ function scoreTechnique(
  * has multiple worked examples for it"; the complexity penalty counters the
  * vector-search bias toward rare-but-dense exotic technique pages.
  */
-async function findTechniquesByKeyword(description: string, keep = 12): Promise<string[]> {
+async function findTechniquesByKeyword(
+  description: string,
+  keep: number,
+  fingerprint: Fingerprint | undefined,
+): Promise<string[]> {
   const f = await getFalkor();
   const result = await f.roQuery(
     `MATCH (t:Technique)
@@ -353,27 +402,38 @@ async function findTechniquesByKeyword(description: string, keep = 12): Promise<
      RETURN t.name AS name, t.title AS title, t.category AS category,
             t.complexity AS complexity, count(r) AS recipe_count`,
   );
-  const tokens = briefTokens(description);
+  const rows = parseRows(TechniqueScoreRow, result.data);
+  const allTokens = briefTokens(description);
+  const covered = fingerprint
+    ? coveredWords(allTokens, fingerprintPhrases(fingerprint, rows), fingerprint.title)
+    : new Set<string>();
+  const tokens = allTokens.filter((t) => !covered.has(t));
   const descLower = description.toLowerCase();
   const wantsSceneTier = SCENE_TIER_KEYWORDS.some((k) => descLower.includes(k));
   const complexityPenalty = wantsSceneTier ? COMPLEXITY_PENALTY_NONE : COMPLEXITY_PENALTY_NORMAL;
 
-  return (
-    parseRows(TechniqueScoreRow, result.data)
-      .map((row) => scoreTechnique(row, tokens, complexityPenalty))
-      // A technique must share a word with the brief. The recipe bonus is
-      // positive on its own, so until 2026-09-23 every technique with a
-      // recipe and no matching word scored 0.75 or 1.5 and filled a short
-      // brief's empty slots in alphabetical order (char_rom_under_vic,
-      // compare_16bit_and_signed, cpu_io_port_bank, decimal_print, ...).
-      .filter((s) => s.hits > 0 && s.score > 0)
-      // Score descending; alphabetical tiebreak so equal-score ranks are
-      // stable across runs (Array.sort is now stable in V8 but the input
-      // order from the graph query is not guaranteed).
-      .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name))
-      .slice(0, keep) // keyword candidates; merging takes what it needs
-      .map((s) => s.name)
-  );
+  const scored = rows
+    .map((row) => scoreTechnique(row, tokens, complexityPenalty))
+    // A technique must share a word with the brief. The recipe bonus is
+    // positive on its own, so until 2026-09-23 every technique with a
+    // recipe and no matching word scored 0.75 or 1.5 and filled a short
+    // brief's empty slots in alphabetical order (char_rom_under_vic,
+    // compare_16bit_and_signed, cpu_io_port_bank, decimal_print, ...).
+    .filter((s) => s.hits > 0 && s.score > 0)
+    // Score descending; alphabetical tiebreak so equal-score ranks are
+    // stable across runs (Array.sort is now stable in V8 but the input
+    // order from the graph query is not guaranteed).
+    .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+  return scored.slice(0, keep).map((s) => s.name); // keyword candidates; merging takes what it needs
+}
+
+/** An archetype's forced fingerprint and its title, which the brief's words need not find again. */
+export type Fingerprint = { names: readonly string[]; title: string };
+
+/** "name title" for each fingerprint technique the graph holds. */
+function fingerprintPhrases(fp: Fingerprint, rows: z.infer<typeof TechniqueScoreRow>[]): string[] {
+  const names = new Set(fp.names);
+  return rows.filter((r) => names.has(r.name)).map((r) => `${r.name} ${r.title ?? ""}`);
 }
 
 /**
@@ -395,11 +455,16 @@ export async function resolveProposedTechniques(
   limit = 8,
   /** Techniques the caller already forces (an archetype's fingerprint); they count as found. */
   forcedCount = 0,
+  /**
+   * The resolved archetype's fingerprint. With it, a brief word the
+   * fingerprint already answers proposes nothing more (KB-GAPS 2).
+   */
+  fingerprint?: Fingerprint,
 ): Promise<string[]> {
   // Run both sources in parallel for speed
   const [searchResult, fromKeyword] = await Promise.all([
     search(description, 20),
-    findTechniquesByKeyword(description, Math.max(12, limit)),
+    findTechniquesByKeyword(description, Math.max(12, limit), fingerprint),
   ]);
 
   // 1. Collect technique names from vector search (technique-doc chunks only)

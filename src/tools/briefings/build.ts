@@ -19,7 +19,12 @@ import {
   seedsFor,
   type ArchetypeResolution,
 } from "./archetype.ts";
-import { contradictsBriefAxis, resolveProposedTechniques, unaskedEffect } from "./discovery.ts";
+import {
+  contradictsBriefAxis,
+  resolveProposedTechniques,
+  unaskedEffect,
+  type Fingerprint,
+} from "./discovery.ts";
 import { whyProposed } from "./why-proposed.ts";
 import { oneOfEachAlternative, type LeftOut } from "./alternatives.ts";
 import { searchOnlyConflictDrops, type ConflictLeftOut } from "./conflict-drops.ts";
@@ -38,6 +43,7 @@ const ComplexitySchema = BriefingSchema.shape.proposed_techniques.element.shape.
 const RegionSchema = BriefingSchema.shape.proposed_techniques.element.shape.region;
 
 const MAX_PER_CATEGORY = 3;
+const MIN_FOUND = 4;
 
 /** A long, specific brief names more parts than a short one. Ten slots made a nine-part platformer brief drop its LFSR. */
 function proposalLimitFor(description: string): number {
@@ -61,14 +67,20 @@ function selectTechniques(
   proposalLimit: number,
 ): TechniqueLookupOutput[] {
   const categoryCounts = new Map<string, number>();
+  // The limit is the plan's size, the archetype's fingerprint included. It
+  // counted found techniques only, so a 15-technique run-and-gun
+  // fingerprint left 16 more slots for single brief words (walls, block,
+  // map: KB-GAPS 2). A technique the brief's own words force is never
+  // refused by it.
+  const room = Math.max(MIN_FOUND, proposalLimit - forced.archetype.size);
   let nonForced = 0;
   return enriched.filter((t) => {
     if (t.name === "") return false;
     if (forced.archetype.has(t.name)) return true;
+    const described = forced.described.has(t.name);
     const cat = t.category || "_uncategorized";
     const count = categoryCounts.get(cat) ?? 0;
-    const capped = count >= MAX_PER_CATEGORY && !forced.described.has(t.name);
-    if (capped || nonForced >= proposalLimit) return false;
+    if (!described && (count >= MAX_PER_CATEGORY || nonForced >= room)) return false;
     categoryCounts.set(cat, count + 1);
     nonForced++;
     return true;
@@ -140,6 +152,14 @@ async function compatibilityOf(techs: TechniqueLookupOutput[]) {
   return { verdict: structured.verdict, compatibility };
 }
 
+/** The fingerprint the plan is built on: the archetype's, or the one every candidate shares. */
+function fingerprintOf(resolved: ArchetypeResolution | undefined): Fingerprint | undefined {
+  if (resolved?.mode === "graph") return { names: resolved.features, title: resolved.archetype.title };
+  if (resolved?.mode === "ambiguous" && resolved.shared_features.length > 0)
+    return { names: resolved.shared_features, title: "" };
+  return undefined;
+}
+
 async function proposeTechniques(
   description: string,
   archetype: string | undefined,
@@ -148,10 +168,12 @@ async function proposeTechniques(
 ): Promise<Proposal> {
   const seeds = seedsFor({ description, archetype, resolved, isGame });
   const proposalLimit = proposalLimitFor(description);
+  const fingerprint = fingerprintOf(resolved);
   const techNames = await resolveProposedTechniques(
     seeds.searchDescription,
     proposalLimit,
     seeds.archetypeForced.size,
+    fingerprint,
   );
   // Forced techniques go first, found ones after. Until #97 a forced name
   // the search had also found kept the search's rank, so the #22 shmup
