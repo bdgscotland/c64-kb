@@ -2758,5 +2758,17 @@
     "shots": {
       "pal": "screenshots/invalid-mode-band-noband.png"
     }
+  },
+  "kickassembler/facing-turn-step": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/facing-turn-step.png",
+      "ntsc": "screenshots/facing-turn-step-ntsc.png"
+    }
   }
 }
