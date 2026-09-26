@@ -16,8 +16,9 @@ import { normaliseBriefText } from "../../graph/extract/archetype.ts";
 
 // Heads that name no genre: "fighting game", "summer games", "beat em up",
 // "single screen" end in one of these, and briefs use them for everything
-// ("title screen", "power up").
-const NOT_A_GENRE = new Set(["game", "games", "screen", "up"]);
+// ("title screen", "power up"). "gun" is the last part of the name
+// vertical_run_and_gun; without it "a gun that fires three shots" routed there.
+const NOT_A_GENRE = new Set(["game", "games", "screen", "up", "gun"]);
 
 const headOf = (phrase: string): string | undefined => {
   const parts = phrase.split(" ");

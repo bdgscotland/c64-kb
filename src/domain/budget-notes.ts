@@ -84,8 +84,27 @@ function notFloorNote(p: PhaseBudget, fixed: number): string {
   return `The low end, ${terms}, is over the ${p.frame}-cycle frame by ${sum - p.frame}, but it is not a floor: the figures of ${loose.join(", ")} are a common frame or a real run's worst, and those frames need not fall together.${worst} The floor, work every frame plus the loss no figure can hold, is ${p.floor} and fits. A frame measured whole, with every member running, would settle it.`;
 }
 
+/** A one-in-N member: which frame it was budgeted on, and what the plan assumed about the others. */
+function occasionalNote(o: PhaseBudget["occasional"][number], p: PhaseBudget): string {
+  const rest = o.frame_high - o.high;
+  const others = p.contributors
+    .filter((c) => !c.every_frame && !o.irq_members.includes(c.name))
+    .map((c) => c.name);
+  const moved =
+    others.length > 0
+      ? ` ${others.join(", ")} ${plural(others.length, "is", "are")} assumed to skip that frame; add any that run on it.`
+      : "";
+  const irqs = o.irq_members;
+  const interrupts =
+    irqs.length > 0
+      ? ` ${irqs.join(", ")} ${plural(irqs.length, "takes", "take")} interrupts every frame, so ${plural(irqs.length, "its", "their")} interrupt work lands on that frame too and is not counted in it.`
+      : "";
+  return `${o.name} runs one frame in ${o.every_n_frames} (its Cost line): ${o.high} cycles on its own frame${rest > 0 ? ` plus ${rest} of every-frame charges and fixed losses, ${o.frame_high}` : ""}, against ${p.frame}; not added to the other frames.${moved}${interrupts}`;
+}
+
 export function phaseNotes(p: PhaseBudget, screen: "on" | "off"): string[] {
   const notes = lossNote(p, screen);
+  for (const o of p.occasional) notes.push(occasionalNote(o, p));
   const fixed = p.fixed_losses.badlines + p.fixed_losses.sprite_dma;
   if (p.low + fixed > p.frame && p.floor <= p.frame) notes.push(notFloorNote(p, fixed));
   if (p.unknown.length > 0)

@@ -1,0 +1,31 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "verdict line", "type": "text", "row": 3, "col": 1, "text": "RESULT 01 PASS" },
+    { "name": "soldier X, Y; map y on line 55; scroll steps", "type": "text", "row": 4, "col": 1, "text": "X 238 Y 110 WY 500 ST 107" },
+    { "name": "frames blocked, frames behind, redraws", "type": "text", "row": 5, "col": 1, "text": "BLK 12 BEHIND 02 RD 13" },
+    { "name": "lost frames, late redraws", "type": "text", "row": 7, "col": 1, "text": "LOST 00 AT 000 LATE 00" },
+    { "name": "sprites the multiplexer shows: the soldier and 7 pool objects above its cut (the verdict checks it equals the slots above the cut)", "type": "text", "row": 8, "col": 1, "text": "SHOWN 08" },
+    { "name": "audio: effects started and effects that ran to their end (src/sound.c's script: 8 requests, 2 cut)", "type": "text", "row": 3, "col": 19, "text": "SND 08 06" },
+    { "name": "frame meter, the first 200 frames that ran the game's logic", "type": "meter", "row": 9, "col": 1, "frames": 200 },
+
+    { "name": "soldier under the canopy: only his white below line 120 shows (a sprite in front shows from line 112)", "type": "sprite", "colour": 1, "vic_x": 244, "line": 121, "width": 10, "height": 7, "search": { "vic_x": 230, "line": 100, "width": 40, "height": 40 } },
+    { "name": "scrolled 107 lines: the trunk (map row 71, column 29) on lines 123-130: black edge", "type": "pixel", "vic_x": 256, "line": 124, "colour": 0 },
+    { "name": "... its green middle", "type": "pixel", "vic_x": 258, "line": 124, "colour": 5 },
+    { "name": "... earth below it on line 131", "type": "pixel", "vic_x": 258, "line": 131, "colour": 9 },
+    { "name": "the sandbags that stopped him (map row 82) start on line 211", "type": "pixel", "vic_x": 138, "line": 211, "colour": 0 },
+    { "name": "... earth above them on line 210", "type": "pixel", "vic_x": 138, "line": 210, "colour": 9 },
+    { "name": "the rock at map row 76, column 30, on line 170", "type": "pixel", "vic_x": 268, "line": 170, "colour": 0 },
+    { "name": "last playfield line 213 is earth", "type": "rect", "colour": 9, "vic_x": 24, "line": 213, "width": 40, "height": 1 },
+
+    { "name": "the invalid-mode band: lines 214-222 black across the window", "type": "rect", "colour": 0, "vic_x": 24, "line": 214, "width": 320, "height": 9 },
+    { "name": "the panel starts on line 223 (dark grey)", "type": "rect", "colour": 11, "vic_x": 24, "line": 223, "width": 16, "height": 1 },
+    { "name": "panel: score", "type": "text", "row": 21, "col": 2, "text": "SCORE 000000", "dy": 4 },
+    { "name": "panel: title", "type": "text", "row": 21, "col": 28, "text": "FIREBASE", "dy": 4 },
+    { "name": "panel: lives", "type": "text", "row": 23, "col": 2, "text": "LIVES 3", "dy": 4 },
+    { "name": "panel: grenades", "type": "text", "row": 23, "col": 24, "text": "GRENADES 05", "dy": 4 },
+    { "name": "the panel's lines match on both models", "type": "same", "area": { "vic_x": 24, "line": 223, "width": 320, "height": 24 } },
+    { "name": "playfield rows 10-19 the same on both models", "type": "same", "cells": [10, 0, 19, 39] },
+    { "name": "playfield rows 0-2 the same on both models", "type": "same", "cells": [0, 0, 2, 39] }
+  ]
+}

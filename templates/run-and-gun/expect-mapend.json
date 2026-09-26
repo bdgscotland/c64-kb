@@ -1,0 +1,9 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "verdict line", "type": "text", "row": 3, "col": 1, "text": "RESULT 01 PASS", "dy": 4 },
+    { "name": "soldier X, Y; map y 0 on line 55; 7 steps", "type": "text", "row": 4, "col": 1, "text": "X 168 Y 052 WY 000 ST 007", "dy": 4 },
+    { "name": "soldier through the gate: nothing blocked him; YSCROLL 0 to 7, no redraw", "type": "text", "row": 5, "col": 1, "text": "BLK 00 BEHIND 00 RD 00", "dy": 4 },
+    { "name": "the fort wall on map rows 1-2 at the top of the view (line 63, a stone joint)", "type": "rect", "colour": 0, "vic_x": 24, "line": 63, "width": 64, "height": 1 }
+  ]
+}

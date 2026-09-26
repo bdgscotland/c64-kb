@@ -118,7 +118,18 @@ export function renderArchetype(b: BriefingOutput): string {
   }
   for (const d of b.designs ?? []) out += designLine(d);
   if ((b.designs ?? []).length > 0) out += "\n";
-  return out;
+  return out + renderDesignPatterns(b);
+}
+
+/** One line per game-design pattern the archetype's page applies to it (KB-GAPS 28). */
+function renderDesignPatterns(b: BriefingOutput): string {
+  const patterns = b.design_patterns ?? [];
+  if (patterns.length === 0) return "";
+  const lines = patterns.map(
+    (p) =>
+      `**Game structure:** ${p.name} (${p.title}; ${p.source}), realised by ${p.realised_by.join(", ") || "(nothing named)"}\n`,
+  );
+  return `${lines.join("")}\n`;
 }
 
 const orNone = (xs: string[]) => (xs.length > 0 ? xs.join(", ") : "(none)");

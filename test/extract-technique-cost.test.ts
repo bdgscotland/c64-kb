@@ -148,6 +148,7 @@ describe("extractGraphEntities - technique Cost lines", () => {
       "cycles_per_frame_typical",
       "cycles_per_item",
       "cycles_per_line",
+      "every_n_frames",
       "irq_slots",
       "lines_active",
       "sprites_per_line",
@@ -228,6 +229,26 @@ describe("extractGraphEntities - technique Cost lines", () => {
       expect(alone.cost).toEqual({ cycles_per_frame: 100 });
       const msgs = warn.mock.calls.map((c) => String(c[0]));
       expect(msgs.some((m) => m.includes("cycles_item_base without cycles_per_item"))).toBe(true);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("reads every_n_frames beside a frame figure, and skips it below 2 or alone (run-and-gun gap 1)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const read = (line: string) =>
+        techOf(extractGraphEntities(doc(`${line}\n**Cost basis:** measured-vice`), "techniques/scroll.md"))
+          .cost;
+      expect(read("**Cost:** cycles_per_frame=13304, every_n_frames=8")).toEqual({
+        cycles_per_frame: 13304,
+        every_n_frames: 8,
+      });
+      expect(read("**Cost:** cycles_per_frame=100, every_n_frames=1")).toEqual({ cycles_per_frame: 100 });
+      expect(read("**Cost:** bytes_code=100, every_n_frames=8")).toEqual({ bytes_code: 100 });
+      const msgs = warn.mock.calls.map((c) => String(c[0]));
+      expect(msgs.some((m) => m.includes("every_n_frames=1; it must be 2 or more"))).toBe(true);
+      expect(msgs.some((m) => m.includes("every_n_frames without cycles_per_frame"))).toBe(true);
     } finally {
       warn.mockRestore();
     }

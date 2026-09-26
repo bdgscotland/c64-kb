@@ -157,12 +157,112 @@ before this measurement.
 
 - `recipes/oscar64/text-input.md`
 
+## joystick_name_entry — Initials entered with the joystick: a letter wheel, accept, back, arming and a timeout
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DC00
+**Requires:** joystick_edge_detect, joystick_autorepeat
+**Alternative to:** text_input_line (needs no keyboard and no KERNAL, so it works with `$01` = `$35`; slower to enter, and only the wheel's letters)
+**Claims:** cia1_port_a (reads)
+**Claims basis:** derived-listing
+**Cost:** cycles_per_frame=338, bytes_code=369, bytes_data=3
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+**Cost measured on:** kickassembler-joystick-name-entry (worst frame of two scripted entries, port byte to drawn field, in the vertical blank; bytes are entry_init through log, the recipe's event log included)
+
+### Why
+
+A game that banks the KERNAL out has no GETIN, so `text_input_line`
+cannot read a key. The player is also holding a joystick, not sitting at
+the keyboard. The arcade answer is a letter wheel: the stick picks each
+initial and fire accepts it. `front_end_and_attract`
+(`game-design/game-structure.md`) offers it beside typed entry.
+
+### How
+
+Hold three letters, a cursor 0-2 and five bytes of state: `prev` (last
+frame's lines), `held` and `count` (the repeat), `armed`, and a 16-bit
+`idle`. Once per frame, from one read of the port:
+
+1. **Arm.** Until every line has been released once, ignore the stick
+   and only count `idle`. A fire button still held from the game-over
+   screen would otherwise accept the first letter on the first frame.
+2. **Edges.** `fresh = pressed AND NOT prev`, as `joystick_edge_detect`
+   does.
+3. **Repeat.** Up or down steps the wheel on the frame it is pressed. If
+   held, it steps again after `DELAY` frames and then every `RATE`, from
+   one counter as in `joystick_autorepeat`. Up with down is not a
+   direction.
+4. **Wheel.** Up gives the next letter, down the one before, over
+   A to Z and then `.`, wrapping both ways. The `.` lets a player enter
+   fewer than three letters.
+5. **Accept.** A fresh fire, or a fresh right, moves the cursor on and
+   starts the next letter at A. The third accept closes the entry.
+6. **Back.** A fresh left, with the cursor above 0, sets the current
+   letter to `.` and moves back one. The letter it returns to keeps its
+   value.
+7. **Timeout.** A frame with no fresh line and no up/down adds 1 to
+   `idle`; anything else clears it. At the limit the entry closes, and
+   every letter not yet accepted becomes `.`.
+
+Draw the field every frame, with the cursor's letter in another colour
+and a mark under it. The name goes to `high_score_table_insert`'s write
+step.
+
+In `recipes/kickassembler/joystick-name-entry.md` the frame's work, port
+byte to drawn field, took at most 338 cycles, measured with CIA1 timer A
+in VICE x64sc 3.10, the same on PAL and NTSC. A scripted stick entered
+`DAB`, with a repeat, a wrong letter and a step back, and then `B` and a
+timeout, which gave `B..`. Both matched a Python model of the listing.
+
+### Why it works
+
+Every rule is one byte of state and a compare, so the whole entry costs
+about as much as one joystick read and a few screen writes. Edges and
+the repeat counter come from the same port byte, so an accept and a
+wheel step can land in one frame without either being lost. The `armed`
+byte and the timeout are what make it safe at the end of a game: the
+first handles a button that is already down, and the second a player who
+has walked away. The attract mode then comes back on its own.
+
+### Variations
+
+- **Walk and shoot.** Draw the alphabet as a grid and let the player's
+  sprite walk to a letter and fire at it. It needs more screen and more
+  code; not built here.
+- **Keyboard too.** Where the KERNAL is in, feed GETIN's letters into the
+  same field (`text_input_line`) and keep the wheel for the stick.
+- **Timeout.** FIREBASE's is 1,000 frames (20 seconds on PAL); the
+  recipe's is 150, so its run stays short.
+
+### Pitfalls
+
+- Without the arming rule the fire that ended the game accepts `A`. The
+  recipe's fault build did that: its trail began `+` and the name was
+  `ADA`.
+- Count `idle` in the unarmed frames too. Otherwise a stuck fire button
+  never releases, never arms and never times out, and the game hangs on
+  the entry.
+- A repeat on fire or right accepts letters faster than anyone can see.
+  Accept on the edge only.
+
+### In the run-and-gun starter
+
+FIREBASE (`templates/run-and-gun`, `src/front.c`, `entry_frame`) enters
+its initials this way, in Oscar64 C. Its builders' `make fedrive` run
+typed DAB and B.. on the real `$DC00`.
+
+### Recipes
+
+- `recipes/kickassembler/joystick-name-entry.md`
+
 ## decimal_print — Decimal score and counters written as screen codes
 
 **Complexity:** low
 **Cost:** cycles_per_frame=1361
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-print-number (one call, worst decimal case)
+**Cost measured on:** oscar64-print-number (one call, five digits of a 16-bit value by subtract-powers, its worst case 59999; a BCD score or an 8-bit counter costs far less, see Cycle budget)
 
 **Why.** A HUD shows a score, a timer, lives, a coordinate, and it shows
 them every frame or every time they change. The KERNAL's number printing
@@ -182,26 +282,45 @@ Double-dabble (shift and add-three) is the textbook alternative and is
 more than twice as slow here, because the 6502 shifts and adjusts one
 byte at a time.
 
-**Variations.** BCD counters kept in decimal mode (`SED`) give one digit
-per nibble and print with a shift and a mask, at the price of the decimal
-flag inside an interrupt (`decimal_mode_in_irq_handler`). Hex output for a
+**Variations.** BCD counters give one digit per nibble and print with a
+shift and a mask. Added in decimal mode (`SED`), they cost the decimal
+flag inside an interrupt (`decimal_mode_in_irq_handler`); added a nibble
+at a time with a carry in C, they do not. A value below 256 goes through
+an 8-bit subtract-powers (100, then 10). Hex output for a
 debugging display is a table lookup per nibble. A changed-field redraw
 compares the new value with the last one drawn.
 
 **Cycle budget.** Measured on the recipe with CIA1 timer A around the
 call body, less the 17 cycles of an empty call: 957 cycles for 65,535 and
 1,361 for 59,999 by subtraction of powers of ten (the count of
-subtractions is what varies), 2,537 by double-dabble for 65,535, 74 for
-an 8-bit hex value. The Cost line carries the worst measured decimal
-case; the page does not measure the code size (an earlier Cost line
-said `bytes_code=0`, which a budget summed as zero bytes). The same five digits by
+subtractions is what varies), 2,558 by double-dabble for 65,535 (2,537
+before the recipe grew; code placement moves it by a few cycles), 74 for
+an 8-bit hex value. The same recipe measures the cheaper forms: three
+digits of a byte by subtracting 100 and 10 in 8 bits, 161 cycles at
+worst (199); six digits of a score held as three BCD bytes, 205 for any
+value; and, for contrast, six digits of an `unsigned long` by `% 10` and
+`/ 10`, 7,866 (one 32-bit divide a digit). A HUD with a six-digit score
+and two small counters costs about 205 + 2 × 161 = 527 cycles redrawn
+whole by the cheap routes (arithmetic). The 161 and 205 include 10 and
+20 cycles of pointer setup that the recipe's empty call does not have
+(its `.asm`, rung 1). The run-and-gun starter measured
+the long route inside a game: its panel update on a death frame (a BCD
+score add, six BCD digits and one byte digit printed) took 836 cycles,
+and 2,095 while the lives and grenade digits went through an
+`unsigned long` `% 10` print (`templates/run-and-gun/PLAN.md`, "Front
+end", CIA1 timer B, VICE x64sc 3.10). The Cost line carries the worst
+measured 16-bit decimal case, not the BCD or 8-bit route (an earlier
+version of this page gave only the 16-bit figures, so a budget charged
+1,361 for a BCD score). The page does not measure the code size (an
+earlier Cost line said `bytes_code=0`, which a budget summed as zero
+bytes). The same five digits by
 four shift-and-subtract divisions by ten cost 2,793 cycles for 65,535
 in `recipes/oscar64/divide-check.md`, three times the subtract-powers
 route (`division_8_16bit` in `techniques/maths.md` has the comparison).
 
 ### Recipes
 
-- `recipes/oscar64/print-number.md` — both decimal routes and the hex route, checked over every 16-bit value against Python, with the cycle harness on screen
+- `recipes/oscar64/print-number.md` — both 16-bit decimal routes over every 16-bit value, the 8-bit decimal and hex routes over every byte, a six-digit BCD route and a 32-bit `% 10` route over 10,000 values, all checked against Python, with the cycle harness on screen
 
 ## high_score_table_insert — A new score into a sorted table: rank, shift down, drop the last, write
 
@@ -245,7 +364,7 @@ with plain `CMP`.
    choice and not an accident of `BCS` where `BEQ` plus `BCS` was
    meant.
 3. **Hand-off.** Between the rank and the write comes the name entry
-   (`text_input_line`). The rank is known first, so the game can show
+   (`text_input_line`, or `joystick_name_entry` when the KERNAL is out). The rank is known first, so the game can show
    the place the score will take and can skip the entry when the score
    does not qualify. The typed name goes into the new row's name bytes
    and the write follows. Keep rank and place as two calls with the

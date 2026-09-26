@@ -1,0 +1,18 @@
+{
+  "checks": [
+    { "name": "own verdict (border): main.c first_fail_enemies", "type": "verdict" },
+    { "name": "verdict line", "type": "text", "row": 3, "col": 1, "text": "RESULT 01 PASS" },
+    { "name": "6 events due (rows 88, 84, 77 in view at the start; 73, 66, 64 reached), each spawned on the frame its row reached the top, none lost to a full pool", "type": "text", "row": 4, "col": 1, "text": "EV 06 ROW 06 LOST 00" },
+    { "name": "riflemen fired 4 shots (5 before the redraw pairs stopped the objects' think: PLAN.md, \"Combined budget\"), grenadiers threw 2 grenades, 2 shots ended on blocking cells", "type": "text", "row": 5, "col": 1, "text": "SHOT 04 GREN 02 WALL 02" },
+    { "name": "2 grenades burst on blocking cells; obj_kill turned a runner (kind 2) to dust, freed after 12 ticks, 23 frames with a redraw pair inside", "type": "text", "row": 6, "col": 1, "text": "NW 02 KILL 2 KG 23" },
+    { "name": "every frame: free slots parked, the multiplexer showed exactly the slots above its cut", "type": "text", "row": 7, "col": 1, "text": "PARK 000 SHOWN 000" },
+    { "name": "PAL: shown slots on their map cells every frame; both frames of all 13 redraw pairs moved the objects with the ground", "type": "text", "row": 8, "col": 1, "text": "LAG 000 FIX 26 SKIP 00", "models": ["pal"] },
+    { "name": "NTSC: shown slots on their map cells; on all 13 redraw frames the move had no time before RD_FIRST (main.c HOLD_LINES), the slots kept last frame's lines, and the frame after moved them two", "type": "text", "row": 8, "col": 1, "text": "LAG 000 FIX 13 SKIP 13", "models": ["ntsc"] },
+    { "name": "frame meter, the first 200 frames that ran the game's logic, enemies included", "type": "meter", "row": 9, "col": 1, "frames": 200 },
+    { "name": "at most 8 pool objects alive, no frame lost (the redraw's lead, LD, is graded by the verdict: at least 8 lines)", "type": "text", "row": 13, "col": 1, "text": "PEAK 08 LOST 00" },
+    { "name": "the grenadier of map row 66 (X 296) stands on his row after 107 lines of scroll: sprite Y 515 - 500 + 54 = 69, his purple (carry frame, facing down-left: sprite pixels 8-17, rows 4-14) at VIC x 304-313, lines 74-84", "type": "sprite", "colour": 4, "vic_x": 304, "line": 74, "width": 10, "height": 11, "search": { "vic_x": 272, "line": 56, "width": 72, "height": 60 } },
+    { "name": "the invalid-mode band: lines 214-222 black across the window", "type": "rect", "colour": 0, "vic_x": 24, "line": 214, "width": 320, "height": 9 },
+    { "name": "the panel's lines match on both models", "type": "same", "area": { "vic_x": 24, "line": 223, "width": 320, "height": 24 } },
+    { "name": "playfield rows 14-19 (enemies, shots, blasts) the same on both models", "type": "same", "cells": [14, 0, 19, 39] }
+  ]
+}

@@ -909,7 +909,7 @@ adopt_if_clear:
 **Severity:** high
 **Region:** both
 **Triggered by registers:** D012
-**Triggered by techniques:** raster_bars, irq_chain_table, topbottom_border_open
+**Triggered by techniques:** raster_bars, irq_chain_table, topbottom_border_open, invalid_mode_band, row_map_redraw
 
 ### Symptom
 
@@ -982,6 +982,11 @@ bar_run:
 - Technique: `irq_chain_table` in `techniques/raster.md`: the
   table-driven dispatcher whose latency this is.
 - Technique: `raster_bars` in `techniques/raster.md`: the polled run.
+- Technique: `invalid_mode_band` in `techniques/raster.md` and its
+  recipe's "A late entry": the band split entered after line 213, where a
+  `BNE` poll showed the band one frame in two and the `BCS` poll every
+  frame (VICE x64sc, PAL and NTSC). `row_map_redraw`'s recipe carries the
+  same split.
 
 ---
 

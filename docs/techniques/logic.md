@@ -136,6 +136,159 @@ the figure.
 - `recipes/oscar64/tile-grid-collision.md`
 - `recipes/oscar64/platformer-scaffold.md` — the corner probes, landing snap and head bump inside a whole single-file platformer, with ladders; the page to copy when starting a game
 
+## char_attribute_flags — One attribute byte per character code: blocking, draw-behind priority and deadly terrain from one lookup
+
+**Complexity:** low
+**Region:** both
+**Requires:** mob_priority
+**Uses registers:** D01B
+**Cost:** cycles_per_frame=700
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-char-attribute-flags (worst frame: three walkers, two probes each, the event log and the `$D01B` build, below the display)
+**Claims:** sprite_0-7 (shares)
+**Claims basis:** derived-listing
+
+### Why
+
+A top-down game draws its trees, walls and water as characters and needs
+three answers about the cell under each moving object: may it move there,
+is it drawn behind the scenery, and does it die there. `tile_grid_collision`
+answers the first from a tile class; `slope_collision` keeps one byte per
+map cell. Here the answer belongs to the character code: one 256-byte table
+per character set, `attr[screen code]`, and every cell showing that glyph
+behaves the same. A tree canopy hides the soldier wherever it is drawn,
+with no per-cell data and no code that knows where the trees are.
+
+It needs no tile map and no `tile_grid_collision`: it reads raw screen
+codes, and its recipe implements only it and `mob_priority`. An earlier
+version listed `tile_grid_collision` on the Requires line, so
+`c64_check_compatibility` implied `tile_map_render` for a map with no
+tiles (run-and-gun KB-GAPS 5).
+
+It is a separate entry from `tile_grid_collision` for two reasons. The
+table is keyed by the glyph, not the cell, so its size is fixed at 256
+bytes whatever the map size. One of its bits is a drawing decision, fed to
+`$D01B` per object, which neither collision entry makes.
+
+### How
+
+1. **The table.** 256 bytes, page-aligned so `LDA attr,Y` never crosses a
+   page. The recipe's bits: bit 0 blocks a move, bit 1 draws the sprite
+   behind the playfield, bit 2 kills. Glyphs with no flags are 0. Build it
+   with the character set; a new character set or area brings its own table.
+2. **Read the map, not the screen.** Keep the level in RAM as screen codes
+   (`tile_map_render` fills such an array) and look the cell up there. The
+   screen may be under ROM, mid-redraw during a scroll, or overwritten by a
+   HUD.
+3. **Pixel to cell.** A point at sprite coordinates `(x, y)` is in column
+   `(x − 24) >> 3` and row `(y − 50) >> 3`, as in `tile_grid_collision`.
+   A 25-entry row-address table replaces the multiply by 40. For a
+   scrolling map, add the scroll row and the fine scroll offset.
+4. **Probe ahead for bit 0.** Before a move, look up the cell one pixel past
+   the leading edge. If bit 0 is set, cancel the move.
+5. **Probe under the body for bits 1 and 2.** After the move, look up the
+   cell under the body's centre. Bit 1 sets the object's priority byte to
+   `$FF`, clear sets `$00`. Bit 2 kills the object.
+6. **Build `$D01B` once a frame.** OR each object's priority byte, masked
+   to its sprite's bit, into one byte and store it. With a multiplexer, the
+   priority byte travels with the virtual sprite and is written into
+   `$D01B` with its X and Y, like its colour and pointer.
+
+Measured in VICE x64sc 3.10 on PAL (C64C) and NTSC (6567R8) by
+`recipes/kickassembler/char-attribute-flags.md` (rung 1): one probe costs
+57 cycles (row table, `(zp),y` read of the map, `attr,y` read). Three
+walkers with two probes each, the event log and the `$D01B` build take
+700 cycles in the worst frame on both models. The update starts at line
+251, below the display, where no badline or sprite fetch steals cycles.
+
+### Why it works
+
+The character code is already the thing the map stores, so the attribute
+lookup costs one indexed load after the map read. The VIC-II decides
+priority per pixel: with a sprite's `$D01B` bit set, the character's 1 bits
+cover it and its 0 bits show it (`mob_priority`). A canopy glyph with
+holes in it therefore lets the soldier show through in its gaps, with no
+masking code. The recipe measured this: the walker under the canopy showed
+green on exactly the 128 of its 256 pixels where the checker glyph has a
+1 bit.
+
+### Variations
+
+- **One probe point.** Take all three bits from one cell ahead of the
+  object, as Commando does (below). It saves a probe, and the priority and
+  the death happen a few pixels early.
+- **Projectiles.** Bullets use the same table: bit 0 ends the shot, bit 1
+  gives the shot the canopy's priority.
+- **More bits.** Bits 3 to 7 are free for slow ground, ladders, water
+  that splashes or a slope type (`slope_collision`).
+
+### When not to use it
+
+- The same glyph must behave differently in different places. The table
+  cannot tell two cells with one glyph apart. Copy the glyph to a second
+  code with different flags (the recipe's canopy and bush), or keep a byte
+  per cell (`slope_collision`).
+- Slopes or half-height ground inside a cell. The flags are per cell;
+  `slope_collision` has the height tables.
+- Bitmap-mode playfields. There is no character code to index by.
+
+### Pitfalls
+
+- **The screen under ROM.** A screen in VIC bank 3 at `$E000` reads back
+  as KERNAL bytes while the KERNAL is banked in. Read the map. Commando
+  does exactly this (below).
+- **The whole sprite goes behind.** `$D01B` is per sprite, not per pixel
+  of the sprite. With the bit set, the sprite is behind every foreground
+  pixel it overlaps, including a wall's or a HUD's, not only the canopy
+  that set the bit. Keep canopy glyphs away from other foreground at a
+  sprite's width, or accept it.
+- **Multiplexed sprites keep the old bit.** A hardware sprite reused for
+  a second object keeps the first object's `$D01B` bit unless the
+  multiplexer writes the bit with the new object's registers.
+- **Fine scroll left out.** An address computed from the character row
+  alone is off by up to 7 lines while a vertical scroll is between hard
+  steps. Commando accepts this.
+- **Multicolour characters.** In multicolour text only bit pairs 10 and 11
+  cover a sprite with its bit set; pair 01 is background
+  (`mob_priority`). Draw canopy pixels in `$D023` or colour RAM, not
+  `$D022`. Measured by the recipe's `:mc=1` build (VICE x64sc 3.10, PAL
+  and NTSC): the walker under the multicolour checker canopy showed yellow
+  on all 128 pixels of the glyph's pair-01 (`$D022`) rows and green on the
+  128 of its pair-10 (`$D023`) rows. A canopy with `$D022` highlights shows
+  the hidden soldier through them, as FIREBASE's does
+  (`templates/run-and-gun`). An earlier version of this page gave the rule
+  from `mob_priority` and measured only a hires canopy.
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (PAL C64C) during
+the teardown (rung 1). Each area has its own 256-byte attribute table
+indexed by the character code under an object. The game reads the code
+from its map in RAM: its one screen sits in VIC bank 3 under the KERNAL
+ROM, where CPU reads return ROM. The player's probe is one point ahead of
+him, three steps of his velocity, and its attribute gives all three bits.
+
+- Bit 0 blocks: a plateau edge and a tree trunk each stopped the player.
+  Tree canopies carry bit 1 only and do not block.
+- Bit 1 sets the object's priority byte: it was `$FF` in exactly the
+  frames the probe cell had bit 1 (519 of 519 frames). The multiplexer
+  ORs each virtual sprite's byte into `$D01B` for the hardware sprite it
+  lands on, so the soldier, his bullets and his grenade go behind canopies
+  one by one. The teardown did not measure the picture; the recipe here
+  measured the mechanism.
+- Bit 2 kills, with a death cause of its own ("terrain", apart from
+  "shot"). Walking up into one of area 1's water or trench characters
+  killed the player five times at the same row. Area 0's table has no bit-2
+  character; area 1 has 20 and area 3 has 31.
+- The map address ignores the fine scroll, as in the pitfall above.
+- Shots end on solid terrain. An enemy bullet becomes an impact at age 70
+  ticks (22 cases), or earlier on solid terrain, but never before age 22.
+  The player's grenade ignores solid terrain.
+
+### Recipes
+
+- `recipes/kickassembler/char-attribute-flags.md` — a map with a canopy, a bush with the canopy's glyph and no flags, walls and a hazard; three scripted walkers stop, go behind and die, the event frames and cycles printed and the hidden pixels counted, PAL and NTSC; `:mc=1` repeats it in multicolour text, where the canopy's `$D022` pixels show the sprite
+
 ## flip_screen_rooms — A world of room records, redrawn whole at every edge
 
 **Complexity:** medium
@@ -263,7 +416,7 @@ check, was not timed separately.
 **Complexity:** low
 **Cost:** cycles_per_frame=380
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-object-pool (eight live slots, screen blanked)
+**Cost measured on:** oscar64-object-pool (eight live slots, screen blanked; the pool's own tick only, a Y add, an off-screen test and a timer a slot; enemy behaviour is not in it, see Cycle budget)
 
 **Why.** A game spawns and kills enemies, bullets and explosions all the
 time, and it has no heap worth the name: eight sprites, a few hundred
@@ -297,12 +450,202 @@ hundred calls: the update pass over eight active slots costs 380 cycles,
 over none 106; a scan allocation costs 27 with slot 0 free, 64 with slot
 3 free and 124 when the pool is full and refuses; a free-list pop and
 push together cost 44; a spawn plus despawn 146. The Cost line carries
-the update pass with all eight slots live, which is the per-frame figure.
+the update pass with all eight slots live: 47.5 cycles a live slot for
+one Y add, an off-screen test and a timer countdown. It is the pool's
+bookkeeping, not what the objects do; an earlier version of this page
+called it the per-frame figure without saying so, and a budget read it
+as the cost of eight enemies.
+
+What behaviour costs, measured in a game: in the run-and-gun starter
+(`templates/run-and-gun/`, Oscar64 -O2, VICE x64sc 3.10) an enemy aims
+at the player, walks with an `A_BLOCK` test ahead of it
+(`char_attribute_flags`), fires on a timer and is culled off screen. The
+VICE monitor's profiler (`prof`) put its `objects_update` at 3,118
+cycles a call with 4.7 objects alive on average and every object
+thinking every frame: about 660 cycles an object (arithmetic), of which
+the terrain lookup was about 60. That is the like-for-like per-object
+figure: one call, one run. With each object thinking on alternate
+frames and the other half only following the scrolled ground, the three
+object calls together (`objects_rows` + `objects_update` +
+`objects_draw`, so the sprite writes too) took 2,288 cycles a logic
+frame on average and 4,221 at most on PAL (2,325 and 4,436 on NTSC).
+That is wall time over 200 logic frames with up to 8 alive, CIA1 timer
+B around the calls, interrupts that landed inside counted
+(`templates/run-and-gun/PLAN.md`, `make enemies`). The 4.7 alive comes
+from the `prof` run, not this one; an earlier version of this paragraph
+divided 2,288 by it to get 490 cycles an object, ten times the 47.5
+above, which mixed two runs and counted the draw and row calls as
+behaviour. Budget a game's enemies from the 2,288 / 4,221 whole-module
+figure, or from 660 an object plus the draw; add the pool's own 380
+only if the enemy update does not already walk the slots.
 
 ### Recipes
 
 - `recipes/oscar64/object-pool.md` — eight slots, scan allocator, wave table, scripted spawns and despawns checked against a Python checksum, with the cycle harness on screen
 - `recipes/oscar64/platformer-scaffold.md` — six enemy slots in parallel arrays fed by a wave table and an LFSR, despawn off screen, inside a whole single-file platformer
+
+## grenade_lob — A thrown grenade: fixed flight, a height animation, then a box blast around the landing point
+
+**Complexity:** low
+**Region:** both
+**Cost:** cycles_per_frame=956
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-grenade-lob (worst tick: the first blast tick, 12 live targets of which 7 die, each kill a colour write; run from line 251, below the display)
+**Claims:** none
+**Claims basis:** derived-listing
+
+**Why.** A shooter wants a second weapon that clears a crowd or reaches
+behind cover: the grenade. It must be cheap. A true ballistic arc needs a
+height coordinate, gravity and a landing test against terrain. A top-down
+or vertically scrolled game can fake all of that: the grenade flies a
+fixed distance, its sprite changes size to suggest height, and when it
+lands it becomes a blast that kills everything inside a box. The whole
+object is a velocity, an age counter and one box test a frame.
+
+**How.**
+
+1. **Throw.** On the throw input, if a grenade is left and its slot is
+   free, take the slot, place the object at the thrower, set a fixed
+   velocity and age 0, and decrement the count.
+2. **Flight.** Each frame add the velocity and increment the age. Pick
+   the sprite shape from a table indexed by age: small, larger, largest,
+   larger, small reads as a rise and fall. Test nothing: a lob goes over
+   walls and enemies.
+3. **Land.** At a fixed age the object becomes a blast at the same
+   position. Work out the box's corner once: blast X − (L − 1) and blast
+   Y − (M − 1), for a box −L < dx ≤ +L, −M < dy ≤ +M.
+4. **Blast.** For a fixed number of frames, test every live target that
+   can die to a blast. Subtract the corner from the target: it is inside
+   when the X difference is 0 to 2L − 1 and the Y difference 0 to
+   2M − 1. Kill it, mark it, and keep testing the rest.
+5. **Free.** At the end of the blast free the slot.
+
+**Why it works.** With a fixed velocity and a fixed flight time, the
+landing point is known at the throw, so the flight needs no physics
+and no collision. Moving the box to a corner turns the two-sided test
+per axis into one subtraction and one unsigned compare: a target left
+of the box gives a negative difference, which is a large unsigned one,
+and fails the same compare as a target to the right. Neither edge is
+computed on its own, so neither can wrap. X on the C64 runs past 255
+(playfield 0-319, sprite X 0-511), so the X subtraction is 16 bits and
+a non-zero high byte is a miss. Y can stay 8 bits when every Y is 0 to
+199: a difference plus M − 1 then cannot wrap into 0 to 2M − 1.
+
+Measured in `recipes/kickassembler/grenade-lob.md` (VICE x64sc 3.10, PAL
+and NTSC): with L = 18 and M = 22, twelve targets on and beside each
+edge die exactly inside −17 to +18 in dx and −21 to +22 in dy, read from
+the screenshot, and a target at X 259 dies to a blast at X 250, across
+X 256. The same targets under 8-bit bounds (X − 18 and X + 18 computed in
+one byte, high bytes required equal) all survive: X + 18 = 268 wraps to
+12.
+
+**Variations.**
+
+- **Aimed lob.** Give the throw a velocity from the thrower-to-target
+  vector, scaled down by a shift, and add a Y velocity that starts
+  negative and rises by one every few frames. The height is then folded
+  into screen Y as an arc, and the range depends on the distance. Commando's
+  enemy grenades do this (below).
+- **Separate height.** Keep a height byte with its own velocity and
+  gravity, draw the grenade at Y − height and a shadow sprite at Y. Land
+  when height reaches 0. It costs a second sprite and a few more cycles.
+- **Blast on contact.** End the flight early when the grenade's own box
+  meets a target or a blocking cell (`tile_grid_collision`); a lob that
+  should go over walls must not do this. The run-and-gun starter does it
+  for its enemy grenade: from age 16 the grenade bursts on an `A_BLOCK`
+  cell (`char_attribute_flags`), tested every second tick, and otherwise
+  at age 80 (`templates/run-and-gun/src/objects.c`, `nade_tick`, read
+  from the source). That rule is the starter's brief, not Commando's (its
+  enemy grenade ignores walls, below). The starter's enemy check shows
+  the count of wall bursts on screen but does not grade it, so the rule
+  is not verified in a run.
+
+**Cycle budget.** Measured in the recipe with CIA2 timer A, on PAL and
+NTSC alike: a flight tick is at most 84 cycles; the worst tick, the first
+blast tick with 12 live targets of which 7 die, is 956. That total
+splits exactly by instruction count (arithmetic, matching the
+measurement): 62 of dispatch, bookkeeping and call, then per target 12
+when already dead, 32 to 49 for a miss, and 99 for a kill, 51 of which
+are the recipe's colour write. A game's kill does more (score, an
+explosion object), so budget its own kill cost on top of up to 48 per
+target tested.
+
+**When not to use it.**
+
+- **The projectile must stop at walls or bounce.** Then it needs a
+  collision test on every flight frame, as a bullet does.
+- **The game is side-on.** A side view shows height directly; use a real
+  Y velocity with gravity and a landing test against the ground.
+- **The blast must be round.** A box kills in its corners, about 25
+  pixels out on the diagonal at L = 18 (arithmetic). A round blast needs
+  dx² + dy² from a table of squares and a 16-bit compare per target
+  (not measured here).
+
+**Pitfalls.**
+
+- **8-bit bounds.** Computing X − L and X + L in one byte fails near
+  both ends: above X 255 − L the upper bound wraps small and nothing is
+  inside, below X L the lower bound wraps large. Requiring equal high
+  bytes as well misses every target across X 256. Use the corner form
+  with a 16-bit X, or clamp the bounds to 0 and 255 inside one high-byte
+  page and test the neighbouring page too.
+- **Testing the blast once.** A blast tested only on its first frame
+  misses a target that walks in during the blast. Test every blast frame
+  and mark kills so a target dies once.
+- **The edges.** `−L < d ≤ +L` is 2L values, not 2L + 1; the corner is
+  X − (L − 1), not X − L. Place a target on each edge and on each side
+  of it in a test, as the recipe does; off by one shows as a box one
+  pixel wide on one side.
+- **The sprite's X past 255.** The grenade's sprite must carry bit 8 into
+  `$D010` on every move (`sprite_x_high_bit_wrong_register`,
+  `pitfalls/sprite.md`).
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (rung 1; the
+teardown's object, flow and audio findings). The player's grenade is
+thrown on CIA1 port B bit 4 (`$DC01`: the space bar or joystick port 1
+fire), apart from the gun on port 2. It needs a grenade in hand and the
+fourth shot slot free: the grenade shares that slot with the gun, so it
+cannot be thrown while the fourth bullet flies, and a held key throws
+again as soon as the slot frees. The count is BCD, five per life, and
+topped back up to five on every respawn. The grenade always flies
+straight up at 2 pixels a frame whatever the aim, 39 frames and 78
+pixels, over solid terrain, with its sprite frame changing on the way.
+It then becomes a still blast for 20 frames that kills an object when
+−18 < dx ≤ +18 and −22 < dy ≤ +22 of it (hits at −17, +18, −21 and +22;
+misses at −18, +19, −22 and +23). A per-type flag decides what can die to
+it: enemy bullets and some other objects do not. One sound effect, 32
+frames long, covers throw and blast; the frame that starts it was the
+music driver's most expensive frame in play, 1,558 cycles.
+
+Enemy grenades are aimed lobs: vx = trunc(dx / 64) and vy = trunc(dy /
+64) − 2, with dx, dy the player minus the launch point, and vy rising by
+1 every 16 ticks (−2, −1, 0, +1, +2) (101 of 101 throws). At age 80 the
+grenade becomes an explosion for 20 ticks, which kills the player by
+touch; the grenade in flight does not. The Y steps sum to zero over 80
+ticks, so a throw lands about 80 × trunc(d / 64) pixels away on each axis:
+the aim comes in 80-pixel steps, and a player within 63 pixels on an axis
+gets no offset on it (arithmetic from the measured rule, rung 3).
+
+An enemy grenade flies over walls, as the player's does. Its handler,
+`$2EBF` (object type `$0B` in the dispatch table at `$24F2`), counts the
+age, picks the sprite frame from age / 16, adds 1 to vy every 16 ticks
+and turns the object into an explosion at age 80; it reads no terrain.
+The enemy bullet's handler, `$2F37` (type `$08`), does: from age 22 it
+calls `$28A3` for the cell under the bullet, reads that character's
+attribute, and bit 0 ends the bullet. Read from the bytes of a play-time
+RAM dump of the maintainer's copy (rung 1 for the bytes). That a grenade
+crosses a solid cell is read from the code, not watched in play.
+
+Its box tests compare X in 8 bits with the high bytes required equal.
+Measured on the bullet test: a bullet at X 250 missed a target at X 255,
+because X + 10 wrapped to 4, and a target at X 260 missed because the
+high bytes differed. The blast box was not measured at the wrap.
+
+### Recipes
+
+- `recipes/kickassembler/grenade-lob.md` — a straight-up throw with a three-size height animation, a 20-frame blast against twelve targets on and beside each box edge across X 256, the 16-bit test against an 8-bit one, tick cycles on screen, PAL and NTSC
 
 ## actor_activation_window — Level-placed actors that wake near the view and return to the level table
 
@@ -654,8 +997,11 @@ the typical frame. It covers the director, the spawner, the spawn into
 `object_pool`'s slots and the enemy updates, so the Cost includes line
 names `object_pool` and a plan that lists both counts the pool once. It
 leaves out the scroll advance, the sprite writes, and `gone()` with its end-of-wave accounting,
-which runs only when an enemy leaves. Code layout moves these figures by
-a few cycles. Hand-written assembly would cost less; the C figures are an upper
+which runs only when an enemy leaves. The 146 per enemy is a path
+interpreter with no terrain test and no aim; enemies that aim at the
+player and test the map as they walk cost about 660 cycles each
+thinking frame in Oscar64 C (`object_pool`, Cycle budget). Code layout
+moves these figures by a few cycles. Hand-written assembly would cost less; the C figures are an upper
 reference.
 
 On NTSC the frame rate is 60 Hz, so a scroll that moves one position a
@@ -675,6 +1021,142 @@ the step is scaled (arithmetic from 59.826 / 50.125 Hz).
   (disassembly of a commercial game; facts only, not read here).
 - https://github.com/C64CD/Death-Weapon-C64 `includes/levels.asm` (not
   read here).
+
+## area_end_gate_wave — The area end: the scroll stops, a counted wave comes out, and when it is cleared a script walks the player into the exit
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** (none)
+**Requires:** object_pool
+**Cost:** cycles_per_frame=599, cycles_per_frame_typical=290
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-area-end-gate-wave (worst tick of 435 frames, a frame with spawns into a six-slot pool; typical is the most common wave frame; run from line 251, in the lower border, no badline inside; sprite register writes not included)
+**Cost includes:** object_pool, lfsr_random
+**Claims:** none
+**Claims basis:** derived-listing
+
+**Why.** A scrolling level needs an end that the player earns and that
+the code can detect in one place. Ending on the last map row alone gives
+nothing to do at the end; ending on a timer ignores the player. This
+pattern stops the scroll at the map's end, releases a fixed number of
+enemies, and ends the area only when all of them have come out and none
+is alive. It then takes the controls and walks the player into the exit,
+so the end is a visible event with one trigger: the player reaching a
+fixed spot.
+
+**How.**
+
+1. **The stop.** The scroll routine stops when the map row reaches the
+   end (`threshold_scroll_v` stops there by itself). From that frame the
+   gate phase runs; before it, no wave object spawns.
+2. **Two counters.** `tospawn` starts at N at the area start, and again
+   at every respawn if a death restarts the wave. `alive` is recounted
+   from the pool slots every frame, not incremented and decremented.
+3. **The spawner.** Each frame, each free pool slot rolls a random
+   number while `tospawn` is above 0 and spawns when the roll passes a
+   mask (1 in 32 in the recipe). A spawn decrements `tospawn`. The rate
+   therefore grows with the free slots: a full pool stalls the wave.
+4. **The cleared check.** Map ended, `tospawn` = 0 and `alive` = 0, all
+   three. Then set a walk flag and stop reading the stick.
+5. **The walk.** While the flag is set, move the player one step a frame
+   along to the exit's column, then up to its row. Skip the hit test.
+6. **The end.** On arrival: the bonus, the area counter, the area-end
+   tune, then the level transition (`level_transition_sequence` in
+   `game-design/game-structure.md`).
+
+**Why it works.** The end has one trigger, the player's position, and
+the code that reaches it runs only after the cleared check. Recounting
+`alive` from the slots is right however a slot was freed: shot, left the
+screen, or overwritten by another spawn. A signed counter adjusted in
+each of those paths drifts when one path forgets. The walk is data (a
+target X, then a target Y), so a new exit is two bytes.
+
+**The recipe's measurement.** In
+`recipes/kickassembler/area-end-gate-wave.md`, identical on PAL and NTSC
+in VICE x64sc 3.10: the scroll stops on frame 63, the 12th and last
+object spawns on frame 226, the wave is cleared on frame 266 (the last
+spawn plus its 40-frame life), the walk reaches the gate's column on
+frame 315 (48 frames at 1 pixel a frame) and the area ends on frame 435
+(120 more). A Python model of the same LFSR and rules gives every frame
+and the spawn order. The slowest tick, a frame with spawns, costs 599
+cycles; the most common wave frame costs 290, a walk frame 243 to 294
+(the arrival frame, with the BCD bonus) and a scroll frame 69 to 92
+(per-frame figures from a logging build of the same code, which moved
+the worst frame by 5 cycles).
+
+**When not to use it.** An area that ends on a boss: one object's death
+is the trigger, and a counted wave adds nothing. A game with no map end
+(a looping or endless scroll). A game where enemies can be left alive off
+screen: `alive` then never reaches 0; free those slots when they leave.
+
+**Pitfalls.**
+
+- **The check without `tospawn`.** Before the first spawn `alive` is
+  already 0. With `tospawn` left out of the check, the recipe cleared on
+  frame 63, the frame the scroll stopped, and the area ended on frame
+  232 with 2 of the 12 objects still alive (measured in VICE).
+- **An unreserved pool.** Other objects in the pool slow the wave:
+  Commando's gate gap was 30 frames between spawns with 3.3 free slots on
+  average and 84 with 1.4 (below). Reserve slots for the wave, or accept
+  a longer end.
+- **A walk target never met.** A walk of 2 pixels a frame from an odd
+  start never equals an even target; compare with a clamp, or step by 1
+  (arithmetic).
+- **Input or collision left on.** A bullet still in flight kills the
+  player during the walk, and a held stick fights the script. Commando
+  skips its hit test for the whole walk.
+- **The gathered wave is the game's worst frame, not the wave's tick.**
+  The 599 above is the wave logic alone, with plain sprites. In a game the
+  wave's riflemen walk to the player's column and stop above him, so a full
+  pool gathers in one band of lines: more than eight sprites a line for the
+  multiplexer, and every object's logic running over lines with sprite
+  DMA. Measured in the run-and-gun starter (`templates/run-and-gun`, `make
+  fullpool`: a wave of 12 into 11 slots, VICE x64sc 3.10, the harness
+  meter's logic frame with its IRQs): the worst frame was 14,261 cycles on
+  NTSC and lost a frame, until a thinking object whose tick would start
+  after line 95 only followed the ground that frame (objects.c `OBJ_LATE`);
+  then 13,568 worst and 11,945 typical on NTSC, 13,691 and 11,517 on PAL,
+  no frame lost (60 ticks skipped on NTSC, none on PAL). Budget the gathered
+  wave, and give the objects' logic a deadline.
+- **A death during the wave.** Decide whether the wave restarts. Commando
+  resets it to 20 at every respawn, and a death at the gate restarts the
+  player 19 rows back (measured).
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (PAL C64C). When
+the map row counter reaches 0 the scroll stops. The game keeps two
+counters, soldiers still to come out (20 at each area start and each
+respawn) and soldiers alive (recounted every frame by the enemy update).
+Each free-slot visit has about a 1-in-128 chance to spawn a soldier: the
+mean gap was 30 frames with 3.3 free slots and 84 with 1.4, against 38
+and 94 predicted from 1 in 128 (rung 3); at most 5 and 7 were alive at
+once. In the first area the soldiers appear at Y 60, X 140-202; in the
+second, half come from four fixed side positions instead (read from the
+code). When both counters are 0 the game stops reading the stick, skips
+the hit test and walks the player to X $AF, then up to Y $5A; the walk
+took 44 frames in the first area. Reaching Y $5A
+ends the area: the area-end jingle (song 2; the in-game tune restarted
+356 frames later with the end forced), a bonus of 1,400 points (score
+010000 to 011400 on the walk; an earlier teardown note said 2,000, which
+the kill-verified run refuted), then a message screen and the next area.
+The areas cycle 0, 1, 3; the last adds a fortress scene of 255 frames
+before the message. Difficulty per area is only the enemy fire mask: an
+enemy fires when its timer AND the mask is 0, with masks $3F, $1F and $0F
+for the three areas, so at most once every 64, 32 or 16 ticks
+(arithmetic from the masks). Facts only; no code, graphics or map data are taken.
+
+**Related.** `wave_director` above keys waves to the scroll and tracks
+each wave's kills; this pattern is the one wave that has no scroll left.
+`object_pool` holds the objects, `lfsr_random` makes a seeded spawn
+order, `threshold_scroll_v` (`techniques/scroll.md`) supplies the stop,
+and `level_transition_sequence` (`game-design/game-structure.md`) is what
+follows the arrival.
+
+### Recipes
+
+- `recipes/kickassembler/area-end-gate-wave.md` — a map-row counter that stops, 12 objects from a seeded LFSR into six slots, the two-counter cleared check, a walk to X then Y into a gap in a wall, and each phase's frame printed, PAL and NTSC
 
 ## slope_collision — Slopes, ground snap and drop-through platforms from a per-cell attribute byte
 
@@ -895,6 +1377,139 @@ upper reference; a shift loop in assembly costs less (not measured here).
   `MAX_LVLOBJ` = 96, `MAX_PLOTBITS` = 16, `MAX_SAVEACT` = 24),
   `script.s` (`DecodeBit`, `SetPlotBit`), `script00.s` (new-game fill).
   Read for facts; no code is taken from it.
+
+---
+
+## checkpoint_respawn — Checkpoint rows per area: after a death restart at the nearest checkpoint behind, clear the enemies, refill the consumables
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** (none)
+**Requires:** object_pool
+**Cost:** cycles_per_frame=743
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-checkpoint-respawn (worst of three respawns, one call after a death: restart row from 5 checkpoints, 8-slot pool freed, a 26-event list scanned from its start, 4 events pre-spawned, grenades topped up; CIA2 timers, screen blanked; the map redraw at the restart row is not included)
+**Claims:** none
+**Claims basis:** derived-listing
+
+**Why.** A scrolling level that restarts from its first row after every
+death makes the player replay minutes to reach the hard part again. One
+that restarts where the player died puts them back among the bullets that
+killed them. A checkpoint table is the middle course: a few rows per area
+that the player falls back to, with the screen emptied and the
+consumables made good. It costs a handful of bytes per area and one call
+per death.
+
+**How.** The recipe's level counts its map row down from 160 as the
+player advances, so a row behind the player is a larger number.
+
+1. **The checkpoint table.** Per area, a short ascending list of rows; its
+   last entry is the area's start row. The recipe's is 20, 56, 92, 128,
+   160.
+2. **Pick the restart row.** The first entry greater than or equal to the
+   current row. That is the nearest checkpoint behind the player, or the
+   row the player is on when it is a checkpoint. The recipe's deaths at
+   rows 110, 40 and 20 restarted at 128, 56 and 20. With a row that counts
+   up, take the last entry less than or equal to the row instead.
+3. **Clear the object pool.** Free every slot: enemies, their shots,
+   explosions, pickups (`object_pool`).
+4. **Re-spawn the visible window.** The spawn list is sorted by row and
+   fires an event when its row becomes the current row (`wave_director`,
+   `actor_activation_window`). At the restart row, the events already on
+   screen fired long ago. Scan the list from its start: skip events below
+   the window (row > restart + window), spawn every event with a row in
+   [restart, restart + window], and leave the cursor on the first event
+   with a row below the restart row. The recipe's window is 22 rows. After
+   the death at 110 it spawned the events at rows 147, 141, 136 and 130,
+   and the next event to fire was 124.
+5. **Top up the consumables.** Raise the grenade count to its start value
+   if it is lower; never lower it. The recipe's counts went 2 to 5, 4 to
+   5, and 7 stayed 7.
+6. **Reset the per-restart counters** the level uses: the death state, the
+   player's position, and any quota the area keeps (a gate wave count).
+   Score and lives are not reset; the death took the life.
+
+**Why it works.** The spawn list is already the level's only record of
+what lives where, so the restart needs no saved copy of the pool: the
+pre-spawn scan rebuilds the screen from the list, as it looked when the
+restart row first came into view. Everything between the restart row and
+the death row is replayed, because the cursor sits before it again.
+Everything behind the restart row stays gone, because the scan skips it.
+
+**Cycle budget.** Measured in VICE x64sc 3.10 with CIA2 timers A and B on
+the recipe, screen blanked, identical on PAL and NTSC: 549, 743 and 740
+cycles for the three respawns. The cost grows with the events skipped:
+the scan starts at event 0 every time, and the death at 40 skipped 14 of
+the 26. A long list can keep a second column in the checkpoint table, the
+index of the first event inside each checkpoint's window, and start the
+scan there (not measured here). Redrawing the visible map at the restart
+row costs far more than the scan. A game that already scrolls with
+`row_map_redraw` needs neither a blank screen nor a death sequence to hide
+it: the restart is one more redraw frame. Commit the new view with YSCROLL
+0, start the copy on line 64, and the old view stays on screen until the
+frame IRQ applies the new one, because the copy stays behind the beam
+(`row_map_redraw`, the start rule). Measured in the run-and-gun starter
+(`templates/run-and-gun`, `make death`, VICE x64sc 3.10): the restart's
+logic (pool cleared, the window's events re-spawned, soldier and weapons
+reset, grenades topped up) 1,480 cycles on PAL and NTSC, the redraw's
+smallest lead 231 lines PAL and 189 NTSC, no frame lost over three deaths.
+An earlier version of this paragraph said the redraw must be hidden behind
+the death sequence or a blank screen.
+
+**When not to use it.**
+
+- **A flip-screen game.** The room is the checkpoint: restart the room
+  with its actors (`flip_screen_rooms`).
+- **A score-attack shooter that continues where the player died.** It
+  keeps the scroll going and gives a few seconds of invulnerability
+  instead of sending the player back.
+- **Levels the player can walk back into.** What the player changed must
+  outlive the restart too: keep it in `world_state_bits`, and have the
+  pre-spawn skip events whose bit is set.
+
+**Pitfalls.**
+
+- **The wrong direction.** With a row that counts down, "behind" is the
+  larger number; taking the last entry less than or equal to the row
+  sends the player ahead, past the stretch that killed them.
+- **The cursor left where the player died.** The events between the
+  restart row and the death row never fire again, so the replayed stretch
+  is empty. Setting the cursor to the restart row without the pre-spawn
+  scan leaves the first screen empty instead.
+- **A pool that is not cleared.** A bullet in flight at the death is still
+  there on the first frame of the restart. With no invulnerability it
+  kills the player again at once.
+- **Resetting a consumable instead of topping it up.** Setting grenades to
+  5 takes away the extras the player picked up; the recipe's third death
+  keeps 7.
+- **A table with no entry at or behind the death row.** The scan runs off
+  the end. Make the area's start row the last entry, as the recipe does;
+  it also falls back to the last entry if the scan fails.
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (rung 1; the
+teardown of the game's flow and scroll). A hit by an enemy object sets
+the death state to 1, and deadly terrain sets it to 2. The death runs 80
+frames (1,549,165 cycles from the hit to the respawn, 78.8 frames), and
+the world keeps moving meanwhile. The map row counts down toward the area
+end. Each area has a 5-entry ascending checkpoint list; area 0's is rows
+19, 61, 97, 131 and 175, where 175 is the area's first row. The restart
+row is the first entry greater than or equal to the current row: a death
+at row 140 restarted at 175, one at 65 at 97, one at row 0 at 19. All 16
+object records are cleared, and the events with rows in [row, row + 22]
+are pre-spawned at their screen positions. Grenades are set to 5 if
+fewer. The gate soldier count goes back to 20, and the enemy fire rate is
+set from the area's table. The respawn pass takes about 60,000 cycles
+over 3 frames, the game's only multi-frame pass. There is no
+invulnerability after a respawn: read from the code (the collision check
+runs from the first frame), not measured; clearing the pool does the same
+job.
+
+### Recipes
+
+- `recipes/kickassembler/checkpoint-respawn.md` — three deaths on a 160-row level, restart rows, the pool before and after, the next event, grenades topped up, and the respawn's cycles, checked against a Python model; PAL and NTSC
 
 ---
 

@@ -1,0 +1,15 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "verdict line", "type": "text", "row": 0, "col": 1, "text": "RESULT 01 PASS", "dy": 5 },
+    { "name": "the wave began on play frame 7, as the scroll stopped at map y 0; 6 soldiers counted out, all spawned, 6 alive at most", "type": "text", "row": 1, "col": 1, "text": "WAVE 007 N 06 SP 06 PK 06", "dy": 5 },
+    { "name": "6 riflemen shot, none by a blast; 600 points and the 2,000 bonus", "type": "text", "row": 3, "col": 1, "text": "K 00 06 00 00 SC 002600", "dy": 5 },
+    { "name": "area 1: the map from row 75 again, earth medium grey (12), highlights light grey (15), the soldier at his start", "type": "text", "row": 4, "col": 1, "text": "AREA 1 TOP 75 BG 12 MC 15 X 168 Y 160", "dy": 5 },
+    { "name": "frame meter, the first 200 logic frames", "type": "meter", "row": 7, "col": 1, "frames": 200, "dy": 5 },
+    { "name": "area 1's earth: map row 91, columns 0-5 (floor cells) on lines 176-183 (view top 75, YSCROLL 0: map y 607 on line 55), medium grey", "type": "rect", "colour": 12, "vic_x": 24, "line": 176, "width": 48, "height": 8 },
+    { "name": "the canopy of map rows 84-86, columns 30-33 (lines 120-143): black, green and light grey only, no light green (area 0's highlight)", "type": "ink", "vic_x": 264, "line": 120, "width": 32, "height": 24, "background": 12, "min": 200, "colours": [0, 5, 15] },
+    { "name": "panel: the score kept into area 1", "type": "text", "row": 21, "col": 2, "text": "SCORE 002600", "dy": 4 },
+    { "name": "panel: no life lost", "type": "text", "row": 23, "col": 2, "text": "LIVES 3", "dy": 4 },
+    { "name": "the invalid-mode band still black, lines 214-222", "type": "rect", "colour": 0, "vic_x": 24, "line": 214, "width": 320, "height": 9 }
+  ]
+}

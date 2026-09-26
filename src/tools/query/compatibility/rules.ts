@@ -41,6 +41,11 @@ function mergeSeparated(list: BandSeparated[], s: BandSeparated | null): void {
   for (const rule of s.rules) if (!hit.rules.includes(rule)) hit.rules.push(rule);
 }
 
+/** x's Cost figure holds y's work (**Cost includes:**, run-and-gun gap 4): y runs inside x. */
+function holds(all: CompatibilityFacts, x: string, y: string): boolean {
+  return all.includes?.get(x)?.includes(y) ?? false;
+}
+
 class RuleRunner {
   readonly separated: BandSeparated[] = [];
   private readonly all: CompatibilityFacts;
@@ -50,16 +55,30 @@ class RuleRunner {
     this.closure = closure;
   }
   private named(name: string): Named {
-    return { name, facts: factsOf(this.all, name), requires: new Set(this.closure.closureOf(name)) };
+    const inside = this.all.techniques.filter((t) => holds(this.all, name, t));
+    return {
+      name,
+      facts: factsOf(this.all, name),
+      requires: new Set([...this.closure.closureOf(name), ...inside]),
+    };
   }
   run(a: string, b: string): HardRuleResult["hits"] {
     const r = hardRules(this.named(a), this.named(b));
     mergeSeparated(this.separated, r.separated);
     return r.hits;
   }
-  private side(name: string): ClaimSide {
+  private ownSide(name: string): ClaimSide {
     const F = factsOf(this.all, name);
     return { name, claims: F.claims, band: F.band };
+  }
+  /**
+   * A technique's claims as the unit rules see them. One whose work is
+   * inside a named technique's Cost figure holds that technique's units
+   * through it (absorbInto), so a third technique meets them once.
+   */
+  private side(name: string): ClaimSide {
+    const host = this.all.techniques.find((t) => t !== name && holds(this.all, t, name));
+    return host ? absorbInto(this.ownSide(name), this.ownSide(host)) : this.ownSide(name);
   }
   /**
    * The unit-claim rules (schema 25). `rel` says which of the pair requires
@@ -111,6 +130,26 @@ class RuleRunner {
 
 const NO_RELATION: PairRelation = { aRequiresB: false, bRequiresA: false };
 
+// Port registers that are wholly one claimable unit (run-and-gun gap 30).
+const REGISTER_UNIT: ReadonlyMap<string, string> = new Map([
+  ["DC00", "cia1_port_a"],
+  ["DC01", "cia1_port_b"],
+]);
+
+/** Only reads its register's unit, by its Claims line; unknown claims are not read-only. */
+function readsOnly(F: ReturnType<typeof factsOf>, unit: string): boolean {
+  const modes = F.claims.filter((c) => c.unit === unit).map((c) => c.mode);
+  return modes.length > 0 && modes.every((m) => m === "reads");
+}
+
+/** The shared registers left once those both sides only read are dropped: two readers write nothing. */
+function writtenShared(all: CompatibilityFacts, a: string, b: string, regs: readonly string[]): string[] {
+  return regs.filter((r) => {
+    const unit = REGISTER_UNIT.get(r);
+    return !(unit && readsOnly(factsOf(all, a), unit) && readsOnly(factsOf(all, b), unit));
+  });
+}
+
 /**
  * Each input pair. Named techniques are checked as named, even when one
  * requires the other: the caller put both on the list, and the resolution
@@ -127,9 +166,10 @@ function inputPairConflicts(
   for (const { i, j, a, b } of inputPairs(all.techniques)) {
     // A named technique and its own prerequisite hold units together by
     // design; the unit rules are told which one requires the other.
+    // A Cost includes line says the same of the pair: one runs inside the other.
     const rel = {
-      aRequiresB: closure.closureOf(a).includes(b),
-      bRequiresA: closure.closureOf(b).includes(a),
+      aRequiresB: closure.closureOf(a).includes(b) || holds(all, a, b),
+      bRequiresA: closure.closureOf(b).includes(a) || holds(all, b, a),
     };
     for (const h of rules.units(a, b, rel)) conflicts.push({ a, b, ...h });
     for (const h of rules.run(a, b)) {
@@ -143,7 +183,7 @@ function inputPairConflicts(
         resolution: h.resolution,
       });
     }
-    const regs = all.sharedRegisters.get(pairKey(i, j)) ?? [];
+    const regs = writtenShared(all, a, b, all.sharedRegisters.get(pairKey(i, j)) ?? []);
     if (regs.length > 0) {
       conflicts.push({
         a,

@@ -42,6 +42,7 @@ const COST_KEYS = [
   "zp_bytes",
   "irq_slots",
   "sprites_per_line",
+  "every_n_frames",
 ] as const;
 
 export interface TechniqueNode {

@@ -66,7 +66,8 @@ function contributorsOf(
 }
 
 function cyclesVerdict(p: PhaseBudget): Budget["cycles_verdict"] {
-  if (p.contributors.length === 0 && p.excluded.length === 0 && p.unknown.length === 0) return "no_data";
+  const nothing = p.contributors.length + p.occasional.length + p.excluded.length + p.unknown.length;
+  if (nothing === 0) return "no_data";
   if (p.verdict === "fits") return "under";
   return p.verdict;
 }
@@ -103,6 +104,7 @@ export function computeBudget(techs: BudgetInput[], regionHint?: Region): Budget
     frame: frame_cycles,
     members: [],
     contributors: [],
+    occasional: [],
     excluded: [],
     unknown: [],
     not_found: [],

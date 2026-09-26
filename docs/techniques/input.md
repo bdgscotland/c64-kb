@@ -126,6 +126,121 @@ autopilot supplies the byte. The page had no figure before #37.
 
 ---
 
+## facing_turn_step — Sixteen-direction aim that turns one step per frame toward the stick
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DC00
+**Claims:** cia1_port_a (reads)
+**Claims basis:** derived-listing
+**Cost:** cycles_per_frame=93, bytes_code=71, bytes_data=48
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+**Cost measured on:** kickassembler-facing-turn-step (worst frame of 40, port read, decode, eight-way move and turn, jsr and rts included)
+
+### Why
+
+A stick has eight directions. A gun that snaps to the stick has eight
+aims, and it swings 180 degrees in one frame. Keeping a facing apart from
+the stick, on a circle of sixteen, and turning it one step per frame
+toward the stick gives sixteen aims, a gun that swings visibly, and shots
+along the in-between angles while it turns. The player still moves the
+way the stick points, at once.
+
+### How
+
+Hold two values: `target`, the stick direction, and `facing`, 0-15, 22.5
+degrees a step (0 up, 4 right, 8 down, 12 left). Once per frame:
+
+1. Read the port, keep the four direction bits as 1 = pressed
+   (`EOR #$FF`, `AND #$0F`), and look the nibble up in three 16-byte
+   tables: the target facing (the even values 0-14, `$FF` for centred or
+   an impossible pair), the X step and the Y step.
+2. Move by the steps.
+3. If the target is `$FF`, keep the facing. Otherwise
+   `d = (target − facing) AND 15` is the clockwise distance. 0: arrived.
+   1-7: add 1. 9-15: subtract 1. 8: a tie; pick one way. Mask the facing
+   with `AND #15`, which wraps it both ways with no compare.
+
+The facing then indexes whatever needs an angle: a 16-entry bullet
+velocity table (its values are in `aimed_shot_octant`,
+`techniques/maths.md`; this page's recipe has only the eight-way walk
+steps), a gun sprite frame, or (halved) an eight-direction body frame.
+A 180-degree turn takes 8 frames, a 90-degree turn 4, and the facing
+never lags the stick by more than 8 frames.
+
+In `recipes/kickassembler/facing-turn-step.md` the frame's work (port
+read, decode, move, turn) took at most 93 cycles, `jsr` and `rts`
+included, over a 40-frame stick script, measured with CIA2 timer A in
+VICE x64sc 3.10, the same on PAL and NTSC. Its plot shows each step: a
+reversal from 0 to 8 arrives on the eighth frame, a turn from 8 to 4 goes
+anticlockwise in 4 frames, and a turn from 4 to 14 wraps through 0 in 6.
+
+### Why it works
+
+Sixteen is a power of two, so the circle is the low four bits of a byte:
+subtraction and `AND #15` do the modular arithmetic. Putting the eight
+stick directions on the even facings makes the target and the facing the
+same unit, so the distance is one subtraction. The step is one unit a
+frame whatever the distance, so the turn rate is fixed and needs no
+table.
+
+### Variations
+
+**Faster turn.** Two steps a frame (a 180 in 4 frames), or a step every
+second frame for a heavy gun.
+
+**Byte angle.** Keep the facing in 256 units, as `atan2_8bit`
+(`techniques/maths.md`) returns, and step it by 16 a frame; the same
+subtraction without the mask gives a signed distance. An enemy turret
+turning toward the player uses its `atan2_8bit` angle as the target.
+
+**Tie rule.** Break the 180-degree tie toward the last turn's direction
+instead of always clockwise, so a quick left-right wiggle does not spin
+the gun the long way.
+
+### When not to use it
+
+A game that fires straight along the stick at once (a twin-stick style
+shooter, a platformer's left/right shot) wants the snap, not the lag.
+The lag is the point: the player sees the gun swing and aims ahead of the
+stick.
+
+### Pitfalls
+
+- A centred stick must hold the facing. Feeding "centred" through the
+  lookup as a real direction swings the gun to 0 whenever the player lets
+  go.
+- Up with down, or left with right, is not a direction. Decode those
+  nibbles to `$FF` or the gun turns toward a meaningless target on a
+  worn stick.
+- A shot fired during a turn leaves along the in-between facing. That is
+  the behaviour, not a bug; take the velocity from the facing, never
+  from the stick.
+- Fire on the button's level gives a shot every frame. One shot per press
+  needs the edge from `joystick_edge_detect`.
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (rung 1). The game
+reads `$DC00` seven times a frame: one bit test each for up, down,
+left, right and fire, one for the diagonals and one for any direction. The player moves eight ways at a fixed speed,
+2 px a frame across and 1 px down or up. The gun's facing is one of 16
+directions and turns one step a frame toward the stick direction, the
+shorter way round, so a reversal takes 8 frames and shots fired during
+it go at the in-between angles. A shot's velocity comes from 16-entry
+tables indexed by the facing: 6 px a frame straight up, 8 px a frame
+sideways, for 15 frames. Holding fire gives one shot; each shot needs a
+new press. The player sprite has 8 directions of 4 walk frames each, and
+the frame steps every 4 frames while a direction is held. The tie rule
+for an exact reversal was not measured.
+
+### Recipes
+
+- `recipes/kickassembler/facing-turn-step.md`
+
+---
+
 ## joystick_autorepeat — Delayed auto-repeat from per-direction age counters
 
 **Complexity:** low
@@ -271,6 +386,15 @@ keeps the previous scan and reports the newest press in `keyb_key` with
 build 2026-05-19. The library's scan first tests `$DC01` with every
 column driven low and returns early if it reads `$FF`, which is the
 KERNAL's own no-key shortcut.
+
+In your own C the write-then-read order is not safe. Oscar64 can emit the
+`$DC01` load after a later `$DC00` store even though both are `volatile`:
+`cia1.pra = 0x7f; if (!(cia1.prb & 0x10)) ...; cia1.pra = 0xff;` came
+out as the two stores and then the load, so SPACE was never seen
+(`toolchains/oscar64-reference.md`, Pitfalls, "A volatile load can be
+moved past a later volatile store"; measured in the `.asm` at every level
+on the local build, at `-O0` on v1.32.273 and upstream). Put the column
+write and row read in `__asm`, or read the `.asm` listing once.
 
 ### Why it works
 
@@ -637,10 +761,24 @@ select to read paddles on the other port pays `paddle_read`'s settle.
 **Complexity:** low
 **Region:** both
 **Uses registers:** DC00, D012
-**Requires:** joystick_edge_detect, lfsr_random, frame_sync_loop
+**Requires:** joystick_edge_detect, frame_sync_loop
 **Cost:** cycles_per_frame=68
 **Cost basis:** measured-vice
 **Cost measured on:** oscar64-attract-replay (longest step)
+**Claims:** cia1_port_a (reads)
+**Claims basis:** derived-listing
+
+The replay reads the port only to end the demo on a real press. The
+recipe stores `$FF` to `$DC00` before that read so that no keyboard
+column is selected; the store is the port read's, as in
+`joystick_edge_detect`, not a hold on the port. The seed is needed only
+by a game that draws random numbers (see "Why it works"): the run-and-gun
+starter has no generator and its demo repeats from the stream alone
+(templates/run-and-gun, `make fedrive`: the demo after 400 frames and the
+title 485 later, every run). An earlier version listed `lfsr_random` on
+the Requires line and no Claims line, so `c64_check_compatibility` implied
+the generator for every attract mode and called the three port readers
+writers of `$DC00` (run-and-gun KB-GAPS 30).
 
 ### Why
 

@@ -18,6 +18,8 @@ import { compressUnits } from "./compatibility/unit-rules.ts";
 import { rankRecipesFor } from "../../domain/budget.ts";
 import { techniqueDocumentation } from "./technique-docs.ts";
 import type { TechniqueLookupResult, TechniquesForResult } from "./types.ts";
+import { designPattern } from "./design-patterns.ts";
+import { config } from "../../config.ts";
 
 /** A number property, or null when the node has none (or a non-number). */
 const OptNumber = z.unknown().transform((v) => (typeof v === "number" ? v : null));
@@ -40,6 +42,7 @@ const TechniqueRow = z.object({
   cost_cycles_per_frame_typical: OptNumber,
   cost_cycles_per_item: OptNumber,
   cost_cycles_item_base: OptNumber,
+  cost_every_n_frames: OptNumber,
   cost_basis: CostBasisSchema.nullable(),
   cost_bytes_basis: CostBasisSchema.nullable(),
   cost_recipe: z.string().nullable(),
@@ -63,6 +66,7 @@ const TECHNIQUE_QUERY = `MATCH (t:Technique {name: $name})
             t.cost_bytes_basis AS cost_bytes_basis,
             t.cost_cycles_per_frame_typical AS cost_cycles_per_frame_typical, t.cost_recipe AS cost_recipe,
             t.cost_cycles_per_item AS cost_cycles_per_item, t.cost_cycles_item_base AS cost_cycles_item_base,
+            t.cost_every_n_frames AS cost_every_n_frames,
             t.cost_conditions AS cost_conditions, t.cost_includes AS cost_includes,
             t.raster_band AS raster_band, t.claims_stated AS claims_stated, t.claims_basis AS claims_basis
      LIMIT 1`;
@@ -80,6 +84,7 @@ const COST_FIGURES = [
   ["cycles_per_frame_typical", "cost_cycles_per_frame_typical"],
   ["cycles_per_item", "cost_cycles_per_item"],
   ["cycles_item_base", "cost_cycles_item_base"],
+  ["every_n_frames", "cost_every_n_frames"],
 ] as const;
 
 /**
@@ -126,8 +131,17 @@ async function techniqueNotFound(name: string): Promise<TechniqueLookupResult> {
     mitigates: [],
     documentation: [],
   };
+  // A game-design pattern (front_end_and_attract, game_state_machine) is
+  // not a technique; say where it is instead of "not found" alone
+  // (KB-GAPS 28).
+  const pattern = designPattern(config.docs.dir, name);
+  const patternText = pattern
+    ? `\n\n${pattern.name} is a game-design pattern, not a technique: "${pattern.title}", ${pattern.source}. ` +
+      `Applies to: ${pattern.applies_to.join(", ")}. Realised by: ${pattern.realised_by.join(", ") || "(nothing named)"}.`
+    : "";
   const text =
     `Technique \`${name}\` not found.` +
+    patternText +
     (suggestions.length > 0 ? `\n\nDid you mean: ${suggestions.join(", ")}?` : "") +
     `\n\nList all techniques with \`c64-kb techniques-for\` (no filter).`;
   return { structured: empty, text };

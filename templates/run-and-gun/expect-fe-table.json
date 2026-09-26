@@ -1,0 +1,16 @@
+{
+  "mid_run": true,
+  "checks": [
+    { "name": "table: heading", "type": "text", "row": 2, "col": 14, "text": "HIGH SCORES" },
+    { "name": "row 1, seeded", "type": "text", "row": 5, "col": 13, "text": "1  050000  FBS" },
+    { "name": "row 2, seeded", "type": "text", "row": 7, "col": 13, "text": "2  040000  KBA" },
+    { "name": "row 3, seeded", "type": "text", "row": 9, "col": 13, "text": "3  030000  C64" },
+    { "name": "row 4, the new entry: ranked below 30,000 and above 20,000", "type": "text", "row": 11, "col": 13, "text": "4  025500  DAB" },
+    { "name": "row 5, shifted down from row 4; 10,000 dropped", "type": "text", "row": 13, "col": 13, "text": "5  020000  SID" },
+    { "name": "the new row is yellow", "type": "ink", "vic_x": 128, "line": 139, "width": 112, "height": 8, "background": 9, "colours": [7], "min": 40 },
+    { "name": "the row above it is white", "type": "ink", "vic_x": 128, "line": 123, "width": 112, "height": 8, "background": 9, "colours": [1], "min": 40 },
+    { "name": "table: the prompt", "type": "text", "row": 17, "col": 15, "text": "PUSH FIRE" },
+    { "name": "panel: no digits", "type": "text", "row": 23, "col": 0, "text": "                                        ", "dy": 4 },
+    { "name": "the screen identical on both models", "type": "same", "cells": [0, 0, 19, 39] }
+  ]
+}

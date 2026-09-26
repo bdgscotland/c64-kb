@@ -276,3 +276,79 @@ describe("placements in the spec (#90)", () => {
     ]);
   });
 });
+
+describe("a technique whose Cost figure holds another's work runs it inside (run-and-gun gap 4)", () => {
+  const sprites = (mode: Claim["mode"]): Claim[] =>
+    [0, 1, 2, 3, 4, 5, 6, 7].map((n) => ({ unit: `sprite_${n}`, mode }));
+  const mux = ["midframe_raster_irqs", "changes_sprite_set"];
+  const facts = (includes: Record<string, string[]>, techniques: string[]): CompatibilityFacts => ({
+    techniques,
+    requires: new Map(),
+    facts: new Map(
+      Object.entries({
+        sprite_multiplex_game: tech(mux, [...sprites("owns"), irq("owns")]),
+        sprite_slot_parking: tech(mux, [...sprites("owns"), irq("owns")]),
+        invalid_mode_band: tech(["midframe_raster_irqs"], [irq("owns")]),
+      }),
+    ),
+    sharedRegisters: new Map(),
+    sharedKernal: new Map(),
+    recipeUses: [],
+    includes: new Map(Object.entries(includes)),
+  });
+  const set = ["invalid_mode_band", "sprite_multiplex_game", "sprite_slot_parking"];
+
+  it("the multiplexer and the parking policy it holds are not rival owners", () => {
+    const r = evaluateCompatibility(
+      facts({ sprite_multiplex_game: ["sprite_slot_parking"] }, [
+        "sprite_multiplex_game",
+        "sprite_slot_parking",
+      ]),
+    );
+    expect(r.conflicts.filter((c) => c.kind.startsWith("unit_"))).toEqual([]);
+    expect(r.verdict).not.toBe("incompatible");
+  });
+
+  it("the included policy's units are the includer's against a third technique: one hit, not two", () => {
+    const r = evaluateCompatibility(facts({ sprite_multiplex_game: ["sprite_slot_parking"] }, set));
+    const hardHits = r.conflicts.filter((c) => c.severity === "hard").map((c) => `${c.kind} ${c.a}×${c.b}`);
+    expect(hardHits).toEqual(["unit_contention invalid_mode_band×sprite_multiplex_game"]);
+  });
+
+  it("without the includes line the pair is still a hard contention, as before", () => {
+    const r = evaluateCompatibility(facts({}, ["sprite_multiplex_game", "sprite_slot_parking"]));
+    expect(r.conflicts.map((c) => `${c.kind} ${c.severity}`)).toContain("unit_contention hard");
+  });
+});
+
+describe("two readers of a port register do not write it (run-and-gun gap 30)", () => {
+  const reads = (...units: string[]): Claim[] => units.map((unit) => ({ unit, mode: "reads" as const }));
+  const run = (a: TechniqueFacts, b: TechniqueFacts, shared: string[]) =>
+    evaluateCompatibility({
+      techniques: ["a", "b"],
+      requires: new Map(),
+      facts: new Map([
+        ["a", a],
+        ["b", b],
+      ]),
+      sharedRegisters: new Map([["0|1", shared]]),
+      sharedKernal: new Map(),
+      recipeUses: [],
+    }).conflicts.filter((c) => c.kind === "shared_register");
+
+  it("drops DC00 when both claim cia1_port_a as reads", () => {
+    expect(run(tech([], reads("cia1_port_a")), tech([], reads("cia1_port_a")), ["DC00"])).toEqual([]);
+  });
+
+  it("keeps a register one side does not claim as read-only, and keeps the rest of the list", () => {
+    const hits = run(tech([], reads("cia1_port_a")), tech([], reads("cia1_port_a")), [
+      "DC00",
+      "DC01",
+      "RASTER",
+    ]);
+    expect(hits.map((h) => h.shared)).toEqual([["DC01", "RASTER"]]);
+    const owner = tech([], [{ unit: "cia1_port_a", mode: "owns" }]);
+    expect(run(owner, tech([], reads("cia1_port_a")), ["DC00"]).map((h) => h.shared)).toEqual([["DC00"]]);
+    expect(run(tech([]), tech([], reads("cia1_port_a")), ["DC00"]).map((h) => h.shared)).toEqual([["DC00"]]);
+  });
+});

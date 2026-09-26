@@ -20,7 +20,7 @@ Scope: stock PAL and NTSC C64 hardware only. No C128-specific tricks, no REU scr
 
 **Starter:** `shmup-vertical`
 
-The vertical shooter is one of the oldest C64 archetypes and one of the most demanding. The play field scrolls continuously toward the player, enemies arrive from the top of the screen in waves or patterns, and the player's ship moves freely within a zone near the bottom. Every frame the CPU pays for the scroll, an enemy fleet of a dozen or more sprites at once, and SID music and sound effects that must not drop beats. Commando (1985) is a well-known C64 example; its programmer, Chris Butler, told Zzap!64 it was his first time splitting sprites (`production-planning.md`). (An earlier version named Uridium and Delta as the benchmark and credited "Armalyte's vertical mode"; all three scroll horizontally, and no vertical mode of Armalyte is known here, issue #40.)
+The vertical shooter is one of the oldest C64 archetypes and one of the most demanding. The play field scrolls continuously toward the player, enemies arrive from the top of the screen in waves or patterns, and the player's ship moves freely within a zone near the bottom. Every frame the CPU pays for the scroll, an enemy fleet of a dozen or more sprites at once, and SID music and sound effects that must not drop beats. Commando (1985) is a well-known C64 example; its programmer, Chris Butler, told Zzap!64 it was his first time splitting sprites (`production-planning.md`). Commando's soldier is on foot and its scroll follows him, so its full shape is `vertical_run_and_gun` below; an earlier version of this paragraph offered it as the model vertical shooter. (An earlier version named Uridium and Delta as the benchmark and credited "Armalyte's vertical mode"; all three scroll horizontally, and no vertical mode of Armalyte is known here, issue #40.)
 
 Vertical fine scrolling on the C64 is cheap: $D011's fine-scroll field moves the display by up to seven pixels before a coarse row shift is needed. A coarse shift moves the whole screen: 960 bytes of screen RAM and the same in colour RAM. That does not fit the blanking period (7,680 cycles unrolled for screen RAM alone, against 7,056 off-screen cycles on PAL, `char_scroll_buffer_v` in `techniques/scroll.md`), so it is copied behind the beam or into a second matrix; if the beam crosses the copy, the screen tears. (An earlier version said the shift must finish within the blanking period.) Raster IRQs split the frame into zones: a scroll update zone near the top, a sprite-multiplexer zone through the middle, and a SID service call near the bottom.
 
@@ -41,6 +41,28 @@ An earlier fingerprint named `raster_bars`, which nothing in this section uses, 
 **Reference titles:** [Commando](https://www.c64-wiki.com/wiki/Commando) (1985), [Warhawk](https://www.c64-wiki.com/wiki/Warhawk) (1986), [Lightforce](https://www.c64-wiki.com/wiki/Lightforce) (1987). C64-Wiki files all three as vertically scrolling shoot'em ups. (An earlier version listed Uridium, Delta, IO, Nemesis and Zynaps, which are horizontal shooters, gave Lightforce as 1986, and said the genres were unchecked, issue #40.)
 
 **Modern examples:** none checked. (An earlier version named Scramble Spirits as a 2018 scene release by Saul Cross; it is a 1990 port of Sega's 1988 arcade game, and no source here confirms the C64 port's scroll direction, issue #40.)
+
+---
+
+## Vertical Run-and-Gun
+
+**Archetype:** `vertical_run_and_gun`
+
+A soldier on foot fights up a vertically scrolling map. Unlike the vertical shooter, the screen does not scroll on its own: it moves only while the player pushes past a line near the middle, and never back. The soldier walks in eight directions through scenery that blocks him and that he can pass behind, fires along a facing that turns toward the stick, and throws grenades that burst over an area. Enemies stand on the map: they are placed by rows of the map, not by a clock, so they come into view as the player advances. Each area ends at a gate that opens only after a last wave is cleared; a death restarts the player at the checkpoint behind him.
+
+Commando (1985) is the model; every figure below was measured in VICE x64sc 3.10 on the maintainer's copy, and the teardown behind them is the Commando study (`game-design/studies/`, pending). The screen is one matrix in VIC bank 3 under the KERNAL; the playfield scrolls 1 px a frame and, every eighth frame, is redrawn whole from a raw 40-column map (840 bytes, 15,714 cycles with interrupts), on a frame that runs no other game logic except object motion (`threshold_scroll_v`, `row_map_redraw`; an earlier version left out the object motion, which `row_map_redraw`'s Commando section measured). A game can also start the copy once row 0 has been fetched and move logic to the frame after (`row_map_redraw`, "How" steps 3 and 6). A black band from the invalid ECM+BMM mode hides the seam above the fixed score panel and the IRQ jitter (`invalid_mode_band`). Sixteen virtual sprites (the soldier, three bullets, one grenade and an eleven-slot pool) go through a sorted multiplexer; a free slot is parked on a blank shape off the right edge, so the raster code never tests whether a slot is active (`sprite_multiplex_game`, `sprite_slot_parking`, `object_pool`). One 256-byte attribute table per area, read from the map, says which characters block walking, which the soldier is drawn behind (a `$D01B` bit per sprite) and which kill (`char_attribute_flags`). The gun turns one 22.5° step a frame toward the stick (`facing_turn_step`); the grenade flies straight up and kills in a box around where it lands (`grenade_lob`). The area end, the checkpoint restart and the effects that borrow two SID voices while the tune keeps its place on the third are `area_end_gate_wave`, `checkpoint_respawn` and `sfx_voice_takeover`. The game logic runs in the main loop, woken once a frame by a counter the raster chain increments (`frame_sync_loop`): about 3,300 cycles of interrupts, 8,200 of logic and 8,100 idle on a normal PAL frame.
+
+The two archetypes it is most often confused with: the vertical shooter (a ship on an automatic scroll, `vertical_shmup`) and the scrolling platformer's run-and-gun (Turrican, a side view with gravity, `scrolling_platformer`, whose brief words hold "run and gun").
+
+**Technique fingerprint:** `threshold_scroll_v`, `row_map_redraw`, `soft_scroll_v`, `invalid_mode_band`, `sprite_multiplex_game`, `sprite_slot_parking`, `object_pool`, `wave_director`, `char_attribute_flags`, `facing_turn_step`, `grenade_lob`, `checkpoint_respawn`, `area_end_gate_wave`, `sfx_voice_takeover`, `frame_sync_loop`
+
+**Brief words:** on foot, soldier, commando, grenade, grenades, top down soldier, walks up the map
+
+**Common pitfalls:** `sprite_dma_overflow`, `badline_cycle_loss`, `raster_irq_first_line_jitter`, `ecm_with_mcm_set_is_invalid_black_mode`
+
+**Reference titles:** [Commando](https://www.c64-wiki.com/wiki/Commando) (1985)
+
+**Modern examples:** none checked.
 
 ---
 

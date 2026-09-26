@@ -14,12 +14,20 @@ after game over, and there is no working restart. Each is a missing or
 merged state, not a missing effect. Sources are named in prose; a number
 is its source's number. Nothing on this page was measured in VICE.
 
+The four patterns below name `vertical_run_and_gun` in their **Applies
+to:** lines; an earlier version named it in none, because the archetype
+was added after them, so a run-and-gun briefing reached no front end.
+FIREBASE's front end (`templates/run-and-gun`, PLAN.md "Front end") is
+built from `game_state_machine` and `front_end_and_attract`, and
+`level_transition_sequence` already named the archetype's
+`checkpoint_respawn` and `area_end_gate_wave`.
+
 ---
 
 ## game_state_machine — One state variable owns the machine
 
 **Kind:** structure
-**Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, action_puzzle, sports, racing, beat_em_up
+**Applies to:** vertical_shmup, vertical_run_and_gun, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, action_puzzle, sports, racing, beat_em_up
 **Realised by:** jump_table_dispatch, irq_chain_table, frame_sync_loop, joystick_edge_detect, sid_play_routine_pattern, sfx_engine_beside_music, oscar64/platformer-scaffold, oscar64/simple-shmup, kickassembler/irq-chain, two_player_state_swap, oscar64/two-player, text_window_and_menu, oscar64/text-window-menu
 **Sources:** Codebase64 guide to programming games (unattributed, wiki); Andrew Braybrook, Morpheus diary in Zzap!64, 1987; John and Steve Rowlands, Mayhem in Monsterland diary in Commodore Format, 1992 to 1993
 
@@ -120,7 +128,7 @@ Related: `game-design-patterns.md`, `c64-game-archetypes.md`,
 ## level_end_conditions — A level ends on a condition the player caused
 
 **Kind:** behaviour
-**Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, action_puzzle, beat_em_up
+**Applies to:** vertical_shmup, vertical_run_and_gun, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, action_puzzle, beat_em_up
 **Realised by:** wave_director, actor_activation_window, object_pool, tile_grid_collision, decimal_print, oscar64/wave-director, oscar64/level-rle-decoder
 **Sources:** Peter Liepa, Boulder Dash interview transcript on boulder-dash.com, 2022; Jamey Pittman, The Pac-Man Dossier, Game Developer; Andrew Braybrook, Morpheus diary in Zzap!64, 1987; John and Steve Rowlands, Mayhem in Monsterland diary in Commodore Format, 1992 to 1993
 
@@ -215,8 +223,8 @@ Related: `game-design-patterns.md`, `../techniques/logic.md`,
 ## level_transition_sequence — Get Ready, swap the level, reset the counters
 
 **Kind:** composition
-**Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, action_puzzle, beat_em_up
-**Realised by:** screen_wipe, colour_fade, colour_cycling, tile_map_render, charset_copy_rom_to_ram, kickassembler/screen-wipe, kickassembler/colour-fade, oscar64/tile-map-render, oscar64/level-rle-decoder, flip_screen_rooms, oscar64/flip-screen-rooms
+**Applies to:** vertical_shmup, vertical_run_and_gun, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, action_puzzle, beat_em_up
+**Realised by:** screen_wipe, colour_fade, colour_cycling, tile_map_render, charset_copy_rom_to_ram, kickassembler/screen-wipe, kickassembler/colour-fade, oscar64/tile-map-render, oscar64/level-rle-decoder, flip_screen_rooms, oscar64/flip-screen-rooms, checkpoint_respawn, kickassembler/checkpoint-respawn, area_end_gate_wave, kickassembler/area-end-gate-wave
 **Sources:** John and Steve Rowlands, Mayhem in Monsterland diary in Commodore Format, 1992 to 1993; Andrew Braybrook, Morpheus diary in Zzap!64, 1987
 
 **Checks:**
@@ -275,6 +283,19 @@ NTSC and redraws behind the blank (this sentence said "inside one vertical
 blank" until that measurement). Morpheus puts a docking sequence where Get
 Ready goes.
 
+A death in a scrolling level runs a shorter form of the same reset: the
+level stays loaded, the scroll goes back to the nearest checkpoint row
+behind the player, the object pool is freed, the visible window is
+re-spawned from the event list and the consumables are topped up
+(`checkpoint_respawn` in `../techniques/logic.md`). Lives are the one
+counter it lowers.
+
+A scrolling game can earn the level_end entry instead of reaching it on
+the last map row: `area_end_gate_wave` (`../techniques/logic.md`) stops
+the scroll, releases a counted wave, and walks the player into the exit
+once the wave is out and dead; the arrival is the level_end trigger.
+Commando (1985) ends each area that way (measured in VICE x64sc 3.10).
+
 Related: `../techniques/transitions.md`, `../techniques/scroll.md`,
 `../techniques/memory-banking.md`.
 
@@ -283,8 +304,8 @@ Related: `../techniques/transitions.md`, `../techniques/scroll.md`,
 ## front_end_and_attract — The title screen, the demo mode and the high-score table
 
 **Kind:** production
-**Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, action_puzzle, sports, racing, beat_em_up
-**Realised by:** text_input_line, kernal_file_write_seq, kernal_file_read_seq, joystick_edge_detect, decimal_print, colour_cycling, big_font_2x2, oscar64/high-score-persist, oscar64/text-input, kickassembler/big-font-scroller, kickassembler/colour-cycling, attract_mode_input_replay, oscar64/attract-replay, high_score_table_insert, kickassembler/high-score-insert
+**Applies to:** vertical_shmup, vertical_run_and_gun, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, puzzle, action_puzzle, sports, racing, beat_em_up
+**Realised by:** text_input_line, kernal_file_write_seq, kernal_file_read_seq, joystick_edge_detect, decimal_print, colour_cycling, big_font_2x2, oscar64/high-score-persist, oscar64/text-input, kickassembler/big-font-scroller, kickassembler/colour-cycling, attract_mode_input_replay, oscar64/attract-replay, high_score_table_insert, kickassembler/high-score-insert, joystick_name_entry, kickassembler/joystick-name-entry
 **Sources:** Codebase64 guide to programming games (unattributed, wiki); Lasse Öörni, Rant 18, Interaction patterns in Covert Bitops games; Tony Temple, Anatomy of Arcade High Score Tables, The Arcade Blogger, 2021; Andrew Braybrook, Morpheus diary in Zzap!64, 1987
 
 **Checks:**
@@ -332,7 +353,7 @@ screen, and describes a Missile Command default table filled by a staff playoff
 with the lead programmer's initials on top. The checklist:
 
 - A seeded default table, so the first game has something to beat.
-- Three initials, by text_input_line or a joystick letter wheel.
+- Three initials, by text_input_line or a joystick letter wheel (joystick_name_entry).
 - An entry timeout, so an abandoned entry does not hold the machine.
   Temple states none and no period figure was read here; pick one.
 - The table shown in the front end or during attract; Temple's examples

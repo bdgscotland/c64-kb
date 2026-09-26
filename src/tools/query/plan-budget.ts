@@ -42,6 +42,7 @@ const MemberRow = z.object({
   cycles_per_frame_typical: OptNumber,
   cycles_per_item: OptNumber,
   cycles_item_base: OptNumber,
+  every_n_frames: OptNumber,
   cycles_per_line: OptNumber,
   lines_active: OptNumber,
   bytes_code: OptNumber,
@@ -65,6 +66,7 @@ const MEMBERS_QUERY = `MATCH (t:Technique) WHERE t.name IN $names
   RETURN t.name AS name, toLower(rr.name) AS requires_region, t.raster_band AS raster_band,
          t.cost_cycles_per_frame AS cycles_per_frame, t.cost_cycles_per_frame_typical AS cycles_per_frame_typical,
          t.cost_cycles_per_item AS cycles_per_item, t.cost_cycles_item_base AS cycles_item_base,
+         t.cost_every_n_frames AS every_n_frames,
          t.cost_cycles_per_line AS cycles_per_line, t.cost_lines_active AS lines_active,
          t.cost_bytes_code AS bytes_code, t.cost_bytes_data AS bytes_data, t.cost_irq_slots AS irq_slots,
          t.cost_basis AS basis, t.cost_bytes_basis AS bytes_basis, t.cost_recipe AS measured_on, t.cost_conditions AS conditions,
@@ -122,6 +124,7 @@ function memberOf(spec: MemberSpec, row: MemberRow | undefined): BudgetMember {
             cycles_per_frame_typical: row.cycles_per_frame_typical,
             cycles_per_item: row.cycles_per_item,
             cycles_item_base: row.cycles_item_base,
+            every_n_frames: row.every_n_frames,
             cycles_per_line: row.cycles_per_line,
             lines_active: row.lines_active,
             bytes_code: row.bytes_code,
@@ -179,6 +182,11 @@ function contributorLine(c: PhaseBudget["contributors"][number]): string {
   return `- ${c.name}: ${figure} (${c.basis}${on}${how}${calls})\n`;
 }
 
+function occasionalLine(o: PhaseBudget["occasional"][number]): string {
+  const on = o.measured_on ? `, on ${o.measured_on}${o.conditions ? ` (${o.conditions})` : ""}` : "";
+  return `- ${o.name}: ${o.high} on one frame in ${o.every_n_frames}, ${o.frame_high} with the every-frame charges and losses (${o.basis}${on})\n`;
+}
+
 function excludedLine(e: PhaseBudget["excluded"][number]): string {
   if (e.reason === "multi_frame")
     return `- ${e.name}: ${e.cycles} cycles, above one frame: a multi-frame operation, not summed${e.measured_on ? ` (measured on ${e.measured_on})` : ""}\n`;
@@ -193,6 +201,8 @@ function renderPhase(p: PhaseBudget): string {
   let out = `\n## ${p.phase} (${p.region}, ${p.frame} cycles a frame): ${p.verdict}\n\n`;
   out += `Range ${rangeText(p)}; weakest basis ${p.weakest_basis ?? "(nothing summed)"}; IRQ slots ${p.irq_slots}.\n`;
   if (p.contributors.length > 0) out += `\nSummed:\n${p.contributors.map(contributorLine).join("")}`;
+  if (p.occasional.length > 0)
+    out += `\nOne frame in N, each on its own frame:\n${p.occasional.map(occasionalLine).join("")}`;
   if (p.excluded.length > 0) out += `\nLeft out:\n${p.excluded.map(excludedLine).join("")}`;
   if (p.to_measure.length > 0) {
     out += `\nTo measure:\n`;
