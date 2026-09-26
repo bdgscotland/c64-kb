@@ -107,7 +107,9 @@ static const char script[][2] = {
     { 250, 0xfe }, { 250, 0xfe },       // up: scroll, under the canopy
 };
 #define PLAY_FRAMES 236                 // freeze at the first YSCROLL 3 after this
-#define FREEZE_YS   3                   // the text grid check.py reads (dy 0)
+#ifndef FREEZE_YS
+#define FREEZE_YS   3                   // the text grid check.py reads (dy 0); make phases sets 0-7
+#endif
 #endif
 #define METER_HOLD  200                 // normal play frames the meter records
 #define SCRIPT_LEN (sizeof(script) / 2)
@@ -223,6 +225,20 @@ static unsigned rd_count, rd_cyc, rd_end_line;
 static int rd_lead;
 static unsigned rd_late;
 static char light;                      // 1: the frame after a redraw
+
+// Where the work ended, in raster lines (9 bits). pre_end: the latest end of
+// a frame's logic before a redraw, counted in lines after line 250; the
+// redraw waits for the band's tick on line 224, so past 312 - 250 + 224 = 286
+// (PAL) or 263 - 250 + 224 = 237 (NTSC) it starts late. light_end: the latest
+// line the frame after a redraw ended on; past 250 it is lost.
+static unsigned pre_end, light_end;
+
+static unsigned raster_line(void)
+{
+    char hi, lo;
+    do { hi = vic.ctrl1; lo = vic.raster; } while (hi != vic.ctrl1);
+    return lo + ((unsigned)(hi & 0x80) << 1);
+}
 
 static void do_redraw(void)
 {
@@ -414,14 +430,16 @@ static void verdict(void)
     put_dec(s + 7 * 40 + 6, overruns, 2);
     put_dec(s + 7 * 40 + 12, lost_at, 3);
     put_dec(s + 7 * 40 + 21, rd_late, 2);
-    put_text(s, 8, 1, "SHOWN 0");
+    put_text(s, 8, 1, "SHOWN 0 PRE 000 LF 000");
     put_dec(s + 8 * 40 + 7, K_MUX_SHOWN, 1);
+    put_dec(s + 8 * 40 + 13, pre_end, 3);
+    put_dec(s + 8 * 40 + 20, light_end, 3);
     text_colour(3, 1, 17, TEXT_CRAM);
     text_colour(4, 1, 25, TEXT_CRAM);
     text_colour(5, 1, 22, TEXT_CRAM);
     text_colour(6, 1, 24, TEXT_CRAM);
     text_colour(7, 1, 22, TEXT_CRAM);
-    text_colour(8, 1, 7, TEXT_CRAM);
+    text_colour(8, 1, 22, TEXT_CRAM);
     text_colour(9, 1, 20, TEXT_CRAM);
 }
 #endif
@@ -492,10 +510,19 @@ int main(void)
             if (light) {
                 meter_flush();          // the frame before the redraw is recorded; this one is not
                 light_frame();
+                unsigned l = raster_line();
+                if (counting && l < 250 && l > light_end)
+                    light_end = l;
             } else {
                 meter_open();
                 play_frame(joy);
                 meter_close();
+                if (scroll_redraw_due && counting) {
+                    unsigned l = raster_line();
+                    l = l >= 250 ? l - 250 : l + (ntsc ? 263 : 312) - 250;
+                    if (l > pre_end)
+                        pre_end = l;
+                }
                 if (scroll_redraw_due)
                     do_redraw();
             }
@@ -506,6 +533,14 @@ int main(void)
             if (!verdict_code) {
                 hw_d011 = vic.ctrl1;    // the playfield's value until line 211
                 verdict();
+#ifdef PHASES
+                // make phases: the soldier at the lowest Y a sprite may take
+                // (last line 208), so the band's stores are checked with sprite
+                // DMA on the lines just above them.
+                soldier_y = SOLDIER_MAX_Y;
+                soldier_draw();
+                actors_commit(COMMIT_MUX);
+#endif
             }
             memcpy(SCREEN + 9 * 40 + 1, SCRATCH + 9 * 40 + 1, 20);
             break;

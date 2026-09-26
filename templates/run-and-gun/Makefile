@@ -27,8 +27,8 @@ SHOT_CYCLES_NTSC := 10000000
 DRIVE_SCREEN := 8000:0-23
 
 # make gallery: the normal build in play for the README: fire on the title,
-# the same walk as the autopilot's, stopped under the canopy.
-GALLERY_SCRIPT := "until:PUSH FIRE" wait:10 tap:fire wait:2 hold:up wait:75 hold:right wait:70 hold:up wait:96
+# the autopilot's walk, stopped with the soldier just below the canopy.
+GALLERY_SCRIPT := "until:PUSH FIRE" wait:10 tap:fire wait:2 hold:up wait:75 hold:right wait:70 hold:up wait:66
 
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
@@ -60,3 +60,20 @@ mapend: $(PRG_MAPEND)
 	$(call vice_shot,$(PRG_MAPEND),$(SHOT_CYCLES_PAL),,shots/mapend-pal.png)
 	$(call vice_shot,$(PRG_MAPEND),$(SHOT_CYCLES_NTSC),-model ntsc,shots/mapend-ntsc.png)
 	$(PYTHON) $(HARNESS_DIR)/check.py expect-mapend.json shots/mapend-pal.png shots/mapend-ntsc.png
+
+# ---- phases: the band and the panel at every YSCROLL phase ---------------------------
+# The graded shot freezes on YSCROLL 3 only. Each build here freezes on one
+# phase with the soldier moved to the lowest sprite Y (last line 208), and
+# tools/phases.py wants lines 214-222 black, the panel's lines 223-246
+# identical to phase 3's, and the sprite drawn to line 208, on PAL and NTSC.
+PHASES := 0 1 2 3 4 5 6 7
+PRG_PHASES := $(foreach k,$(PHASES),build/$(NAME)-ph$(k).prg)
+build/$(NAME)-ph%.prg: $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dPHASES=1 -dFREEZE_YS=$* -o=$@ $(C_MAIN)
+
+.PHONY: phases
+phases: $(PRG_PHASES)
+	$(PYTHON) tools/phases.py --x64sc $(X64SC) --pal $(SHOT_CYCLES_PAL) --ntsc $(SHOT_CYCLES_NTSC) $(PRG_PHASES)
+
+check: phases
