@@ -136,6 +136,147 @@ the figure.
 - `recipes/oscar64/tile-grid-collision.md`
 - `recipes/oscar64/platformer-scaffold.md` — the corner probes, landing snap and head bump inside a whole single-file platformer, with ladders; the page to copy when starting a game
 
+## char_attribute_flags — One attribute byte per character code: blocking, draw-behind priority and deadly terrain from one lookup
+
+**Complexity:** low
+**Region:** both
+**Requires:** tile_grid_collision, mob_priority
+**Uses registers:** D01B
+**Cost:** cycles_per_frame=700
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-char-attribute-flags (worst frame: three walkers, two probes each, the event log and the `$D01B` build, below the display)
+**Claims:** sprite_0-7 (shares)
+**Claims basis:** derived-listing
+
+### Why
+
+A top-down game draws its trees, walls and water as characters and needs
+three answers about the cell under each moving object: may it move there,
+is it drawn behind the scenery, and does it die there. `tile_grid_collision`
+answers the first from a tile class; `slope_collision` keeps one byte per
+map cell. Here the answer belongs to the character code: one 256-byte table
+per character set, `attr[screen code]`, and every cell showing that glyph
+behaves the same. A tree canopy hides the soldier wherever it is drawn,
+with no per-cell data and no code that knows where the trees are.
+
+It is a separate entry from `tile_grid_collision` for two reasons. The
+table is keyed by the glyph, not the cell, so its size is fixed at 256
+bytes whatever the map size. One of its bits is a drawing decision, fed to
+`$D01B` per object, which neither collision entry makes.
+
+### How
+
+1. **The table.** 256 bytes, page-aligned so `LDA attr,Y` never crosses a
+   page. The recipe's bits: bit 0 blocks a move, bit 1 draws the sprite
+   behind the playfield, bit 2 kills. Glyphs with no flags are 0. Build it
+   with the character set; a new character set or area brings its own table.
+2. **Read the map, not the screen.** Keep the level in RAM as screen codes
+   (`tile_map_render` fills such an array) and look the cell up there. The
+   screen may be under ROM, mid-redraw during a scroll, or overwritten by a
+   HUD.
+3. **Pixel to cell.** A point at sprite coordinates `(x, y)` is in column
+   `(x − 24) >> 3` and row `(y − 50) >> 3`, as in `tile_grid_collision`.
+   A 25-entry row-address table replaces the multiply by 40. For a
+   scrolling map, add the scroll row and the fine scroll offset.
+4. **Probe ahead for bit 0.** Before a move, look up the cell one pixel past
+   the leading edge. If bit 0 is set, cancel the move.
+5. **Probe under the body for bits 1 and 2.** After the move, look up the
+   cell under the body's centre. Bit 1 sets the object's priority byte to
+   `$FF`, clear sets `$00`. Bit 2 kills the object.
+6. **Build `$D01B` once a frame.** OR each object's priority byte, masked
+   to its sprite's bit, into one byte and store it. With a multiplexer, the
+   priority byte travels with the virtual sprite and is written into
+   `$D01B` with its X and Y, like its colour and pointer.
+
+Measured in VICE x64sc 3.10 on PAL (C64C) and NTSC (6567R8) by
+`recipes/kickassembler/char-attribute-flags.md` (rung 1): one probe costs
+57 cycles (row table, `(zp),y` read of the map, `attr,y` read). Three
+walkers with two probes each, the event log and the `$D01B` build take
+700 cycles in the worst frame on both models. The update starts at line
+251, below the display, where no badline or sprite fetch steals cycles.
+
+### Why it works
+
+The character code is already the thing the map stores, so the attribute
+lookup costs one indexed load after the map read. The VIC-II decides
+priority per pixel: with a sprite's `$D01B` bit set, the character's 1 bits
+cover it and its 0 bits show it (`mob_priority`). A canopy glyph with
+holes in it therefore lets the soldier show through in its gaps, with no
+masking code. The recipe measured this: the walker under the canopy showed
+green on exactly the 128 of its 256 pixels where the checker glyph has a
+1 bit.
+
+### Variations
+
+- **One probe point.** Take all three bits from one cell ahead of the
+  object, as Commando does (below). It saves a probe, and the priority and
+  the death happen a few pixels early.
+- **Projectiles.** Bullets use the same table: bit 0 ends the shot, bit 1
+  gives the shot the canopy's priority.
+- **More bits.** Bits 3 to 7 are free for slow ground, ladders, water
+  that splashes or a slope type (`slope_collision`).
+
+### When not to use it
+
+- The same glyph must behave differently in different places. The table
+  cannot tell two cells with one glyph apart. Copy the glyph to a second
+  code with different flags (the recipe's canopy and bush), or keep a byte
+  per cell (`slope_collision`).
+- Slopes or half-height ground inside a cell. The flags are per cell;
+  `slope_collision` has the height tables.
+- Bitmap-mode playfields. There is no character code to index by.
+
+### Pitfalls
+
+- **The screen under ROM.** A screen in VIC bank 3 at `$E000` reads back
+  as KERNAL bytes while the KERNAL is banked in. Read the map. Commando
+  does exactly this (below).
+- **The whole sprite goes behind.** `$D01B` is per sprite, not per pixel
+  of the sprite. With the bit set, the sprite is behind every foreground
+  pixel it overlaps, including a wall's or a HUD's, not only the canopy
+  that set the bit. Keep canopy glyphs away from other foreground at a
+  sprite's width, or accept it.
+- **Multiplexed sprites keep the old bit.** A hardware sprite reused for
+  a second object keeps the first object's `$D01B` bit unless the
+  multiplexer writes the bit with the new object's registers.
+- **Fine scroll left out.** An address computed from the character row
+  alone is off by up to 7 lines while a vertical scroll is between hard
+  steps. Commando accepts this.
+- **Multicolour characters.** In multicolour text only bit pairs 10 and 11
+  cover a sprite with its bit set; pair 01 is background
+  (`mob_priority`). Draw canopy pixels in `$D023` or colour RAM, not
+  `$D022`.
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (PAL C64C) during
+the teardown (rung 1). Each area has its own 256-byte attribute table
+indexed by the character code under an object. The game reads the code
+from its map in RAM: its one screen sits in VIC bank 3 under the KERNAL
+ROM, where CPU reads return ROM. The player's probe is one point ahead of
+him, three steps of his velocity, and its attribute gives all three bits.
+
+- Bit 0 blocks: a plateau edge and a tree trunk each stopped the player.
+  Tree canopies carry bit 1 only and do not block.
+- Bit 1 sets the object's priority byte: it was `$FF` in exactly the
+  frames the probe cell had bit 1 (519 of 519 frames). The multiplexer
+  ORs each virtual sprite's byte into `$D01B` for the hardware sprite it
+  lands on, so the soldier, his bullets and his grenade go behind canopies
+  one by one. The teardown did not measure the picture; the recipe here
+  measured the mechanism.
+- Bit 2 kills, with a death cause of its own ("terrain", apart from
+  "shot"). Walking up into one of area 1's water or trench characters
+  killed the player five times at the same row. Area 0's table has no bit-2
+  character; area 1 has 20 and area 3 has 31.
+- The map address ignores the fine scroll, as in the pitfall above.
+- Shots end on solid terrain. An enemy bullet becomes an impact at age 70
+  ticks (22 cases), or earlier on solid terrain, but never before age 22.
+  The player's grenade ignores solid terrain.
+
+### Recipes
+
+- `recipes/kickassembler/char-attribute-flags.md` — a map with a canopy, a bush with the canopy's glyph and no flags, walls and a hazard; three scripted walkers stop, go behind and die, the event frames and cycles printed and the hidden pixels counted, PAL and NTSC
+
 ## flip_screen_rooms — A world of room records, redrawn whole at every edge
 
 **Complexity:** medium
