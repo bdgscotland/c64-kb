@@ -17,6 +17,8 @@ under a black band holds SCORE, LIVES and GRENADES. PAL and NTSC.
 This slice is the skeleton: the scroll, the redraw, the band and panel, the
 multiplexer with parked slots, and the soldier. Enemies, weapons, collisions,
 game flow and audio come next, each in its own module (below, "Modules").
+The enemies module has landed: section "Enemies" says what it does, what it
+costs, and how `make enemies` proves it.
 
 ## Briefing
 
@@ -569,7 +571,8 @@ modules own the difference. What they must keep:
 | `$9000-$9EFF` | the raw row map, 96 rows x 40 (src/gen/map.bin); the VIC sees the character ROM here |
 | `$9F00-$9FFF` | attr[screen code], page aligned (src/gen/attr.bin) |
 | `$A000-$A83F` | sprites: soldier 8 x 4 frames, then the blank parking block (block 160) |
-| `$A840-$BFFF`, `$C000-$CFFF` | free: enemy, bullet and explosion shapes go at `$A840` |
+| `$A840-$B2FF` | sprites: rifleman 8 x 2, runner 2 x 2, grenadier 8 x 2, enemy bullet, grenade 3 sizes, blast 2, dust (blocks 161-203, `SPR_*` in `src/gen/assets.h`) |
+| `$B300-$BFFF`, `$C000-$CFFF` | free: 51 sprite blocks in the bank (bullets and the soldier's grenade go here) |
 
 KERNAL and BASIC are banked out (`$01 = $35`); the IRQ and NMI vectors
 are `$FFFE` and `$FFFA`. Oscar64's zero page is `$02` to about `$5x`; the
@@ -596,7 +599,7 @@ A module never writes the VIC's sprite registers: it writes its slots
 | Kernel | kernel.asm, mux.asm | `$D012` and the chain, the band, the redraw, the 16-slot multiplexer | `commit` bits (`COMMIT_YS`, `COMMIT_MUX`), `pend_ys`, `frame_flag`, `band_tick`, `redraw`, `mux_sort`, `mux_build`, the slot tables `slot_y/xl/xh/ptr/col/pri` |
 | Scroll | scroll.c/h | the view: `scroll_top`, `scroll_ys`, `scroll_wy` | `scroll_step`, `scroll_can_step`, `map_x`, `map_y`, `attr_at`, `code_at`, `scroll_init(top, ys)` |
 | Soldier | soldier.c/h | slot 0, the stick | `soldier_x`, `soldier_y`, `soldier_facing` (0-15), `soldier_behind`; `soldier_update(joy)`, `soldier_draw` |
-| Objects and enemies (next) | objects.c/h | slots 5-15, the pool, the spawn list | `obj_alloc`, `obj_free`, `objects_rows(top)` (wave_director: spawns keyed to map rows, fired as the top row reaches them), `objects_update`, `objects_draw`, `objects_scroll`; objects keep map coordinates and draw at Y = my - scroll_wy + 54 |
+| Objects and enemies | objects.c/h, spawns.h | slots 5-15, the pool, the spawn list | `obj_alloc`, `obj_free`, `objects_rows(top)` (wave_director: spawns keyed to map rows, fired as the top row reaches them), `objects_update` (writes the slots), `objects_draw` (empty), `objects_scroll` (returns 1 when main.c must rebuild); for collide: `kind_box`, `kind_flags`, `obj_kill(slot)`; objects keep map coordinates and draw at Y = my - scroll_wy + 54 |
 | Weapons (next) | weapons.c/h | slots 1-3 (bullets), 4 (grenade), `grenades` | `weapons_update(joy)`: bullets along `soldier_facing` from a 16-entry velocity table, stopped by `attr_at(...) & A_BLOCK`; grenade_lob's flight and box blast |
 | Collision (next) | collide.c/h | boxes | `collide()`, after objects and weapons moved; scenery is `attr_at` |
 | Flow (next) | flow.c/h, main.c's states | score, lives, grenades, title, game over, high score | `flow_new_game`, `flow_frame`; checkpoint_respawn restarts through `scroll_init(row, 0)`, `objects_reset`, `objects_rows`; area_end_gate_wave starts when `scroll_can_step()` is 0; the gate is `G_GATE`, map rows 1-2, columns 18-21; `panel_update` after a change |
@@ -630,7 +633,9 @@ pass: no frame lost and no redraw late; the soldier's position; the
 scroll's map y and steps; 12 frames blocked; the priority bit set under
 the canopy; 13 redraws; every redraw's lead at least 8 lines; the screen
 equals the map from `scroll_top` (840 bytes); `$D011` = `$13` (YSCROLL 3)
-as the frame IRQ applied it; the multiplexer shows exactly one sprite.
+as the frame IRQ applied it; the multiplexer shows exactly the slots above
+its cut (8 at the freeze: the soldier and seven pool objects; this check
+said "exactly one sprite" before the enemies landed).
 
 `expect.json` grades the border, the verdict rows, the meter (200
 frames, worst inside a frame), the soldier's white bounding box (lines
@@ -658,6 +663,119 @@ sprite Y 52 (10 of 10).
 `make mapend` (10 of 10) all pass; "verify-templates: 1 of 1 starters
 passed".
 
+## Enemies
+
+The objects module (`src/objects.c`, `objects.h`, `src/spawns.h`), built
+from the KB pages of `object_pool`, `wave_director`, `grenade_lob`,
+`char_attribute_flags`, `sprite_slot_parking`, `checkpoint_respawn` (the
+pre-spawn window) and `atan2_8bit` (its "Variations" for the aim).
+
+- **Spawn list.** One event per enemy, `EV(map row, X / 2, kind,
+  parameter)`, rows descending, 21 events from row 88 to row 4. An event
+  fires when the view's top row is at or above its row (`>=`), in
+  `objects_rows`; its enemy stands with its feet on the row's last line,
+  so it walks out from under the top border. `objects_reset` spawns the
+  events already in view (rows 75-95 at the start), as checkpoint_respawn
+  pre-spawns its window. A full pool loses the event (`ost_lost`).
+- **Rifleman** (cyan): walks toward the soldier's column and down until 56
+  pixels above him, half a pixel a frame on each axis, stopped by `A_BLOCK`
+  at his feet; faces him in 8 directions (octant from the signs, split at
+  min * 2.5 < max, arithmetic from tan 22.5 = 0.414); fires an aimed shot
+  every 64 frames while fully in view. The shot: 1.5 pixels a frame on an
+  axis, 1 + 1 on a diagonal.
+- **Runner** (orange): crosses the screen at 2 pixels a frame from under one
+  border to the other.
+- **Grenadier** (purple): stands, faces the soldier, throws every 80-120
+  frames: `grenade_lob`'s enemy form from its Commando section, vx =
+  trunc(dx / 64), vy = trunc(dy / 64) - 2, vy up by one every 16 frames,
+  sizes small-middle-large-middle-small, a blast of 20 frames at age 80.
+- **Terrain.** A shot ends on an `A_BLOCK` cell from age 4; a grenade bursts
+  on one from age 16 (the brief's rule; Commando's player grenade ignores
+  walls and the KB does not say what its enemy grenade does, KB-GAPS.md 17).
+- **Scroll.** Objects keep map coordinates; Y = my - scroll_wy + 54. Each
+  object thinks on every second frame (pool index against the frame count)
+  and moves two frames' worth; on the other frame only its slot's Y follows
+  the ground. This halved the objects' cost against thinking every frame
+  (below).
+- **The redraw frame.** `objects_scroll` moves every shown pool slot down
+  the line the soldier's repeated step scrolled, and main.c builds the table
+  without a new sort (`actors_rebuild`; Commando skips its sort on coarse
+  frames too). It runs only if the frame begins by line 192 (`LFX_LAST`).
+  With eight sprites up it ran after 13 of 13 redraws on PAL and 0 of 13 on
+  NTSC, whose redraw ends on line 195: forced, the NTSC run lost 6 frames.
+  So on NTSC the objects keep the slice's one-line lag for that frame.
+- **For the collision module.** `kind_box[kind]` (sprite pixels from the
+  slot's own registers), `kind_flags` (`KF_SHOOTABLE`, `KF_HURTS`), and
+  `obj_kill(slot)`: an enemy turns to dust, freed 24 frames later; it
+  returns the kind killed so the caller can score. A slot at `PARK_Y`, or a
+  box outside VIC X 24-343, is not on screen.
+- **Art.** `tools/mkassets.py` draws the three figures (cap and rifle, bare
+  head and swinging arms, banded helmet and grenade), the bullet, three
+  grenade sizes, two blast frames and the dust; `make assetcheck` passes.
+
+Measured (VICE x64sc 3.10, `make shot check`; the same walk as before):
+
+| | PAL before | PAL now | NTSC before | NTSC now |
+|---|---|---|---|---|
+| Logic frame, worst (cycles, IRQs included) | 3,049 | 8,200 | 3,071 | 8,397 |
+| Logic frame, typical (median) | 2,971 | 5,586 | 2,994 | 5,819 |
+| Redraw, most cycles | 14,100 | 14,506 | 14,317 | 15,231 |
+| Redraw ends on line (next frame) | 135 | 143 | 181 | 195 |
+| Redraw's smallest lead over the beam | 73 lines | 65 lines | 27 lines | 13 lines |
+| The frame after a redraw ends on line | 159 | 207 | 205 | 234 |
+| Sprites the multiplexer shows at the freeze | 1 | 8 | 1 | 8 |
+| Lost frames | 0 | 0 | 0 | 0 |
+
+`make enemies` (the same walk, `-dENEMYTEST=1`), CIA1 timer A around the
+module's calls, wall time (an IRQ that lands inside is counted), the first
+200 logic frames:
+
+| | PAL | NTSC |
+|---|---|---|
+| Objects (`objects_rows` + `objects_update` + `objects_draw`), mean / most | 2,288 / 4,221 | 2,325 / 4,436 |
+| Multiplexer sort + build, mean / most | 1,388 / 2,291 | 1,544 / 2,520 |
+| The redraw frame's move + build (`LFX`), most | 2,553 | not run (after line 192) |
+| Pool objects alive at once, most | 8 | 8 |
+
+Where it goes: the VICE monitor's profiler (`prof`, rung 1) put
+`objects_update` at 3,118 cycles a call with 4.7 objects alive while every
+object thought every frame, about 600 cycles per thinking object in
+Oscar64 C (`attr_at` about 60 of them); `mux_build` at 945 cycles a call and
+`mux_sort` at 413 in the final build. Thinking on alternate frames brought
+the mean from 2,767 to 2,288 (PAL, the ENEMYTEST readout). A full pool of
+11 would cost about 5,500 at worst (arithmetic from the per-object figure,
+not measured).
+
+What that leaves (arithmetic from the table):
+
+- The logic frame: NTSC's worst is 8,397 of the about 14,000 cycles C has
+  before line 250; about 5,600 remain for weapons, collisions and flow.
+- The pre-redraw rule: the logic frame before a redraw ended 129 lines
+  after line 250 on NTSC (limit 237).
+- The redraw's NTSC lead: 13 lines, 5 above the verdict's floor of 8. The
+  copy took 914 cycles more (15,231 - 14,317) and lost 14 lines of lead.
+  Eight sprites need no zone IRQ, so that is the sprites' DMA on the lines
+  the copy runs over (inferred, not separated). The music's line-250 cost
+  comes off the same 5 lines (KB-GAPS.md 14).
+
+Proof, `make enemies` (in `VERIFY_TARGETS`, 24 of 24 on PAL and NTSC):
+the verdict (`main.c first_fail_enemies`) wants no frame lost and the
+redraw's lead at least 8 lines; the 6 due events spawned, each on the frame
+its row reached the top, none lost; shots fired (5) and grenades thrown (2);
+a shot ended on a blocking cell (2); on every frame no free slot unparked
+and the multiplexer's count equal to the slots above its cut; shown slots
+on their map cells, redraw frames included (or counted as skipped); and
+`obj_kill` on the runner alive at frame 120, dust for 24 frames, then free.
+`expect-enemies.json` reads those rows and grades the grenadier of map row
+66 where the arithmetic puts him after 107 lines of scroll (sprite Y 515 -
+500 + 54 = 69, his purple at VIC x 304-313, lines 74-84, both models). The
+`-dENEMY_FAULT=1` build (spawns a row late, freed slots left unparked, no
+redraw-frame move) must fail: it read `ROW 03`, `PARK 101`, `LAG 003`, a
+red border. A 2,545-frame drive of the normal build (`make drive`, up,
+right, up, diagonals) scrolled 461 lines, fired 16 of the 21 events and lost
+0 frames on each model (`$02FD`). `make mapend` builds without spawns
+(`MAPEND`): its verdict text sits where the enemies of rows 4-16 walk.
+
 ## Decisions and open questions
 
 - Oscar64 with a KickAssembler blob, the shmup-vertical layout: the band,
@@ -678,7 +796,7 @@ passed".
   scroll keeps 1 line a frame, and objects on the ground lag one line for
   that one frame (Commando skips its sort on coarse frames too; the
   archetype page). `objects_scroll` is where the enemies module may fix
-  that if it fits.
+  that if it fits. It does on PAL and not on NTSC (section "Enemies").
 - Sprites stop at Y 187 (last line 208), three lines above the band IRQ.
   The band's windows were measured in its recipe with one sprite across
   them, not eight; `make phases` checks one sprite at 187.
@@ -689,7 +807,9 @@ passed".
   clockwise); the body frame is the facing rounded to eight. The walk
   cycle steps every 6 moved frames.
 - Open: the enemies' zones and the music both come out of the redraw's
-  NTSC lead (27 lines); measure it after each. A `DEADLINE_LINE`
+  NTSC lead (27 lines); measure it after each. Measured after the enemies:
+  13 lines with eight sprites up (section "Enemies"), 5 above the verdict's
+  8-line floor. The music does not fit in 5 lines on NTSC as things stand. A `DEADLINE_LINE`
   (harness `make watch`) of 224 would check the pre-redraw rule on every
   frame; it needs an `OVERRUN` build and is not wired yet.
 - Open: the README gallery and the archetype page's `**Starter:**` line
