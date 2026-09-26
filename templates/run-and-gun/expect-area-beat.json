@@ -1,0 +1,10 @@
+{
+  "mid_run": true,
+  "checks": [
+    { "name": "the beat: AREA CLEARED on screen row 9 (the view at the map's top, YSCROLL 7)", "type": "text", "row": 9, "col": 14, "text": "AREA CLEARED", "dy": 4 },
+    { "name": "... and the bonus", "type": "text", "row": 11, "col": 15, "text": "BONUS 2000", "dy": 4 },
+    { "name": "the fort's wall on map rows 1-2 at the top of the view (a stone joint on line 63)", "type": "rect", "colour": 0, "vic_x": 24, "line": 63, "width": 64, "height": 1 },
+    { "name": "area 0's earth still (brown) during the beat: map row 3, columns 0-6 (floor cells), its first line 79 (map y 24 on line 55 + 24)", "type": "rect", "colour": 9, "vic_x": 24, "line": 79, "width": 56, "height": 1 },
+    { "name": "panel: the bonus added", "type": "text", "row": 21, "col": 2, "text": "SCORE 002600", "dy": 4 }
+  ]
+}

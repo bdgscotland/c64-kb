@@ -1,0 +1,19 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "verdict line", "type": "text", "row": 11, "col": 1, "text": "RESULT 01 PASS", "dy": 7 },
+    { "name": "three deaths, each on the swamp (cause 2, terrain), each at view top 39", "type": "text", "row": 12, "col": 1, "text": "DEATHS 3 CAUSE 222 TOP 39 39 39", "dy": 7 },
+    { "name": "restarts at checkpoint 40 (behind top 39); grenades 3 then 5, 4 then 5; lives 2, 1, 0", "type": "text", "row": 13, "col": 1, "text": "ROW 40 40 GREN 3 5 4 5 LIVES 210", "dy": 7 },
+    { "name": "died on play frames 199, 423, 593; restarted 64 frames later (263, 487); game over asked", "type": "text", "row": 14, "col": 1, "text": "DIE 199 423 593 UP 263 487 OVER 1", "dy": 7 },
+    { "name": "both restarts drew map rows 40 and 60 on screen rows 0 and 20; the soldier at (168, 160); no frame lost, no redraw late", "type": "text", "row": 15, "col": 1, "text": "MAP 2 1 AT 168 160 LOST 00 00 LATE 0", "dy": 7 },
+    { "name": "frame meter, the first 200 logic frames", "type": "meter", "row": 17, "col": 1, "frames": 200, "dy": 7 },
+    { "name": "the swamp's first row (map row 45) starts on line 98 (view top 39, YSCROLL 2: map y 317 on line 55), columns 7-12 black", "type": "rect", "colour": 0, "vic_x": 80, "line": 98, "width": 48, "height": 1 },
+    { "name": "... its third row (map row 47) on line 114", "type": "rect", "colour": 0, "vic_x": 80, "line": 114, "width": 48, "height": 1 },
+    { "name": "... earth above it on line 97 (map row 44's last line, column 7)", "type": "rect", "colour": 9, "vic_x": 80, "line": 97, "width": 8, "height": 1 },
+    { "name": "... earth below it on line 122 (map row 48, column 7)", "type": "rect", "colour": 9, "vic_x": 80, "line": 122, "width": 8, "height": 1 },
+    { "name": "the soldier's dust (light grey) where he died: a sprite at X 131 (body centre on column 14), Y 110, its pixels 4-19 and rows 4-15", "type": "sprite", "colour": 15, "vic_x": 135, "line": 115, "width": 16, "height": 12, "search": { "vic_x": 100, "line": 90, "width": 80, "height": 60 } },
+    { "name": "panel: lives 0", "type": "text", "row": 23, "col": 2, "text": "LIVES 0", "dy": 4 },
+    { "name": "panel: grenades 5 (topped up by the second restart, none thrown after)", "type": "text", "row": 23, "col": 24, "text": "GRENADES 05", "dy": 4 },
+    { "name": "the invalid-mode band still black, lines 214-222", "type": "rect", "colour": 0, "vic_x": 24, "line": 214, "width": 320, "height": 9 }
+  ]
+}

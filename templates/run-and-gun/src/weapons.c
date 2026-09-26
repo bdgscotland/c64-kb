@@ -59,9 +59,16 @@ enum { END_RANGE = 1, END_BLOCK = 2, END_OFF = 3, END_HIT = 4 };
 
 static char b_why[N_BULLETS];    // how each bullet last ended (END_*)
 
+char weapons_live;
+Box weapons_bbox[N_BULLETS];
+char weapons_bline[N_BULLETS];
+
+static const char bit_of[N_BULLETS] = { 1, 2, 4 };
+
 static void bullet_end(char i, char why)
 {
     b_live[i] = 0;
+    weapons_live &= ~bit_of[i];
     b_why[i] = why;
     slot_park(SLOT_BULLET + i);
 #ifdef WEAPONS
@@ -88,6 +95,9 @@ static void bullet_place(char i)
         bullet_end(i, END_OFF);
         return;
     }
+    weapons_bbox[i].x = x - 2;                      // the dot's 4 x 4 box (w, h set by weapons_reset)
+    weapons_bbox[i].y = y - 2;
+    weapons_bline[i] = (char)sy + (10 - 2);         // sprite pixel row 10 is the dot's centre
     slot_show(SLOT_BULLET + i, x + PT_SX, (char)sy, SPR_BLOCK + SPR_W_BULLET, BULLET_COLOUR,
               (a & A_BEHIND) ? 1 : 0);
 }
@@ -110,6 +120,7 @@ static void fire(void)
     b_vy[i] = vy;
     b_age[i] = 0;
     b_live[i] = 1;
+    weapons_live |= bit_of[i];
 #ifdef WEAPONS
     char k = shots_fired < SHOT_LOG ? (char)shots_fired : 0xff;
     b_log[i] = k;
@@ -203,10 +214,7 @@ char weapons_bullet_box(char i, Box *b)
 {
     if (!b_live[i])
         return 0;
-    b->x = (b_x4[i] >> 2) - 2;
-    b->y = (b_y4[i] >> 2) - 2;
-    b->w = 4;
-    b->h = 4;
+    *b = weapons_bbox[i];
     return 1;
 }
 
@@ -236,8 +244,11 @@ void weapons_reset(void)
 {
     for (char s = 0; s < N_BULLETS; s++) {
         b_live[s] = 0;
+        weapons_bbox[s].w = 4;
+        weapons_bbox[s].h = 4;
         slot_park(SLOT_BULLET + s);
     }
+    weapons_live = 0;
     g_state = G_NONE;
     slot_park(SLOT_GRENADE);
     prev_joy = 0;                                    // held: the title's fire press fires nothing

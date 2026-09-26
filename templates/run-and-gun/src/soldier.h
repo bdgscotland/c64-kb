@@ -29,13 +29,21 @@ extern char soldier_y;          // sprite Y
 extern char soldier_facing;     // 0-15, 22.5 degrees a step: 0 up, 4 right, 8 down, 12 left
 extern char soldier_behind;     // 1: the body centre is on an A_BEHIND cell
 extern char soldier_stepped;    // 1: this frame's up push scrolled the map
+extern char soldier_deadly;     // 1: the body centre is on an A_DEADLY cell (the swamp); collide.c kills
+// SS_ALIVE plays; SS_DEAD shows the death animation (flow.c counts it in
+// soldier_t, logic frames since the death); SS_GONE parks his slot (he went
+// through the gate, area.c). Nothing moves him but area.c's walk unless SS_ALIVE.
+enum { SS_ALIVE, SS_DEAD, SS_GONE };
+extern char soldier_state, soldier_t;
 extern unsigned soldier_blocked;   // frames a move was refused by an A_BLOCK cell (AUTOPILOT verdict)
 extern unsigned soldier_behind_frames;
 
 void soldier_reset(void);               // at the start position, facing up
 void soldier_update(char joy);          // one frame: joy is $DC00, active low
 char soldier_repeat_step(void);         // the frame after a redraw: repeat last frame's scroll step if still free
-void soldier_draw(void);                // writes SLOT_SOLDIER, every field
+void soldier_draw(void);                // writes SLOT_SOLDIER, every field (the death animation, or parked)
+char soldier_walk(unsigned x, char y);  // area.c's walk: one pixel a frame to X x, then up to Y y,
+                                        // no stick and no terrain test; 1 on arrival
 
 #pragma compile("soldier.c")
 

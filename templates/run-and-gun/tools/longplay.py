@@ -55,7 +55,7 @@ def main():
         vice.joy(FIRE)
         vice.frames(3)
         vice.joy(0)
-        vice.until("LIVES 3")
+        vice.until("LIVES ")
         frames = 0
         for _ in range(ROUNDS):
             for bits, n in PATTERN:

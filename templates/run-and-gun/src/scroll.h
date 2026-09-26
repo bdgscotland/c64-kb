@@ -19,6 +19,8 @@ extern unsigned scroll_steps;    // steps taken since scroll_init
 void scroll_init(char top, char ys);      // that view (SCROLL_START_*: the map's bottom), drawn at once
 inline char scroll_can_step(void) { return scroll_wy != 0; }   // 0 at the map's top: stop
 void scroll_step(void);                   // the view one pixel up the map (content moves down)
+void scroll_restart(char top);            // the view at map row top, YSCROLL 0, drawn by main.c's
+                                          // redraw path (a restart: checkpoint_respawn, the next area)
 void scroll_redraw(void);                 // the 21 rows from scroll_top (kernel.asm redraw)
 
 // A sprite pixel (dx, dy) of a sprite at (X, Y) on the map (game.h, coordinates).

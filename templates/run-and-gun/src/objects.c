@@ -5,8 +5,8 @@
 #include "soldier.h"
 
 char obj_kind[N_POOL];
-int obj_x4[N_POOL], obj_y4[N_POOL];
-static signed char obj_vx[N_POOL], obj_vy[N_POOL];     // quarter pixels a frame
+int obj_x[N_POOL], obj_y[N_POOL];
+static signed char obj_vx[N_POOL], obj_vy[N_POOL];     // pixels a tick (two frames)
 static char obj_age[N_POOL];            // frames alive (shots, grenades, blasts, dust); pose timer
 static char obj_timer[N_POOL];          // frames to the next shot or throw
 static char obj_param[N_POOL];          // the event's parameter: fire or throw period
@@ -99,9 +99,10 @@ static char dir8(int dx, int dy)
     return dy < 0 ? 1 : 3;
 }
 
-// A slow shot: 1.5 pixels a frame on an axis, 1 + 1 on a diagonal (1.41).
-static const signed char shot_vx[8] = { 0, 4, 6, 4, 0, -4, -6, -4 };
-static const signed char shot_vy[8] = { -6, -4, 0, 4, 6, 4, 0, -4 };
+// A slow shot: 1.5 pixels a frame on an axis, 1 + 1 on a diagonal (1.41);
+// pixels a tick of two frames.
+static const signed char shot_vx[8] = { 0, 2, 3, 2, 0, -2, -3, -2 };
+static const signed char shot_vy[8] = { -3, -2, 0, 2, 3, 2, 0, -2 };
 
 // ---- the pool ---------------------------------------------------------------------------
 void slot_show(char slot, unsigned x, char y, char ptr, char col, char pri)
@@ -166,6 +167,8 @@ char obj_kill(char slot)
 }
 
 // ---- spawns -----------------------------------------------------------------------------
+static void place(char i, char k, char x2, char row, char param);
+
 static void spawn(char e, char top)
 {
     char k = ev_kind[e];
@@ -180,25 +183,78 @@ static void spawn(char e, char top)
     if (ev_row[e] == top || ost_frames == 0)
         ost_at_row++;
 #endif
-    obj_x4[i] = ev_x2[e] * 8;
-    obj_y4[i] = (ev_row[e] * 8 - 13) * 4;      // feet (sprite row 20) on the row's last line
-    obj_param[i] = ev_param[e];
-    obj_timer[i] = ev_param[e] >> 1;           // the first shot or throw after half a period
+    place(i, k, ev_x2[e], ev_row[e], ev_param[e]);
+}
+
+// An enemy of kind k in pool index i, its feet (sprite row 20) on the last
+// line of map row `row`, at sprite X x2 * 2. The area counter drives the
+// difficulty (area_end_gate_wave, Commando's per-area fire mask): a rifleman's
+// fire period and a grenadier's throw period are halved in each later area,
+// to a quarter from the third on.
+static void place(char i, char k, char x2, char row, char param)
+{
+    obj_x[i] = x2 * 2;
+    obj_y[i] = row * 8 - 13;
+    if (k != K_RUNNER)
+        param >>= area < 2 ? area : 2;
+    obj_param[i] = param;
+    obj_timer[i] = param >> 1;                 // the first shot or throw after half a period
     obj_face[i] = 4;
     obj_want[i] = 0;
     obj_vx[i] = 0;
     obj_vy[i] = 0;
     if (k == K_RUNNER) {
-        obj_vx[i] = ev_param[e] ? -8 : 8;
-        obj_face[i] = ev_param[e] ? 1 : 0;
+        obj_vx[i] = param ? -4 : 4;             // 2 pixels a frame
+        obj_face[i] = param ? 1 : 0;
     }
+}
+
+char objects_spawn(char kind, char x2, char row, char param)
+{
+    char i = obj_alloc(kind);
+    if (i != 0xff) {
+        place(i, kind, x2, row, param);
+        STAT(ost_spawned++);
+    }
+    return i;
+}
+
+char objects_alive(void)
+{
+    char n = 0;
+    for (char i = 0; i < N_POOL; i++) {
+        char k = obj_kind[i];
+        n += k >= K_RIFLE && k <= K_GRENADIER;
+    }
+    return n;
+}
+
+char objects_free(void)
+{
+    char n = 0;
+    for (char i = 0; i < N_POOL; i++)
+        n += obj_kind[i] == OBJ_FREE;
+    return n;
+}
+
+char objects_count(char *free)
+{
+    char n = 0, f = 0;
+    for (char i = 0; i < N_POOL; i++) {
+        char k = obj_kind[i];
+        f += k == OBJ_FREE;
+        n += k >= K_RIFLE && k <= K_GRENADIER;
+    }
+    *free = f;
+    return n;
 }
 
 void objects_rows(char top)
 {
-#ifdef MAPEND
+#if defined(MAPEND) || defined(DEATHTEST) || defined(AREATEST) || defined(FULLPOOL)
     return;                                    // make mapend grades the scroll's end alone: its
-                                               // verdict text sits where rows 4-16's enemies walk
+                                               // verdict text sits where rows 4-16's enemies walk;
+                                               // make death and make area want no list enemies
 #endif
     while (ev_next < N_EVENTS && ev_row[ev_next] >= top + ENEMY_FAULT) {
         char e = ev_next++;
@@ -225,9 +281,38 @@ void objects_reset(void)
 // cycles against thinking every frame.
 static char ofc;
 
-static char blocked(int x4, int y4, char dx, char dy)
+// The deadline. With the pool full, NTSC frames ran past line 250 (make
+// fullpool: 19,173 cycles in the worst metered frame against 17,095 a frame).
+// A thinking object whose tick would start after line OBJ_LATE (the weapons,
+// the collisions, the sort and the band IRQ still to come) only follows the
+// ground this frame and thinks on its next tick: under load the enemies slow
+// down, the frame does not. Lower pool indices think first. Only in a frame
+// whose logic began on time (objects_on_time, main.c): the first frames after
+// play_enter and the frame after the meter's median start anywhere, and
+// skipping there saves nothing and changed the graded walk.
+#define OBJ_LATE 95
+char objects_on_time;
+#if AUTOPILOT
+unsigned ost_skipped;
+#endif
+
+static char late(void)
 {
-    return attr_at((unsigned)((x4 >> 2) + dx - 24), (unsigned)((y4 >> 2) + dy)) & A_BLOCK;
+    char hi, lo;
+    do { hi = vic.ctrl1; lo = vic.raster; } while (hi != vic.ctrl1);
+    return !(hi & 0x80) && lo > OBJ_LATE && lo < 250;
+}
+
+static char blocked(int x, int y, char dx, char dy)
+{
+    return attr_at((unsigned)(x + dx - 24), (unsigned)(y + dy)) & A_BLOCK;
+}
+
+// A rifleman's step: walls stop him, and he does not walk into the swamp
+// (A_DEADLY kills only the soldier; this keeps the enemies out of it).
+static char walk_blocked(int x, int y, char dx, char dy)
+{
+    return attr_at((unsigned)(x + dx - 24), (unsigned)(y + dy)) & (A_BLOCK | A_DEADLY);
 }
 
 static char fire(char i, char kind)
@@ -235,8 +320,8 @@ static char fire(char i, char kind)
     char j = obj_alloc(kind);
     if (j == 0xff)
         return 0xff;
-    obj_x4[j] = obj_x4[i];
-    obj_y4[j] = obj_y4[i];
+    obj_x[j] = obj_x[i];
+    obj_y[j] = obj_y[i];
     return j;
 }
 
@@ -259,17 +344,17 @@ static void rifle_tick(char i)
 {
     char w = obj_want[i];
     char moved = 0;
-    int x4 = obj_x4[i], y4 = obj_y4[i];
+    int x = obj_x[i], y = obj_y[i];
     if (w & (W_LEFT | W_RIGHT)) {
-        signed char vx = (w & W_RIGHT) ? 4 : -4;
-        if (!blocked(x4 + vx, y4, (w & W_RIGHT) ? 17 : 6, 17)) {
-            x4 += vx;
-            obj_x4[i] = x4;
+        signed char vx = (w & W_RIGHT) ? 1 : -1;
+        if (!walk_blocked(x + vx, y, (w & W_RIGHT) ? 17 : 6, 17)) {
+            x += vx;
+            obj_x[i] = x;
             moved = 1;
         }
     }
-    if ((w & W_DOWN) && !blocked(x4, y4 + 4, 12, 21)) {
-        obj_y4[i] = y4 + 4;
+    if ((w & W_DOWN) && !walk_blocked(x, y + 1, 12, 21)) {
+        obj_y[i] = y + 1;
         moved = 1;
     }
     if (moved && !(++obj_age[i] & 1))
@@ -295,8 +380,8 @@ static void gren_tick(char i, int dx, int dy)
     if (timer_out(i) && (obj_want[i] & W_SHOWN)) {
         char j = fire(i, K_GRENADE);
         if (j != 0xff) {
-            obj_vx[j] = (signed char)(dx / 64) * 4;
-            obj_vy[j] = (signed char)(dy / 64 - 2) * 4;
+            obj_vx[j] = (signed char)(dx / 64) * 2;
+            obj_vy[j] = (signed char)(dy / 64 - 2) * 2;
             obj_age[i] = 6;
             STAT(ost_nades++);
         }
@@ -308,11 +393,11 @@ static void gren_tick(char i, int dx, int dy)
 // ball, and at age 120 wherever it is.
 static char shot_tick(char i)
 {
-    obj_x4[i] += obj_vx[i] * 2;
-    obj_y4[i] += obj_vy[i] * 2;
+    obj_x[i] += obj_vx[i];
+    obj_y[i] += obj_vy[i];
     char a = obj_age[i] + 2;
     obj_age[i] = a;
-    if (a >= 4 && blocked(obj_x4[i], obj_y4[i], 12, 10)) {
+    if (a >= 4 && blocked(obj_x[i], obj_y[i], 12, 10)) {
         STAT(ost_wall++);
         return 1;
     }
@@ -325,11 +410,11 @@ static char shot_tick(char i)
 static void nade_tick(char i, char tp)
 {
     char a = obj_age[i];
-    obj_x4[i] += obj_vx[i] * 2;
-    obj_y4[i] += obj_vy[i] * 2 + ((a >> 4) << 2) + (((a + 1) >> 4) << 2);
+    obj_x[i] += obj_vx[i];
+    obj_y[i] += obj_vy[i] + (a >> 4) + ((a + 1) >> 4);
     a += 2;
     obj_age[i] = a;
-    char wall = a >= 16 && !tp && blocked(obj_x4[i], obj_y4[i], 12, 10);
+    char wall = a >= 16 && !tp && blocked(obj_x[i], obj_y[i], 12, 10);
     if (a >= 80 || wall) {
 #if AUTOPILOT
         if (wall)
@@ -362,8 +447,15 @@ void objects_update(void)
 #if AUTOPILOT
         live++;
 #endif
-        if ((i ^ ofc) & 1) {
-            // Not this object's tick: its slot follows the ground.
+        char skip = (i ^ ofc) & 1;
+        if (!skip && objects_on_time && late()) {
+            skip = 1;
+#if AUTOPILOT
+            ost_skipped++;
+#endif
+        }
+        if (skip) {
+            // Not this object's tick (or no time for it): its slot follows the ground.
             char y = SLOT_Y[s];
             if (d && y != PARK_Y) {
                 y += d;
@@ -382,8 +474,8 @@ void objects_update(void)
         case K_GRENADIER: {
             int dx = 0, dy = 0;
             if (!tp || (k == K_GRENADIER && obj_timer[i] <= 2)) {
-                int x = obj_x4[i] >> 2;
-                int my = obj_y4[i] >> 2;
+                int x = obj_x[i];
+                int my = obj_y[i];
                 int sy = my - top_my;
                 dx = target_x - x;
                 dy = target_my - my;
@@ -408,11 +500,11 @@ void objects_update(void)
             break;
         }
         case K_RUNNER:
-            obj_x4[i] += obj_vx[i] * 2;
+            obj_x[i] += obj_vx[i];
             obj_anim[i] ^= 1;
             if (!tp)
-                obj_pri[i] = (attr_at((unsigned)((obj_x4[i] >> 2) - 12), (unsigned)((obj_y4[i] >> 2) + 10)) & A_BEHIND) ? 1 : 0;
-            gone = obj_x4[i] <= 0 || obj_x4[i] >= 344 * 4;
+                obj_pri[i] = (attr_at((unsigned)(obj_x[i] - 12), (unsigned)(obj_y[i] + 10)) & A_BEHIND) ? 1 : 0;
+            gone = obj_x[i] <= 0 || obj_x[i] >= 344;
             p = SPR_BLOCK + SPR_RUNNER + obj_face[i] * 2 + obj_anim[i];
             break;
         case K_SHOT:
@@ -421,7 +513,7 @@ void objects_update(void)
             break;
         case K_GRENADE: {
             nade_tick(i, tp);
-            gone = obj_y4[i] < 0;
+            gone = obj_y[i] < 0;
             char z = obj_age[i] >> 4;           // 16 frames a size: small, middle, large, middle, small
             p = SPR_BLOCK + SPR_NADE + (z > 2 ? 4 - z : z);
             if (obj_kind[i] == K_BLAST)
@@ -439,7 +531,7 @@ void objects_update(void)
             p = SPR_BLOCK + SPR_DOWN;
             break;
         }
-        int sy = (obj_y4[i] >> 2) - top_my;
+        int sy = obj_y[i] - top_my;
         // Below the lowest sprite Y (the view has left it behind), or done;
         // a shot that left the top.
         if (gone || sy > MAX_SY || (k == K_SHOT && sy < 24)) {
@@ -450,7 +542,7 @@ void objects_update(void)
             slot_park(s);                       // above the view (a grenade's arc): parked until it comes down
             continue;
         }
-        unsigned x = (unsigned)obj_x4[i] >> 2;
+        unsigned x = (unsigned)obj_x[i];
         SLOT_XL[s] = (char)x;
         SLOT_XH[s] = x >> 8;
         SLOT_PTR[s] = p;
@@ -523,7 +615,7 @@ void objects_audit(void)
         if (obj_kind[i] == OBJ_FREE) {
             if (y != PARK_Y || SLOT_PTR[s] != SPR_BLOCK + SPR_BLANK || SLOT_XL[s] != (char)PARK_X || SLOT_XH[s] != PARK_X >> 8)
                 ost_park_bad++;
-        } else if (!lagging && y != PARK_Y && (int)y != (obj_y4[i] >> 2) - top_my)
+        } else if (!lagging && y != PARK_Y && (int)y != obj_y[i] - top_my)
             ost_lag_bad++;                     // shown off its map cell
     }
     if (vis != K_MUX_SHOWN)

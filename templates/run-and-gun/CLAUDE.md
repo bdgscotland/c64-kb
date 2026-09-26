@@ -19,12 +19,13 @@ walks up a jungle map that scrolls only while he pushes past the middle of
 the screen, over a black band and a three-row score panel. Trees, rocks and
 sandbags stop him; canopies draw over him. It has the scroll, the redraw,
 the band, the multiplexer with parked slots, the soldier, the enemies
-(`objects.c`), his gun and grenades (`weapons.c`), a SID tune and five
-effects (`sound.asm`, `sound.c`), and the front end: title, attract demo,
-game over, name entry and a high-score table (`front.c`, `hiscore.c`,
-`flow.c`). Collisions, checkpoints and the area-end gate are the next
-modules; their interfaces are in `PLAN.md`, "Modules". `README.md` has the
-file map and how to extend it. Start a program from it with
+(`objects.c`), his gun and grenades (`weapons.c`), collisions (`collide.c`),
+death with checkpoint restarts and a deadly swamp (`flow.c`), the area end:
+the gate wave, the walk into the gate and the next area (`area.c`), a SID
+tune and five effects (`sound.asm`, `sound.c`), and the front end: title,
+attract demo, game over, name entry and a high-score table (`front.c`,
+`hiscore.c`). Every module's interface is in `PLAN.md`, "Modules".
+`README.md` has the file map and how to extend it. Start a program from it with
 `npm run new-project -- run-and-gun <dir>` in c64-kb.
 
 What will bite you here:
@@ -45,10 +46,27 @@ What will bite you here:
   must still end before line 250. The copy must stay behind the beam: never
   start it before row 1's badline, and never make it faster than 8 lines a
   row (kernel.asm). Every IRQ cycle and sprite DMA during the copy comes off
-  its lead. Budget now (PLAN.md, "Combined budget"): lead 195 PAL and 159
-  NTSC in `make weapons`, the frame after a redraw ending by line 135 PAL
-  and 197 NTSC, 0 lost frames. Re-read verdict rows 6 and 8 and run
-  `make longplay` after adding work to either frame.
+  its lead. Budget now (PLAN.md, "Combined budget"): lead 200 PAL and 159
+  NTSC in `make weapons`, the frame after a redraw ending by line 170 PAL
+  and 240 NTSC, 0 lost frames. Re-read verdict rows 6 and 8 and run
+  `make longplay` and `make fullpool` after adding work to either frame.
+- NTSC has little room left in a crowded frame. The objects' think and the
+  collision pass each skip work past a raster line (objects.c `OBJ_LATE`
+  95, collide.c `COLLIDE_LATE` 100) and do it next frame; the objects'
+  deadline acts only on frames that began on time (`objects_on_time`: the
+  first frames after `play_enter` and the frame after the meter's median
+  start late). Give new per-frame work the same, or measure that it fits.
+  Because of them PAL and NTSC can differ by a frame in when something
+  happens: grade counts and differences, not those frames.
+- A restart (a death's checkpoint, the next area) is a redraw frame of its
+  own: `flow_restart` at the start of `play_frame`, then the copy from line
+  64. Put restart work there, not in the frame that asks for it.
+- Collisions run on logic frames, never on the redraw frame. The soldier's
+  deaths go through `flow_player_died(cause)`: 64 frames of animation, then
+  a life, then a restart or game over. `NO_HARM` (game.h) turns his deaths
+  off in the builds that grade something else (forced deaths, `make
+  weapons`, `make area`, `make fullpool`); `make collide` and `make death`
+  prove them.
 - Sprites stop at Y 187 (last line 208), above the band IRQ. `make phases`
   (run by `make check`) checks the band and panel at all eight YSCROLL
   phases with the soldier at Y 187.
@@ -71,10 +89,11 @@ What will bite you here:
   states of main.c's one state byte: write `state_next`, never `state`,
   and main.c runs the entry routine before the next frame. The score is
   three BCD bytes: add with `flow_add_score(bcd)`; change `lives` or
-  `grenades` directly and `flow_frame` redraws the panel field. Death and
-  the gate call `flow_player_died` and `flow_area_cleared` (hooks that do
-  the minimum; PLAN.md, "Front end"). `make frontend` and `make fedrive`
-  prove title, play, game over, name entry, table and title.
+  `grenades` directly and `flow_frame` redraws the panel field.
+  `make frontend` and `make fedrive` prove title, play, game over, name
+  entry, table and title.
+- Autopilot scripts count frames in bytes: an entry over 255 wraps (340
+  became 84). Split long holds into two entries.
 - Audio: C calls `sfx(SFX_...)` (sound.h); an effect takes voices 1 and 2,
   the tune keeps voice 3. The frame IRQ inside the redraw only counts its
   step and the next one plays it (`sound_hold`); keep that if you move the
@@ -85,11 +104,14 @@ What will bite you here:
   share a timer with an IRQ's.
 - Proofs, each its own build (`VERIFY_TARGETS`): `make mapend` (the scroll
   stops at the map's top), `make enemies`, `make weapons`/`weaponsfault`,
-  `make audio`/`audiotest`, `make frontend`, `make fedrive`, and
-  `make longplay` (the normal build driven 2,700 frames on PAL and NTSC:
-  no lost frame, the redraw's lead). `make drive STEPS=...` plays the
-  normal build with the stick on `$DC00`; `make gallery` takes the README
-  picture.
+  `make audio`/`audiotest`, `make frontend`, `make fedrive`, `make longplay`
+  (the normal game with 99 lives driven 2,700 frames on PAL and NTSC: no
+  lost frame, the redraw's lead), `make collide` (kills, score, a death and
+  its restart), `make death` (the swamp, checkpoints, game over), `make area`
+  (the gate wave, the walk, the bonus, the next area) and `make fullpool`
+  (all 11 pool slots under fire, no lost frame). `make drive STEPS=...`
+  plays the normal build with the stick on `$DC00`; `make gallery`,
+  `make cleared` and `make title` take the README pictures.
 ## Before any code
 
 1. Brief: `npx tsx src/cli.ts game-briefing "<concept>" --archetype <name>`

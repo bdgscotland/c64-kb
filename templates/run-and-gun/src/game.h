@@ -20,6 +20,20 @@
 #if defined(FRONTEND) && !defined(FORCE_OVER)
 #define FORCE_OVER 1                    // make frontend: the forced game over (flow.c)
 #endif
+// NO_HARM: nothing kills the soldier (collide.c). The forced-death builds
+// (their score must be exact), make weapons (its script stands under enemy
+// fire for 260 frames; it grades the gun and the grenade, and was pinned
+// before collisions), make area and make fullpool (they grade the gate
+// sequence and the budget; an aimed shot killed the soldier on play frame 78
+// of the gate wave) set it. Bullets and blasts still kill enemies; deaths are
+// make death's and make collide's to prove.
+#if defined(FORCE_OVER) || defined(WEAPONS) || defined(AREATEST) || defined(FULLPOOL)
+#define NO_HARM 1
+#endif
+// COLLIDE_TIMED: collide() times itself with CIA1 timer B (collide.h col_worst).
+#if defined(WEAPONS) || defined(COLLIDETEST) || defined(AREATEST) || defined(FULLPOOL)
+#define COLLIDE_TIMED 1
+#endif
 
 // ---- memory map ----------------------------------------------------------------
 // $0801-$087F Oscar64 startup        $0880-$1FFF the kernel blob (asm)
@@ -113,6 +127,8 @@ extern char ntsc;                        // 1 on NTSC (263 lines), 0 on PAL (312
 extern char score[3];                    // BCD, score[0] most significant (6 digits); add
                                          // with flow_add_score; flow.c owns it, display.c shows it
 extern char lives, grenades;             // binary; the panel follows a change (flow_frame)
+extern char area;                        // the area counter, 0 first (area.c): it drives the
+                                         // enemies' fire rate (objects.c place) and the colours
 
 #define JOY_UP    0x01                  // $DC00 bits, active low
 #define JOY_DOWN  0x02

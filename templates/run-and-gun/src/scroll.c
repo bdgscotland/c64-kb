@@ -39,6 +39,18 @@ void scroll_step(void)
     K_PEND_YS = scroll_ys;
 }
 
+// A restart (a respawn, the next area) jumps the view: YSCROLL 0 at map row
+// top, committed by main.c this frame and drawn by the redraw from RD_FIRST,
+// as a wrap is. The old view stays on screen until the frame IRQ applies it.
+void scroll_restart(char top)
+{
+    scroll_top = top;
+    scroll_ys = 0;
+    scroll_wy = top * 8 + 7;
+    scroll_redraw_due = 1;
+    K_PEND_YS = 0;
+}
+
 void scroll_redraw(void)
 {
     K_REDRAW_TOP = scroll_top;

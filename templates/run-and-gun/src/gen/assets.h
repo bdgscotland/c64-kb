@@ -4,11 +4,14 @@
 #define MAP_ROWS     96
 #define A_BLOCK      0x01   // attr bit 0: stops a walker
 #define A_BEHIND     0x02   // attr bit 1: the sprite goes behind
-#define A_DEADLY     0x04   // attr bit 2: kills (reserved)
+#define A_DEADLY     0x04   // attr bit 2: kills the soldier (the swamp)
 #define G_FLOOR      64
 #define G_CANOPY     72   // 12 codes, 4 x 3
 #define G_TRUNK      84
 #define G_GATE       108  // the fort's gate opening, 4 x 2, map rows 1-2, columns 18-21
+#define G_SWAMP      116  // swamp water, 2 codes, A_DEADLY: map rows 45-47, columns 7-14
+#define N_CHECKPOINTS 4
+#define CHECKPOINT_ROWS 16, 40, 60, 75   // ascending, the start row last
 #define START_COL    19   // the soldier's feet at the start, map cells
 #define START_ROW    91
 #define SPR_SOLDIER  0    // block offset: direction * 4 + walk frame

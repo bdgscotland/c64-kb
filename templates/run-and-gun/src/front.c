@@ -4,6 +4,7 @@
 #include "hiscore.h"
 #include "objects.h"
 #include "flow.h"
+#include "area.h"
 #include <string.h>
 
 char demo;
@@ -181,6 +182,7 @@ void front_enter(char st)
     armed = 0;                          // the press that ended the last state starts nothing
     idle = 0;
     slots_park_all();                   // no play sprite on a front-end screen
+    area_begin(0);                      // the first area's colours (a game may end in another)
     K_PEND_YS = FRONT_YS;               // committed with the parked slots (main.c)
 #if AUTOPILOT && defined(FRONTEND)
     if (st == ST_OVER) {                // what flow_frame left on the panel

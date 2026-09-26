@@ -39,7 +39,7 @@ COLS = 40
 # ---- attribute bits (char_attribute_flags) ----------------------------------
 A_BLOCK = 0x01         # stops a walker (and, later, a bullet)
 A_BEHIND = 0x02        # a sprite whose probe is on it goes behind the playfield
-A_DEADLY = 0x04        # kills (reserved: no glyph uses it yet)
+A_DEADLY = 0x04        # kills the soldier: the swamp (G_SWAMP)
 
 # ---- glyph codes ----------------------------------------------------------------
 G_FLOOR = 64
@@ -52,6 +52,7 @@ G_BAG_L, G_BAG_M, G_BAG_R = 94, 95, 96     # sandbag wall, 1 row
 G_FORT = 100           # fort wall, 2 x 2 repeating, 100-103
 G_POST = 104           # gate posts, 1 x 2 each: 104-105 left, 106-107 right
 G_GATE = 108           # the gate's opening, 4 x 2 cells, 108-115 (no flags)
+G_SWAMP = 116          # swamp water, 2 variants, 116-117: A_DEADLY (char_attribute_flags bit 2)
 G_SOLID = 255          # every pixel set: the title logo's block (front.c), hires cells
 
 # MC pixel characters: '.' 00, 'g' 01, 'k' 10, 'G' 11
@@ -188,6 +189,9 @@ def make_charset():
             cv[y][x] = "g"
     for i, g in enumerate(slice_canvas(cv, 4, 2)):
         glyphs[G_GATE + i] = g
+    # Swamp: dark water (black, %10) with light-green ripples and green reeds.
+    glyphs[G_SWAMP] = glyph_from_rows(["kkkk", "kggk", "kkkk", "kkkk", "gkkk", "kkgg", "kkkk", "kGkk"])
+    glyphs[G_SWAMP + 1] = glyph_from_rows(["kkkk", "kkkk", "ggkk", "kkkk", "kkGk", "kkkk", "kkgg", "kkkk"])
 
     data = bytearray(2048)
     for code, g in glyphs.items():
@@ -203,6 +207,8 @@ def make_charset():
         attr[c] = A_BLOCK
     for c in range(G_POST, G_POST + 4):
         attr[c] = A_BLOCK
+    for c in (G_SWAMP, G_SWAMP + 1):
+        attr[c] = A_DEADLY                 # walkable, and the soldier dies on it
     return data, attr
 
 
@@ -239,6 +245,18 @@ def place(m, kind, row, col, arg=None):
         for x in range(1, n - 1):
             m[row][col + x] = G_BAG_M
         m[row][col + n - 1] = G_BAG_R
+
+
+# checkpoint_respawn: the rows a death restarts at, ascending, the area's
+# start row last (the first entry at or above the view's top row, techniques/
+# logic.md). The soldier restarts at sprite (168, 160): his feet on map rows
+# row + 15 and row + 16, columns 18-20. make_map asserts that every pad (rows
+# row + 13 to row + 17, columns 17-21) holds nothing that blocks or kills.
+CHECKPOINTS = [16, 40, 60, MAP_ROWS - 21]
+
+# The swamp: A_DEADLY water, placed after the scatter over floor cells only,
+# so the scatter (and every feature the autopilot scripts meet) is unchanged.
+SWAMP = (45, 7, 3, 8)             # first row, first column, rows, columns
 
 
 def footprint(kind, arg=None):
@@ -300,7 +318,20 @@ def make_map():
         if free(row, col, h, w):
             place(m, k, row, col, arg)
             mark(row, col, h, w)
+    floor = (G_FLOOR, G_GRASS_A, G_GRASS_B, G_PEBBLES, G_ROOTS)
+    r0, c0, nr, nc = SWAMP
+    for y in range(r0, r0 + nr):
+        for x in range(c0, c0 + nc):
+            assert m[y][x] in floor, f"swamp over a feature at row {y}, column {x}"
+            m[y][x] = G_SWAMP + (x + y) % 2
     return m
+
+
+def check_checkpoints(m, attr):
+    for row in CHECKPOINTS:
+        for y in range(row + 13, row + 18):
+            for x in range(17, 22):
+                assert not attr[m[y][x]] & (A_BLOCK | A_DEADLY), f"checkpoint {row}: row {y}, column {x} blocks or kills"
 
 
 # ---- sprites: the soldier, 8 directions x 4 walk frames -------------------------
@@ -604,11 +635,14 @@ def write_header(path, n_blocks):
         f"#define MAP_ROWS     {MAP_ROWS}",
         f"#define A_BLOCK      0x{A_BLOCK:02x}   // attr bit 0: stops a walker",
         f"#define A_BEHIND     0x{A_BEHIND:02x}   // attr bit 1: the sprite goes behind",
-        f"#define A_DEADLY     0x{A_DEADLY:02x}   // attr bit 2: kills (reserved)",
+        f"#define A_DEADLY     0x{A_DEADLY:02x}   // attr bit 2: kills the soldier (the swamp)",
         f"#define G_FLOOR      {G_FLOOR}",
         f"#define G_CANOPY     {G_CANOPY}   // 12 codes, 4 x 3",
         f"#define G_TRUNK      {G_TRUNK}",
         f"#define G_GATE       {G_GATE}  // the fort's gate opening, 4 x 2, map rows 1-2, columns 18-21",
+        f"#define G_SWAMP      {G_SWAMP}  // swamp water, 2 codes, A_DEADLY: map rows {SWAMP[0]}-{SWAMP[0] + SWAMP[2] - 1}, columns {SWAMP[1]}-{SWAMP[1] + SWAMP[3] - 1}",
+        f"#define N_CHECKPOINTS {len(CHECKPOINTS)}",
+        f"#define CHECKPOINT_ROWS {', '.join(str(r) for r in CHECKPOINTS)}   // ascending, the start row last",
         f"#define START_COL    {START_COL}   // the soldier's feet at the start, map cells",
         f"#define START_ROW    {START_ROW}",
         f"#define SPR_SOLDIER  0    // block offset: direction * 4 + walk frame",
@@ -709,6 +743,7 @@ def preview(outdir, charset, m, sprites):
 def main():
     charset, attr = make_charset()
     m = make_map()
+    check_checkpoints(m, attr)
     sprites = make_sprites()
     os.makedirs(GEN, exist_ok=True)
     open(os.path.join(GEN, "charset.bin"), "wb").write(charset)

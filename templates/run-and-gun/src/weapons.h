@@ -68,6 +68,13 @@ void box_blast(Box *b, unsigned x, unsigned y);
 
 // Bullet i (0 to N_BULLETS-1): its 4 x 4 dot. 0 when bullet i is not flying.
 char weapons_bullet_box(char i, Box *b);
+// Bit i set while bullet i flies. While it is set, weapons_bbox[i] is the
+// box weapons_bullet_box gives and weapons_bline[i] its top in sprite-line
+// coordinates (Y + row), both written as the bullet is drawn: collide.c reads
+// them without a call.
+extern char weapons_live;
+extern Box weapons_bbox[N_BULLETS];
+extern char weapons_bline[N_BULLETS];
 // A hit: bullet i ends now, its slot parked in the same frame.
 void weapons_bullet_spent(char i);
 // The blast box while a blast is live (1), else 0. Test it every blast

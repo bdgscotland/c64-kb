@@ -1,6 +1,7 @@
 # run-and-gun (FIREBASE): a vertical run-and-gun starter. Every target but
 # assets, assetcheck, mapend, phases, enemies, weapons, weaponsfault, audio,
-# audiotest, frontend, fedrive and longplay comes from the harness:
+# audiotest, frontend, fedrive, longplay, collide, death, area, fullpool,
+# title and cleared comes from the harness:
 #   make            build build/run-and-gun.prg (after the PLAN.md gate)
 #   make run        windowed VICE, joystick in port 2
 #   make shot       headless PAL and NTSC exit screenshots of the autopilot build
@@ -16,7 +17,12 @@
 #   make weaponsfault  its WEAPONS_FAULT build (autofire) must fail those checks
 #   make audio      the SID store trace: effects on voices 1-2, the tune on voice 3 in time
 #   make audiotest  its AUDIO_FAULT and AUDIO_DROP builds must fail the trace
-#   make longplay   the normal build driven 2,700 frames on PAL and NTSC: no lost frame, redraw lead
+#   make longplay   the normal game (99 lives) driven 2,700 frames on PAL and NTSC: no lost frame, redraw lead
+#   make collide    kills by bullet and blast, score per kind, a death by an enemy and its restart
+#   make death      three deaths on the swamp, checkpoint restarts, grenades topped up, game over
+#   make area       the gate wave, the walk into the gate, the bonus, the beat, the next area
+#   make fullpool   area 3's gate wave fills all 11 pool slots under fire: no lost frame
+#   make cleared    shots/cleared.png: the AREA CLEARED beat, for the README
 #   make disk       build/run-and-gun.d64
 #   make clean
 NAME     := run-and-gun
@@ -44,11 +50,16 @@ DRIVE_SCREEN := 8000:0-23
 
 # make gallery: the normal build in play for the README, driven by
 # tools/gallery.py (drive.py with a port-1 "throw" step): fire on the title,
-# the autopilot's walk into the enemies, a grenade thrown, three shots up.
-# make title: the title screen, for the README.
+# ten taps up while the runner of map row 88 crosses (150 points), right under
+# the grenadier, up to face up, a grenade, two more shots, and the picture as
+# the blast lands on him (200 more). make title: the title screen, for the README.
+# make cleared: the AREA CLEARED beat for the README (shots/cleared.png), make
+# area's PAL pin: shot mid-run, before the build draws its verdict or meter.
+GALLERY_LAST ?= 10
 GALLERY_DRIVER := tools/gallery.py
-GALLERY_SCRIPT := "until:PUSH FIRE" wait:10 tap:fire wait:2 hold:up wait:75 hold:right wait:70 hold:up wait:36 \
-	throw hold:up wait:4 hold:up+fire wait:3 hold:up wait:3 hold:up+fire wait:3 hold:up wait:3 hold:up+fire wait:3 hold:up wait:2 print
+GALLERY_SCRIPT := "until:PUSH FIRE" wait:10 tap:fire wait:2 \
+	tap:fire tap:fire tap:fire tap:fire tap:fire tap:fire tap:fire tap:fire tap:fire tap:fire \
+	hold:right wait:132 hold:up wait:8 hold:none throw tap:fire tap:fire wait:$(GALLERY_LAST) print
 
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
@@ -73,7 +84,8 @@ assetcheck:
 # MAPEND): the view stops at map y 0 after 7 lines (YSCROLL 0 to 7), and he
 # walks on through the fort's gate to sprite Y 52. expect-mapend.json reads
 # its verdict at YSCROLL 7 ("dy": 4).
-VERIFY_TARGETS := mapend enemies weapons weaponsfault audio audiotest frontend fedrive longplay
+VERIFY_TARGETS := mapend enemies weapons weaponsfault audio audiotest frontend fedrive longplay \
+	collide death area fullpool
 PRG_MAPEND := build/$(NAME)-mapend.prg
 $(PRG_MAPEND): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
@@ -227,17 +239,20 @@ selftest: audiotest
 # high_score_table_insert names) and must fail the title's checks.
 PRG_FE := build/$(NAME)-frontend.prg
 PRG_FE_FAULT := build/$(NAME)-frontend-fault.prg
-FE_CYCLES_PAL  := 22000000
-FE_CYCLES_NTSC := 19000000
+FE_CYCLES_PAL  := 26000000
+FE_CYCLES_NTSC := 23000000
 # Pins, each in the middle of its screen's window on that model (measured by a
 # sweep of shots every 1,000,000 cycles; PLAN.md, "Front end"). The entry pin
-# is before the name is typed; the table and the verdict show it filed.
-FE_OVER_PAL  := 7000000
-FE_OVER_NTSC := 6800000
-FE_ENTRY_PAL  := 9400000
-FE_ENTRY_NTSC := 8600000
-FE_TABLE_PAL  := 13000000
-FE_TABLE_NTSC := 12000000
+# is before the name is typed; the table and the verdict show it filed. Since
+# the deaths run their animation and restarts (wave 2) the game over comes on
+# play frame 314, not about 135: every pin moved 179 frames (3.5 million
+# cycles on PAL, 3.1 on NTSC), each checked by a shot.
+FE_OVER_PAL  := 10500000
+FE_OVER_NTSC := 9900000
+FE_ENTRY_PAL  := 12900000
+FE_ENTRY_NTSC := 11700000
+FE_TABLE_PAL  := 16500000
+FE_TABLE_NTSC := 15100000
 $(PRG_FE): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
 	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dFRONTEND=1 -o=$@ $(C_MAIN)
@@ -294,12 +309,19 @@ fedrive: $(PRG_FEDRIVE)
 # It reads the game's own counters from RAM (addresses from build/$(NAME).map)
 # and fails on a lost frame ($02FD), a late redraw, a redraw lead under 8 lines,
 # or a frame after a redraw that ended past line 250. PLAN.md, "Combined budget".
+# Since collisions (wave 2) the soldier dies on the way: the drive plays the
+# normal game with START_LIVES 99, so its deaths and checkpoint restarts are
+# inside the one game it measures (three lives ended it within 600 frames).
 LONGPLAY = HARNESS_DIR='$(HARNESS_DIR)' X64SC='$(X64SC)' $(TIMEOUT) $(VICE_TIMEOUT) $(PYTHON) tools/longplay.py
+PRG_LONGPLAY := build/$(NAME)-longplay.prg
+$(PRG_LONGPLAY): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -dSTART_LIVES=99 -o=$@ $(C_MAIN)
 .PHONY: longplay
-longplay: $(PRG)
+longplay: $(PRG_LONGPLAY)
 	@mkdir -p shots
-	@$(LONGPLAY) --model pal $(PRG) build/$(NAME).map > shots/longplay-pal.txt 2>&1; echo $$? > shots/longplay-pal.st & \
-	 $(LONGPLAY) --model ntsc $(PRG) build/$(NAME).map > shots/longplay-ntsc.txt 2>&1; echo $$? > shots/longplay-ntsc.st & \
+	@$(LONGPLAY) --model pal $(PRG_LONGPLAY) build/$(NAME)-longplay.map > shots/longplay-pal.txt 2>&1; echo $$? > shots/longplay-pal.st & \
+	 $(LONGPLAY) --model ntsc $(PRG_LONGPLAY) build/$(NAME)-longplay.map > shots/longplay-ntsc.txt 2>&1; echo $$? > shots/longplay-ntsc.st & \
 	 wait; cat shots/longplay-pal.txt shots/longplay-ntsc.txt; \
 	 [ "$$(cat shots/longplay-pal.st)" = 0 ] && [ "$$(cat shots/longplay-ntsc.st)" = 0 ] || { echo "longplay: FAIL"; exit 1; }
 	@echo "longplay: PASS"
@@ -312,3 +334,42 @@ title: $(PRG)
 	HARNESS_DIR='$(HARNESS_DIR)' DRIVE_EXITSHOT=shots/title.png DRIVE_SCREEN='$(DRIVE_SCREEN)' X64SC='$(X64SC)' $(TIMEOUT) $(VICE_TIMEOUT) $(PYTHON) $(HARNESS_DIR)/drive.py $(PRG) "until:PUSH FIRE TO START" wait:20 print
 	@test -s shots/title.png || { echo "title: FAIL, VICE wrote no shots/title.png"; exit 1; }
 	@echo "title: shots/title.png"
+
+# ---- wave 2: collisions, death and checkpoints, the area end -----------------------------
+# Each is its own autopilot build graded by its expect-*.json on PAL and NTSC.
+#   make collide   -dCOLLIDETEST=1: kills by bullet and blast, the score per kind, a death
+#                  by an enemy; collide()'s cost (src/collide_test.h)
+#   make death     -dDEATHTEST=1: three deaths on the swamp, checkpoint restarts, grenades
+#                  topped up, a life each, game over (src/death_test.h)
+#   make area      -dAREATEST=1: the gate wave, the walk, the bonus, the next area (src/area_test.h)
+#   make fullpool  -dFULLPOOL=1: area 3's gate wave (12) fills all 11 pool slots, then shots
+#                  and blasts into it, no lost frame (src/area_test.h)
+define wave2_test
+PRG_$(2) := build/$(NAME)-$(1).prg
+$$(PRG_$(2)): $$(C_DEPS) $$(ASM_OUT) $$(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$$(OSCAR64_BUILD) -d$$(AUTOPILOT_DEFINE)=1 -d$(2)=1 -o=$$@ $$(C_MAIN)
+.PHONY: $(1)
+$(1): $$(PRG_$(2))
+	$$(call vice_shot,$$(PRG_$(2)),$(3),,shots/$(1)-pal.png)
+	$$(call vice_shot,$$(PRG_$(2)),$(3),-model ntsc,shots/$(1)-ntsc.png)
+	$$(PYTHON) $$(HARNESS_DIR)/check.py expect-$(1).json shots/$(1)-pal.png shots/$(1)-ntsc.png
+endef
+$(eval $(call wave2_test,collide,COLLIDETEST,20000000))
+$(eval $(call wave2_test,death,DEATHTEST,20000000))
+$(eval $(call wave2_test,area,AREATEST,20000000))
+# The AREA CLEARED beat, shot inside the same run: its window is play frames
+# 211-311, about 7.6-9.6 million cycles on PAL and 7.3-9.0 on NTSC (a sweep of
+# shots every 1,000,000 cycles); each pin is in the middle.
+AREA_BEAT_PAL  := 8600000
+AREA_BEAT_NTSC := 8100000
+area: area-beat
+.PHONY: area-beat cleared
+cleared: area-beat
+	cp shots/area-beat-pal.png shots/cleared.png
+	@echo "cleared: shots/cleared.png"
+area-beat: $(PRG_AREATEST)
+	$(call vice_shot,$(PRG_AREATEST),$(AREA_BEAT_PAL),,shots/area-beat-pal.png)
+	$(call vice_shot,$(PRG_AREATEST),$(AREA_BEAT_NTSC),-model ntsc,shots/area-beat-ntsc.png)
+	$(PYTHON) $(HARNESS_DIR)/check.py expect-area-beat.json shots/area-beat-pal.png shots/area-beat-ntsc.png
+$(eval $(call wave2_test,fullpool,FULLPOOL,20000000))

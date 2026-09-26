@@ -13,8 +13,9 @@
 // Files: main.c (states, the frame loop, the autopilot, the meter, the
 // verdict), scroll.c (map, scroll, attributes), soldier.c (the player),
 // objects.c (slots, pool, the enemies), weapons.c (shots, grenades, hit
-// boxes), collide.c (a stub for the next module), flow.c (score, lives, how
-// a game ends), front.c and hiscore.c (title, attract demo, game over, name
+// boxes), collide.c (who hit whom), flow.c (score, lives, the death, the
+// checkpoint restart, how a game ends), area.c (the gate wave, the walk, the
+// next area), front.c and hiscore.c (title, attract demo, game over, name
 // entry, high-score table), sound.c (effect requests, the audio checks),
 // display.c (VIC, text, panel), kernel.asm + mux.asm + sound.asm (IRQ chain,
 // band, redraw, multiplexer, player). PLAN.md, "Modules", says who owns
@@ -23,7 +24,8 @@
 // AUTOPILOT=1 replaces joystick port 2 with a script and grades the end state;
 // FORCE_FAULT=1 starts the soldier 8 pixels to the right. FRONTEND=1 (make
 // frontend) plays the front end instead; FORCE_OVER=1 ends every game in
-// three forced deaths (flow.c).
+// three forced deaths (flow.c). COLLIDETEST, DEATHTEST, AREATEST and FULLPOOL
+// are make collide, death, area and fullpool (their src/*_test.h).
 #include "game.h"
 #include "display.h"
 #include "scroll.h"
@@ -32,6 +34,7 @@
 #include "weapons.h"
 #include "collide.h"
 #include "flow.h"
+#include "area.h"
 #include "sound.h"
 #include "front.h"
 #include "hiscore.h"
@@ -42,6 +45,11 @@
 #pragma section( asmcode, 0 )
 #pragma region( asmreg, ASM_ORG, 0x2000, , , { asmcode } )
 #pragma region( main, 0x2000, 0x8000, , , { code, data, bss, heap, stack } )
+// Nothing here calls malloc: the default 8 KB heap is given to the code
+// (the test builds' code no longer fitted beside it).
+#pragma heapsize( 0 )
+#pragma stacksize( 1024 )               // the software stack: Oscar64 gives most frames static
+                                        // space (SSTACK); nothing here recurses
 #pragma section( gfxchars, 0 )
 #pragma region( gfxcharsreg, 0x8800, 0x9000, , , { gfxchars } )
 #pragma section( gfxmap, 0 )
@@ -115,6 +123,15 @@ static const char script[][2] = {
 #elif defined(WEAPONS)
 #define WT_PART 1                       // make weapons: the script (weapons_test.h)
 #include "weapons_test.h"
+#elif defined(COLLIDETEST)
+#define TT_PART 1                       // make collide: the script (collide_test.h)
+#include "collide_test.h"
+#elif defined(DEATHTEST)
+#define TT_PART 1                       // make death (death_test.h)
+#include "death_test.h"
+#elif defined(AREATEST) || defined(FULLPOOL)
+#define TT_PART 1                       // make area, make fullpool (area_test.h)
+#include "area_test.h"
 #elif defined(FRONTEND)
 // make frontend (-dFRONTEND=1): the whole front end in one run. Fire on the
 // title; up while flow.c's forced deaths (a death every 40 logic frames, 8,500
@@ -122,7 +139,9 @@ static const char script[][2] = {
 // letter wheel; the table; the title, where it freezes and grades itself.
 static const char script[][2] = {
     {   2, 0xff }, {   2, 0xef },       // title: fire starts the game
-    { 130, 0xfe },                      // up: the game ends on about play frame 135
+    { 170, 0xfe }, { 170, 0xfe },       // up: three forced deaths, each with its death animation
+                                        // and (the first two) a restart; the game ends on about
+                                        // play frame 330 (135 before death and restart landed)
     { 200, 0xff },                      // game over (150 frames), then the entry, untouched
     {   1, 0xfe }, {   1, 0xff }, {   1, 0xfe }, {   1, 0xff }, {   1, 0xfe }, {   1, 0xff },
     {   1, 0xef }, {   1, 0xff },       // up three times, A to D; fire
@@ -213,12 +232,21 @@ static char last_fc, wake_fc;
 static unsigned overruns;
 static char counting;
 static unsigned lost_at;
+#if defined(COLLIDETEST) || defined(DEATHTEST) || defined(AREATEST) || defined(FULLPOOL)
+#define LOST_ALL 1                      // the wave-2 proofs count every lost frame too
+#endif
 #ifdef WEAPONS
+#define LOST_ALL 1
+#endif
+#ifdef LOST_ALL
 // make weapons: lost frames through the whole script, not only the metered
 // part (overruns stops when the meter holds, METER_HOLD frames in). Exempt is
 // the one wake after the meter's last frame is recorded: that call also
 // finds the median (harness work, longer than a frame).
 static unsigned lost_all, lost_all_at, mf_prev;
+
+
+
 #endif
 
 static void wait_frame(void)
@@ -232,7 +260,7 @@ static void wait_frame(void)
     char fc = K_FRAME_CNT;
     char lost = (char)(fc - last_fc) - 1;
     last_fc = wake_fc = fc;
-#ifdef WEAPONS
+#ifdef LOST_ALL
     char exempt = mf_prev < METER_HOLD && meter_frames >= METER_HOLD;
     mf_prev = meter_frames;
     if (state == ST_PLAY && play_frames > 1 && lost && !exempt) {
@@ -395,9 +423,12 @@ static void play_enter(void)
     flow_new_game();
     panel_draw();
     soldier_reset();
-#ifdef MAPEND
+#if defined(MAPEND) || defined(AREATEST) || defined(FULLPOOL)
     scroll_init(0, 0);                  // map y 7 on line 55
     soldier_y = SOLDIER_THRESH;
+#endif
+#ifdef DEATHTEST
+    scroll_init(DT_START_TOP, 0);       // death_test.h: the view at a checkpoint
 #endif
     objects_reset();
     weapons_reset();
@@ -480,13 +511,41 @@ static unsigned lines_to_redraw(void)
     return l < RD_FIRST ? RD_FIRST - l : 0;
 }
 
+// The soldier takes the stick only while he is alive and area.c has not
+// taken it (the walk into the gate, the beat). Otherwise the stick reads
+// centred and no fire: joy 0xff.
+static char stick(char joy)
+{
+    return soldier_state == SS_ALIVE && !area_has_stick() ? joy : 0xff;
+}
+
 static void play_frame(char joy)
 {
     char top = scroll_top;
 #if AUTOPILOT
     sound_script(play_frames);          // scripted effect requests (sound.c)
 #endif
-    soldier_update(joy);
+    if (flow_restart_due) {
+        // A restart (checkpoint_respawn, or the next area) is a redraw frame
+        // of its own: the new view, the cleared pool and the soldier at his
+        // start are committed with YSCROLL 0, and main.c draws the view from
+        // RD_FIRST. Nothing else runs.
+        flow_restart();
+        soldier_draw();
+        actors_commit(COMMIT_YS | COMMIT_MUX);
+        return;
+    }
+    // On time: the loop woke at line 250 and this frame is the one it woke
+    // for (not the first frames after play_enter, not the frame after the
+    // meter's median; both start anywhere).
+    unsigned l0 = raster_line();
+    objects_on_time = play_frames > 1 && K_FRAME_CNT == wake_fc && (l0 >= 250 || l0 < 40);
+    if (soldier_state == SS_ALIVE && !area_has_stick())
+        soldier_update(joy);
+    else {
+        joy = 0xff;
+        soldier_stepped = 0;
+    }
 #ifdef ENEMYTEST
     obj_cyc_now = 0;
 #endif
@@ -505,6 +564,7 @@ static void play_frame(char joy)
     }
     objects_update();
     OBJ_T1(obj_cyc_max);
+    area_frame();
     weapons_update(joy);
     collide();
     flow_frame();
@@ -533,11 +593,13 @@ static void play_frame(char joy)
 // (row_map_redraw, "How" step 6: the scroll keeps its pace) and no object
 // thinks; the weapons, the collisions and the rules that the redraw frame
 // left out run here, on this frame's stick.
+
 static void light_frame(char joy)
 {
-    soldier_repeat_step();
+    if (soldier_state == SS_ALIVE)
+        soldier_repeat_step();
     objects_hold();
-    weapons_update(joy);
+    weapons_update(stick(joy));
     collide();
     flow_frame();
     soldier_draw();
@@ -580,6 +642,16 @@ static char slots_above_cut(void)
 #undef WT_PART
 #define WT_PART 2                       // make weapons: its verdict (weapons_test.h)
 #include "weapons_test.h"
+#elif defined(COLLIDETEST) || defined(DEATHTEST) || defined(AREATEST) || defined(FULLPOOL)
+#undef TT_PART
+#define TT_PART 2                       // the wave-2 proofs' verdicts (their headers)
+#if defined(COLLIDETEST)
+#include "collide_test.h"
+#elif defined(DEATHTEST)
+#include "death_test.h"
+#else
+#include "area_test.h"
+#endif
 #elif defined(FRONTEND)
 // make frontend: title, play, game over, entry, table, title; the table filed
 // by rank; the panel followed the game; the front end shows no play sprite
@@ -708,7 +780,7 @@ static char first_fail_enemies(void)
 #ifdef ENEMYTEST
 #define first_fail first_fail_enemies
 #endif
-#ifndef FRONTEND
+#if !defined(FRONTEND) && !defined(OWN_VERDICT)
 static void verdict(void)
 {
     char fail = first_fail();
@@ -793,6 +865,11 @@ static void verdict(void)
     text_colour(9, 1, 20, TEXT_CRAM);
 #ifdef WEAPONS
     weapons_print();
+    put_text(s, 18, 1, "COL 00000 LF 000 DF 00");
+    put_dec(s + 18 * 40 + 5, col_worst, 5);
+    put_dec(s + 18 * 40 + 14, light_end, 3);
+    put_dec(s + 18 * 40 + 21, col_deferred, 2);
+    text_colour(18, 1, 22, TEXT_CRAM);
 #endif
 }
 #endif
@@ -817,6 +894,7 @@ int main(void)
     ntsc = is_ntsc();
     cia1.pra = 0xff;                    // no keyboard column selected
     display_init();
+    collide_init();
     scroll_init(SCROLL_START_TOP, SCROLL_START_YS);
     front_init();
     flow_new_game();
@@ -851,8 +929,12 @@ int main(void)
 #if AUTOPILOT
             // Freeze on the text grid's YSCROLL; a run that never gets there
             // (a fault build stopped by a trunk) freezes 40 frames later, red.
+#ifdef TEST_FREEZE
+            if (!light && !flow_restart_due && (TEST_FREEZE)) {
+#else
             if (play_frames >= PLAY_FRAMES && !light &&
                 ((scroll_ys == FREEZE_YS && K_CUR_YS == FREEZE_YS) || play_frames >= PLAY_FRAMES + 40)) {
+#endif
                 state = state_next = ST_FROZEN;
                 meter_flush();
                 sound_stop();
@@ -865,7 +947,7 @@ int main(void)
                 unsigned l = raster_line();
                 if (counting && l < 250 && l > light_end)
                     light_end = l;
-#if AUTOPILOT
+#ifdef ENEMYTEST
                 objects_audit();        // outside the meter, after the line is read
 #endif
             } else {
@@ -889,13 +971,38 @@ int main(void)
                             break;
                         }
 #endif
-#if AUTOPILOT
+#ifdef ENEMYTEST
+                // make enemies' own checks, every frame. Only its build runs
+                // them: about 1,050 cycles a frame inside the frame's deadline
+                // (VICE monitor profiler, make weapons on NTSC), which the
+                // other autopilot builds' figures should not carry.
                 objects_audit();
 #endif
-                if (scroll_redraw_due)
+                if (scroll_redraw_due) {
+#ifdef DEATHTEST
+#endif
                     do_redraw();
+#ifdef DEATHTEST
+                    if (fl_restarts != dt_restarts) {   // a restart's redraw: its rows on screen
+                        dt_restarts++;                  // the first and last rows it writes (all
+                                                        // 840 bytes took over a frame: lost frames)
+                        dt_map_ok &= memcmp(SCREEN, MAP + 40 * scroll_top, 40) == 0 &&
+                                     memcmp(SCREEN + 20 * 40, MAP + 40 * (scroll_top + 20), 40) == 0;
+                        dt_sx = soldier_x;
+                        dt_sy = soldier_y;
+                    }
+#endif
+                }
             }
             play_frames++;
+#ifdef TEST_OVER
+            if (state_next == ST_OVER) {        // the game ended: freeze on the play screen instead
+                TEST_OVER;
+                state = state_next = ST_FROZEN;
+                meter_flush();
+                sound_stop();
+            }
+#endif
             break;
 #if AUTOPILOT
         case ST_FROZEN:
@@ -921,8 +1028,12 @@ int main(void)
         }
         if (state_next != state)
             state_enter(state_next);
-        if (state != ST_PLAY)
+        if (state != ST_PLAY) {
+            counting = 0;               // lost frames are play frames: the front-end entry routine
+                                        // after a game over (up to 8,350 cycles, PLAN.md "Front
+                                        // end") counted in LOST_FRAMES once deaths could end a game
             meter_print();
+        }
     }
     return 0;
 }

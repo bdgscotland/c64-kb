@@ -16,9 +16,11 @@ under a black band holds SCORE, LIVES and GRENADES. PAL and NTSC.
 
 This build has the scroll, the redraw, the band and panel, the multiplexer
 with parked slots, the soldier, the enemies ("Enemies"), his weapons
-("Weapons"), the tune and effects ("Audio") and the front end ("Front
-end"). Collisions, checkpoints and the area-end gate come next, each in its
-own module ("Modules"). "Combined budget" measures all of it together.
+("Weapons"), the tune and effects ("Audio"), the front end ("Front end"),
+and since wave 2 the collisions ("Collisions"), death with checkpoint
+restarts and a deadly swamp ("Death and checkpoints") and the area end:
+the gate wave, the walk into the gate and the next area ("Area end").
+"Combined budget" measures all of it together.
 
 ## Briefing
 
@@ -718,11 +720,11 @@ uses it.
 |---|---|
 | `$0801-$087F` | Oscar64 start-up |
 | `$0880-$1A23` | the KickAssembler blob: kernel.asm, mux.asm, sound.asm with src/gen/tune.asm (build/asm.h `ASM_END`; `$11EA` before the audio module) |
-| `$2000-$7FFF` | C code, data, stack |
+| `$2000-$7FFF` | C code, data, stack. `#pragma heapsize(0)` and `stacksize(1024)` (main.c): nothing calls malloc, and with the default 8 KB heap and 4 KB stack the test builds' code no longer fitted ("Cannot place heap section"). Code, data and BSS end at `$522E` in the normal build and `$6C0B` in `make weapons`, the largest |
 | `$8000-$83E7` | the one screen: playfield rows 0-20, panel rows 21-23 (VIC bank 2) |
 | `$83F8-$83FF` | sprite pointers |
 | `$8400-$87FF` | scratch: the meter's readout row in AUTOPILOT builds, copied after the verdict |
-| `$8800-$8FFF` | characters: 0-63 copied from the ROM at start-up, 64-254 the jungle, 255 the title logo's solid block `G_SOLID` (src/gen/charset.bin) |
+| `$8800-$8FFF` | characters: 0-63 copied from the ROM at start-up, 64-254 the jungle (116-117 the swamp, `A_DEADLY`), 255 the title logo's solid block `G_SOLID` (src/gen/charset.bin) |
 | `$9000-$9EFF` | the raw row map, 96 rows x 40 (src/gen/map.bin); the VIC sees the character ROM here |
 | `$9F00-$9FFF` | attr[screen code], page aligned (src/gen/attr.bin) |
 | `$A000-$A83F` | sprites: soldier 8 x 4 frames, then the blank parking block (block 160) |
@@ -734,7 +736,11 @@ KERNAL and BASIC are banked out (`$01 = $35`); the IRQ and NMI vectors
 are `$FFFE` and `$FFFA`. Oscar64's zero page is `$02` to about `$5x`; the
 blob uses none and takes arguments through its own bytes (`ASM_<LABEL>`).
 Colour RAM: playfield rows `$0D` (multicolour, green), panel rows white,
-written once; the redraw never touches it. `$02FF` is the verdict,
+written once; the redraw never touches it. The playfield's `$D021`,
+`$D022` and `$D023` are bytes in the blob (`pf_bg`, `pf_mc1`, `pf_mc2`)
+that the frame IRQ applies with the YSCROLL it commits, so an area's
+colours change on the frame its view does (area.c `area_begin`); an
+earlier version stored constants. `$02FF` is the verdict,
 `$02FD` the lost-frame count. CIA2 timer A is the meter's, timer B the IRQ
 time's, CIA1 timer B the redraw's (AUTOPILOT builds read it).
 
@@ -753,12 +759,13 @@ A module never writes the VIC's sprite registers: it writes its slots
 | Module | Files | Owns | Interface it must keep |
 |---|---|---|---|
 | Kernel | kernel.asm, mux.asm | `$D012` and the chain, the band, the redraw, the 16-slot multiplexer | `commit` bits (`COMMIT_YS`, `COMMIT_MUX`), `pend_ys`, `frame_flag`, `band_tick`, `redraw`, `mux_sort`, `mux_build`, the slot tables `slot_y/xl/xh/ptr/col/pri` |
-| Scroll | scroll.c/h | the view: `scroll_top`, `scroll_ys`, `scroll_wy` | `scroll_step`, `scroll_can_step`, `map_x`, `map_y`, `attr_at`, `code_at`, `scroll_init(top, ys)` |
-| Soldier | soldier.c/h | slot 0, the stick | `soldier_x`, `soldier_y`, `soldier_facing` (0-15), `soldier_behind`; `soldier_update(joy)`, `soldier_draw` |
-| Objects and enemies | objects.c/h, spawns.h | slots 5-15, the pool, the spawn list | `obj_alloc`, `obj_free`, `objects_rows(top)` (wave_director: spawns keyed to map rows, fired as the top row reaches them), `objects_update` (writes the slots), `objects_draw` (empty), `objects_hold` (the redraw pair: no think, slots follow the ground); for collide: `kind_box`, `kind_flags`, `obj_kill(slot)`; objects keep map coordinates and draw at Y = my - scroll_wy + 54 |
-| Weapons | weapons.c/h | slots 1-3 (bullets), 4 (grenade), decrements `grenades` | `weapons_update(joy)` (fire joy bit 4, throw `JOY_THROW` bit 5), `weapons_reset`; for collisions: `Box`, `box_hit`, `box_has`, `box_blast`, `weapons_bullet_box(i, &b)`, `weapons_bullet_spent(i)`, `weapons_blast_box(&b)` ("Weapons", below) |
-| Collision (next) | collide.c/h | boxes | `collide()`, after objects and weapons moved; scenery is `attr_at` |
-| Flow | flow.c/h | `score` (BCD, 3 bytes), `lives`, `grenades`, how a game ends | `flow_new_game`, `flow_frame` (redraws the panel fields whose value changed: set `lives`/`grenades`, call `flow_add_score(bcd)`, and the panel follows), hooks `flow_player_died` (now: a life off, game over at none) and `flow_area_cleared` (now: the game ends); next: checkpoint_respawn restarts through `scroll_init(row, 0)`, `objects_reset`, `objects_rows`; area_end_gate_wave starts when `scroll_can_step()` is 0; the gate is `G_GATE`, map rows 1-2, columns 18-21 |
+| Scroll | scroll.c/h | the view: `scroll_top`, `scroll_ys`, `scroll_wy` | `scroll_step`, `scroll_can_step`, `map_x`, `map_y`, `attr_at`, `code_at`, `scroll_init(top, ys)`, `scroll_restart(top)` (a restart's view, drawn by main.c's redraw path) |
+| Soldier | soldier.c/h | slot 0, the stick | `soldier_x`, `soldier_y`, `soldier_facing` (0-15), `soldier_behind`, `soldier_deadly`, `soldier_state` (alive, dead, gone) and `soldier_t`; `soldier_update(joy)`, `soldier_draw` (the death animation: a spin, then dust), `soldier_walk(x, y)` (the gate walk) |
+| Objects and enemies | objects.c/h, spawns.h | slots 5-15, the pool, the spawn list | `obj_alloc`, `obj_free`, `objects_rows(top)` (wave_director: spawns keyed to map rows, fired as the top row reaches them), `objects_update` (writes the slots), `objects_draw` (empty), `objects_hold` (the redraw pair: no think, slots follow the ground); for collide: `kind_box`, `kind_flags`, `obj_kill(slot)`; for the gate wave: `objects_spawn`, `objects_alive`, `objects_count`; `objects_on_time` (main.c: the deadline may act); objects keep map coordinates in whole pixels (quarter pixels before wave 2: every motion is whole pixels a tick, so the results are the same, `make enemies` 24 of 24) and draw at Y = my - scroll_wy + 54 |
+| Weapons | weapons.c/h | slots 1-3 (bullets), 4 (grenade), decrements `grenades` | `weapons_update(joy)` (fire joy bit 4, throw `JOY_THROW` bit 5), `weapons_reset`; for collisions: `Box`, `box_hit`, `box_has`, `box_blast`, `weapons_bullet_box(i, &b)`, `weapons_bullet_spent(i)`, `weapons_blast_box(&b)`, and `weapons_live`, `weapons_bbox`, `weapons_bline` (each bullet's box as it is drawn, read without a call) ("Weapons", below) |
+| Collision | collide.c/h | who hit whom | `collide_init()` once, `collide()` on logic frames after objects and weapons moved (never on the redraw frame); scores through `flow_add_score`, kills through `obj_kill`, deaths through `flow_player_died` ("Collisions") |
+| Area | area.c/h | `area` (the counter), `area_phase`, the gate wave, the walk, the beat, the area's colours | `area_begin(n)`, `area_restart`, `area_frame` (play frames), `area_has_stick` (1 during the walk and the beat: no stick, no hit test) ("Area end") |
+| Flow | flow.c/h | `score` (BCD, 3 bytes), `lives`, `grenades`, the death, the restarts, how a game ends | `flow_new_game`, `flow_frame` (the death's timer, then the panel fields whose value changed), `flow_add_score(bcd)`, `flow_player_died(cause)` (the death animation, then a life off and a checkpoint restart or game over), `flow_area_cleared` (a restart into the next area), `flow_restart` (main.c runs it as a redraw frame of its own when `flow_restart_due` is set), `flow_checkpoint(top)` ("Death and checkpoints"). An earlier version's hooks took a life at once and ended the game at the gate |
 | Front end | front.c/h, hiscore.c/h | the front-end states (title, table, attract demo, game over, name entry), the high-score table | a module asks for a state in `state_next`; main.c runs its entry routine (`front_enter`, or `play_enter` for `ST_PLAY`) before the next frame; `demo` is 1 while `ST_PLAY` is the attract demo; `hs_rank`, `hs_place` |
 | Audio | sound.asm, sound.c/h, tools/mktune.py, main.c `sfx` | the SID, CIA1 timer A (stopwatch) | `audio_init`, `audio_play` (line-250 IRQ; held off the redraw frame by `sound_hold`/`sound_release` in `do_redraw`), `sfx_request` (A = effect); C calls `sfx(SFX_...)` from sound.h; sfx_voice_takeover: effects on voices 1 and 2, the tune on 3 ("Audio") |
 
@@ -814,12 +821,19 @@ both models (the band started a line late). `make mapend`
 map y 0 after 7 steps, and the soldier walks on through the gate to
 sprite Y 52 (10 of 10).
 
+Since collisions the graded walk runs with harm on: the rifleman of row 77
+stops at the sandbags of row 82, which also stop his shots, and nothing
+else reaches the soldier before the freeze (47 of 47 unchanged).
+
 `node scripts/verify-templates.ts --only run-and-gun --selftest` in c64-kb
-(the starter made into a fresh project outside the repo): `make all`,
-`make shot check` (45 of 45), `make disk`, `make selftest`,
-`make mapend` (10 of 10), `make frontend` (13, 17, 21 and 37 of 37, and
-the fault build refused) and `make fedrive` all pass; "verify-templates:
-1 of 1 starters passed" (run again with the front end, 2026-09-26).
+(the starter made into a fresh project outside the repo), after wave 2,
+2026-09-26: `make all`, `make shot check` (47 of 47), `make disk`,
+`make selftest`, and every `VERIFY_TARGETS` target: `mapend` (10), `enemies`
+(24), `weapons` (36), `weaponsfault`, `audio`, `audiotest`, `frontend` (13,
+17, 21 and 37), `fedrive`, `longplay`, `collide` (28), `death` (30), `area`
+(10 and 22) and `fullpool` (10) pass; "verify-templates: 1 of 1 starters
+passed". An earlier run (the front end) passed with 45 of 45 in the graded
+shot.
 
 ## Front end
 
@@ -1163,6 +1177,195 @@ reads). Its path rests on the emitted order in build/run-and-gun.asm
 (`LDA #$7F`, `STA $DC00`, `LDA $DC01`, `AND #$10`, then `LDA #$FF`,
 `STA $DC00`).
 
+## Collisions
+
+Built from `per_frame_hitbox` (one box per kind, objects.h `kind_box`, from
+the slot's own registers: what the last draw showed), `grenade_lob` (the
+blast's corner box, tested every blast frame; a killed enemy is dust, no
+longer shootable, so it dies once), `char_attribute_flags` (bit 2 under the
+body centre kills) and `object_pool`. collide.c, once a logic frame after
+the objects and weapons moved; never on the redraw frame (the budget split,
+"Combined budget").
+
+| Pair | Result |
+|---|---|
+| his bullet and a `KF_SHOOTABLE` object | the object dies (`obj_kill`), the bullet is spent; runner 150, rifleman 100, grenadier 200 |
+| his grenade's blast and every `KF_SHOOTABLE` object in it | each dies, each scored |
+| his body box (sprite pixels 8-15, rows 3-19) and a `KF_HURTS` object: an enemy (touch), an enemy shot, an enemy blast | `flow_player_died(DC_HIT)` |
+| an `A_DEADLY` cell under his body centre (the swamp) | `flow_player_died(DC_TERRAIN)` |
+
+No hit test runs on him while he is dead, during the gate walk and the beat
+(`area_end_gate_wave`: "Skip the hit test"), or in `NO_HARM` builds (below).
+A frame's kills are summed in tens and added once in BCD, with one
+`SFX_KILL`; the attract demo scores nothing.
+
+How a pair is tested, cheapest first: one byte of Y in sprite-line
+coordinates (Y + row; every shown slot is at Y 0-187 and a box is at most 21
+high, so the corner form cannot alias in 8 bits: arithmetic); one window of
+lines that anything that hits covers, which drops most objects with one
+compare; a 16-bit X corner test; then `box_hit` (weapons.h, the wrap-safe
+corner form) confirms the pair. Half the pool is tested a frame, by pool
+index against a frame count: an object is tested every second frame, in
+which a bullet moves 10 pixels against the 17 lines a bullet and the
+smallest shootable box (the runner, 13 rows) share, and an enemy shot 3
+pixels against his 17 rows, so nothing passes through (arithmetic from the
+speeds). The deadline: a pass that would start after line `COLLIDE_LATE`
+(100) is skipped and its half kept for the next frame, so an object waits
+three frames (15 pixels of a bullet, still under 17); never two skips in a
+row.
+
+Why it looks like this, each step measured on `make weapons` NTSC (the
+densest scene: ten sprites, three shots, a blast, scrolling):
+
+1. Every object, full 16-bit boxes, `box_hit` per pair: one call cost 1,379
+   cycles with interrupts off at the freeze (10 objects, a bullet, a blast);
+   16 frames lost from play frame 454, the frame after a redraw ending on
+   line 241 against 197 before collisions.
+2. Half the pool a frame: 778; the bullets' live mask and a skipped pass
+   when nothing can hit: 568; each bullet's box kept by weapons.c as it is
+   drawn (`weapons_bbox`), no call and no shifts: 1 frame lost.
+3. The deadline, at line 170 with a whole-pool catch-up: still lost (the
+   catch-up landed late in the next heavy frame); keeping the parity and
+   skipping at 110, then 100: 0 lost.
+
+The in-game stopwatch (`col_worst`, CIA1 timer B) is wall time: the zone
+and band IRQs and the sprite DMA of the lines the pass runs over are in it,
+which is why it reads 2,000-4,000 where the pass itself is a few hundred.
+The VICE monitor's profiler (`prof on`, `prof flat` over the remote
+monitor, rung 1) gives the pass's own share.
+
+| collide() (VICE x64sc 3.10) | PAL | NTSC | Instrument |
+|---|---|---|---|
+| one pass, 4 pool objects, no bullet, interrupts off in the border | 465 | 465 | `make collide` verdict row 9 (`BENCH`) |
+| average a frame, `make weapons` frames 416-533 | | 660 | profiler, 77,273 cycles over 117 frames |
+| average a frame, `make fullpool` frames 268-464 | | 750 | profiler, 147,087 over 196 frames |
+| worst wall time, `make weapons` / `make collide` / `make fullpool` | 2,541 / 3,215 / 3,451 | 2,383 / 3,494 / 3,086 | `col_worst`, IRQs and DMA inside |
+| passes skipped by the deadline, `make weapons` / `make area` / `make fullpool` | 1 / 2 / 3 | 39 / 45 / 40 | `col_deferred` |
+
+`make collide` (`-dCOLLIDETEST=1`, src/collide_test.h, expect-collide.json,
+28 of 28 on PAL and NTSC): the normal start, harm on. Taps up while the
+runner of row 88 crosses his column (150); right to X 300, up 8 to face up,
+a grenade whose blast lands on the grenadier of row 84 (200, by the blast);
+taps while the rifleman of row 77 follows him into them (100): `KILL 1 1 1
+B 1`, `SCORE 000450`. Then up and standing: before the view moves (top 75)
+the blast of a grenade the grenadier threw before he died bursts on him, a
+hit (play frame 413 in VICE, not pinned: it moved a frame with the code's
+layout); after `DEATH_FRAMES` the restart puts the view at row 75, the first
+checkpoint at or behind 75, with the window's three events again, grenades
+4 to 5, lives 2. The grenadier the blast killed is back on screen where the
+arithmetic puts him (sprite X 312, Y 659 - 607 + 54 = 106: purple at VIC x
+320-329, lines 112-121, both models).
+
+`NO_HARM` (game.h): nothing kills the soldier in the forced-death builds
+(`make frontend`, `make fedrive`: their score must be exact), `make weapons`
+(its script stands under fire for 260 frames; pinned before collisions: it
+lost two lives), `make area` and `make fullpool` (they grade the gate
+sequence and the budget; an aimed shot killed him on play frame 78 of the
+wave). Bullets and blasts still kill enemies in all of them; `make collide`
+and `make death` prove the deaths.
+
+## Death and checkpoints
+
+Built from `checkpoint_respawn` (techniques/logic.md and its recipe) and
+`char_attribute_flags` (the deadly bit).
+
+- **The table.** tools/mkassets.py `CHECKPOINTS`: map rows 16, 40, 60 and 75
+  (the area's start, last), written to src/gen/assets.h. The restart row is
+  the first entry at or above the view's top row (the row counts down as he
+  advances, so behind is larger). The soldier restarts at sprite (168, 160):
+  mkassets asserts that each pad (rows +13 to +17, columns 17-21) holds
+  nothing that blocks or kills.
+- **The death.** `DEATH_FRAMES` 64 logic frames (Commando's is 80 frames,
+  techniques/logic.md): the world keeps moving; he spins, a body frame
+  every 2 frames, red and white by turns, for 40, then shows dust. No stick,
+  no fire, no scroll. At the end a life is taken; at none, game over into
+  the front end (the demo goes to the title).
+- **The restart** (`flow_restart`) runs on its own frame, as a redraw frame:
+  `scroll_restart(row)` commits YSCROLL 0 at the new row and main.c copies
+  the view from line 64 with the redraw, which stays behind the beam, so
+  the old view shows until the frame IRQ applies the new one and nothing is
+  blanked. The pool is cleared and `objects_reset` re-spawns the window
+  from the spawn list; the soldier stands at his start; the weapons are
+  cleared; grenades are topped up to 5, never lowered; the gate phase starts
+  over. Score and lives stay.
+- **The swamp.** Glyphs 116-117, `A_DEADLY`, map rows 45-47, columns 7-14,
+  placed after the scatter over floor cells only (mkassets asserts it), so
+  no feature the autopilot scripts meet moved. Riflemen do not walk into it
+  (objects.c `walk_blocked`); shots and grenades fly over it. The palette
+  has no blue (one colour RAM value for the playfield): the water is black
+  with light-green ripples.
+
+| | PAL | NTSC | Instrument |
+|---|---|---|---|
+| `flow_restart`, worst of two | 1,480 | 1,480 | CIA1 timer B (`make death` row 17) |
+| the restart's redraw: smallest lead | 231 lines | 189 lines | row 17 `LD` |
+| lost frames, the whole run with three deaths and two restarts | 0 | 0 | row 16 |
+
+`make death` (`-dDEATHTEST=1`, src/death_test.h, expect-death.json, 30 of 30
+on PAL and NTSC): the view starts at checkpoint 40, no spawn-list enemies.
+Two grenades (5 to 3); up 60 frames (50 to the threshold, 10 lines of
+scroll: top 39, YSCROLL 2, his body centre on map row 47); left until his
+body centre is on column 14 (X 131): dead on the swamp, cause 2. The
+restart comes 64 frames later at row 40 (the first checkpoint at or behind
+39), grenades 3 to 5, lives 2; the restart's redraw put map rows 40 and 60
+on screen rows 0 and 20; he stands at (168, 160). One grenade, the same
+walk: 4 to 5, lives 1. The third death ends the game: the build freezes as
+the game asks for game over. The swamp's rows where the arithmetic puts
+them at top 39, YSCROLL 2 (map y 317 on line 55: row 45 on line 98, row 47
+on 114), his dust at VIC x 135-150, lines 115-126 (a sprite at X 131, Y 110).
+
+The front end's forced deaths (`FORCE_OVER`) now run the death animation
+and the restarts, so its game over comes on play frame 314, not about 135:
+the `make frontend` script plays 340 frames of play and every pin moved 179
+frames (3.5 million cycles on PAL, 3.1 on NTSC), each checked by a shot.
+The script's counts are bytes: a first try with 340 and 300 wrapped to 84
+and 44. A lost frame is now counted only in play: `counting` stayed set
+when a game ended, and the front end's entry routine (up to 8,350 cycles)
+counted as lost in `LOST_FRAMES` once deaths could end a driven game.
+
+## Area end
+
+Built from `area_end_gate_wave` (techniques/logic.md and its recipe),
+`lfsr_random` (the recipe's 8-bit Galois LFSR, seed `$A5`, taps `$B8`) and
+`object_pool`. area.c.
+
+| Phase | Begins | What runs |
+|---|---|---|
+| scroll | the area's start, every restart | the game; the check `scroll_can_step() == 0` with the soldier alive |
+| wave | the scroll stopped at map y 0 | `WAVE_N` = 6 + 2 x area (to 12) soldiers; each free pool slot rolls once a frame and spawns when `roll & 31` is 0 (the recipe's rule: a full pool slows the wave); a second roll gives X 132-194 and the kind (grenadier when its top two bits are set, else rifleman), feet on map row 4 under the gate |
+| walk | `tospawn` 0 and `objects_alive()` 0, recounted from the pool every frame | no stick, no hit test, no terrain test: 1 pixel a frame to X 168, then up to Y 52, in the gate's opening |
+| beat | the arrival | 2,000 points, the soldier gone (parked), AREA CLEARED and BONUS 2000 for 100 frames |
+| next area | the beat's end: `flow_area_cleared` | a restart: the map from row 75, the next area's colours, fire and throw periods halved (to a quarter from area 2: Commando's per-area fire masks `$3F`, `$1F`, `$0F`), grenades topped up |
+
+Colours: area 0 is the jungle (earth brown, highlights light green), area 1
+the same map burnt (medium grey, light grey), area 2 the jungle again. A
+death during the wave restarts at checkpoint 16 and the wave comes out
+whole again (Commando resets its count at every respawn).
+
+`make area` (`-dAREATEST=1`, src/area_test.h, expect-area.json, 22 of 22;
+expect-area-beat.json, 10 of 10, on PAL and NTSC): 7 lines from the top,
+the soldier on the threshold, no spawn-list enemies, `NO_HARM`. Up: map y 0
+on play frame 7, the wave begins that frame; down to the sandbags of map
+row 14 (Y 145), 8 frames up to face up (Y 137), taps. All 6 spawned, 6
+riflemen shot; the walk begins as the last dies (frame 125 on PAL, 126 on
+NTSC, one deferred collision pass) and arrives 86 frames later (85 pixels,
+Y 137 to 52, and the arrival frame); the beat lasts 100. Score 2,600 (600
+and the bonus). Area 1: the map from row 75, `pf_bg` 12, `pf_mc1` 15, the
+soldier at his start, the screen equal to the map; the grey earth on map
+row 91's floor cells (lines 176-183) and a canopy drawn only in black, green
+and light grey (no light green left). The beat is shot inside the same run
+at 8,600,000 cycles on PAL and 8,100,000 on NTSC, the middle of its window
+(a sweep every 1,000,000 cycles), before the build draws its verdict:
+`make cleared` keeps the PAL one for the README.
+
+`make fullpool` (`-dFULLPOOL=1`, 10 of 10): area 3's wave (12, more than
+the 11 slots) under the normal rule; he holds fire 250 frames while the
+riflemen gather 56 pixels above him, then fires taps and throws a grenade
+every 50 frames. The pool reached 11 of 11, all 12 were shot, and no frame
+was lost on either model. The first version (every free slot spawning
+every frame, 40 soldiers) is more than the game can produce and lost 20
+NTSC frames; this is the game's own worst case.
+
 ## Combined budget
 
 Measured at the merge of enemies, weapons, audio and the front end (VICE
@@ -1248,6 +1451,51 @@ all`, `make shot check` (47 of 47), `make disk`, `make selftest`, and every
 17, 21 and 37 of each), `fedrive` and `longplay`; "verify-templates: 1 of 1
 starters passed".
 
+### Wave 2: collisions, deaths, the area end
+
+Measured with the three modules merged (VICE x64sc 3.10). "Before" is the
+table above.
+
+| | PAL before | PAL now | NTSC before | NTSC now | Instrument |
+|---|---|---|---|---|---|
+| Logic frame, worst / typical, `make shot` | 9,401 / 6,323 | 11,021 / 7,653 | 9,816 / 6,662 | 11,409 / 8,184 | harness meter, first 200 logic frames |
+| Logic frame, worst / typical, `make weapons` | 9,714 / 6,434 | 11,722 / 7,192 | 10,280 / 6,796 | 11,198 / 7,696 | the same |
+| Redraw, most cycles, `make weapons` | 16,106 | 16,054 | 16,063 | 16,089 | row 6 |
+| Redraw's smallest lead, `make weapons` / `make longplay` | 195 / 211 | 200 / 226 | 159 / 168 | 159 / 178 | row 6, longplay |
+| The frame after a redraw ends, latest, `make weapons` | 135 | 170 | 197 | 240 | row 8, limit 250 |
+| Logic frame, worst / typical, `make fullpool` (11 of 11 slots) | | 13,691 / 11,517 | | 13,568 / 11,945 | its meter |
+| Lost frames: shot, weapons, longplay, collide, death, area, fullpool | 0 | 0 | 0 | 0 | each verdict, `LOST_FRAMES` |
+
+`make longplay` now drives the normal game with `START_LIVES` 99: the
+soldier dies on the way (three lives ended it within 600 frames), and its
+deaths and checkpoint restarts are inside the one game it measures. 2,700
+frames: PAL 435 lines scrolled, 60 redraws; NTSC 376, 52.
+
+What it took to keep NTSC's frames, each step measured:
+
+- collide() as "Collisions" says: half the pool a frame, a Y window, the
+  bullets' boxes kept by weapons.c, the deadline at line 100.
+- Objects in whole pixels (behaviour unchanged): the mean of `make enemies`
+  fell from 2,289 to 2,217 cycles on PAL (4,154 to 3,991 worst).
+- The objects' deadline (objects.c `OBJ_LATE`, line 95): a thinking object
+  whose tick would start later only follows the ground and thinks next
+  tick, so under load the enemies slow down, not the frame. `make fullpool`
+  lost 1 NTSC frame without it and none with it (60 ticks skipped, none on
+  PAL). It acts only on frames that began on time (`objects_on_time`): the
+  first frames after `play_enter` and the frame after the meter's median
+  start anywhere, and there it changed the graded walk (43 of 47) for
+  nothing.
+- `objects_audit` (the enemies proof's per-frame checker, about 1,050 cycles
+  a frame by the profiler) runs only in `make enemies`; it ran after the
+  commit, so it lost no frame, but it is that build's instrument.
+
+The NTSC margin is thin in `make weapons`: the frame after a redraw ended by
+line 240. Work added to the logic frame should come with a deadline like
+these two, or a measurement that it fits.
+
+Proof after wave 2: `node scripts/verify-templates.ts --only run-and-gun
+--selftest` (below, "Autopilot and checks").
+
 ## Decisions and open questions
 
 - Oscar64 with a KickAssembler blob, the shmup-vertical layout: the band,
@@ -1288,3 +1536,14 @@ starters passed".
 - Open: the README gallery and the archetype page's `**Starter:**` line
   for this starter land with the merge (the README belongs to another
   session; the archetype line needs an ingest).
+- Collisions run on the frame after a redraw, never on the redraw frame,
+  as the weapons do; the pass tests half the pool a frame and skips itself
+  past line 100 ("Collisions"). The objects skip ticks past line 95.
+  Both make behaviour depend on time: two runs of one build are the same,
+  but PAL and NTSC can differ by a frame (the area walk began on 125 and
+  126). The checks grade counts and differences, not those frames.
+- The gate walk ignores terrain, as Commando's is a script: from anywhere at
+  the map's top he walks X first, then up; a tree in the way is walked
+  through (rows 3-11 of the map keep columns 17-22 clear).
+- The death takes a life at its end, not at the hit, so the panel and the
+  game over follow the animation.

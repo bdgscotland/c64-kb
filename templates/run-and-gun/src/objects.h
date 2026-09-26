@@ -40,8 +40,8 @@ void slots_park_all(void);
 #define N_KINDS     8
 
 extern char obj_kind[N_POOL];
-extern int obj_x4[N_POOL];              // sprite X * 4 (quarter pixels)
-extern int obj_y4[N_POOL];              // map y of sprite row 0, * 4
+extern int obj_x[N_POOL];               // sprite X, pixels
+extern int obj_y[N_POOL];               // map y of sprite row 0, pixels
 
 char obj_alloc(char kind);              // a pool index, or 0xff when full
 void obj_free(char i);                  // parks its slot
@@ -66,6 +66,16 @@ void objects_reset(void);               // all free; the spawn cursor at the lev
                                         // objects_rows(scroll_top): the events already in view
                                         // are spawned (checkpoint_respawn's pre-spawn)
 void objects_rows(char top);            // the view's top map row changed: fire due spawns
+char objects_spawn(char kind, char x2, char row, char param);
+                                        // one enemy outside the spawn list (the gate wave,
+                                        // area.c): feet on map row `row`, sprite X x2 * 2;
+                                        // the pool index, or 0xff when the pool is full
+char objects_alive(void);               // enemies alive (riflemen, runners, grenadiers), recounted
+                                        // from the pool (area_end_gate_wave's `alive`)
+char objects_free(void);                // free pool slots
+char objects_count(char *free);         // both in one pass: enemies alive, *free the free slots
+extern char objects_on_time;            // main.c: 1 when this frame's logic began on time (the
+                                        // deadline, OBJ_LATE, only acts then)
 void objects_update(void);              // one frame: half the pool thinks (moves, fires, animates)
                                         // and writes its slots, the other half's Y follows the
                                         // ground; cull what left the view
@@ -80,6 +90,7 @@ void objects_hold(void);                // the redraw frame and the frame after 
 extern unsigned ost_spawned, ost_at_row, ost_lost, ost_shots, ost_nades, ost_wall, ost_nwall;
 extern unsigned ost_park_bad, ost_shown_bad, ost_lag_bad, ost_fixes, ost_lag_skip, ost_frames;
 extern char ost_peak;
+extern unsigned ost_skipped;            // thinking ticks skipped for time (OBJ_LATE)
 void objects_audit(void);               // after each commit: free slots parked, the multiplexer
                                         // shows every slot above its cut, shown slots on their cells
 #endif

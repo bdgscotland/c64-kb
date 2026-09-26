@@ -79,6 +79,9 @@ save_a:     .byte 0
 save_x:     .byte 0
 save_y:     .byte 0
 next_hnd:   .word bottom_body
+pf_bg:      .byte PF_BG       // the playfield's $D021, $D022, $D023: C sets them for
+pf_mc1:     .byte PF_MC1      // an area (area.c area_colours), the frame IRQ applies
+pf_mc2:     .byte PF_MC2      // them with the YSCROLL it commits
 
 // Called once from C with interrupts off.
 kernel_init:
@@ -212,8 +215,12 @@ bb_apply:
         sta $d011
         lda #PF_D016            // whole-register store: MCM set on purpose
         sta $d016
-        lda #PF_BG
+        lda pf_bg
         sta $d021
+        lda pf_mc1
+        sta $d022
+        lda pf_mc2
+        sta $d023
         jsr mux_frame
 #if !NO_PLAYER
         lda aud_hold            // under the redraw's hold (sound.asm): count the

@@ -1,0 +1,9 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "verdict line", "type": "text", "row": 0, "col": 1, "text": "RESULT 01 PASS", "dy": 5 },
+    { "name": "area 3's wave: 12 soldiers, all out", "type": "text", "row": 1, "col": 1, "text": "WAVE 007 N 12 SP 12", "dy": 5 },
+    { "name": "no frame lost (metered, whole run) with the pool full (11 of 11 at once)", "type": "text", "row": 5, "col": 17, "text": "LOST 00 00 PEAK 11", "dy": 5 },
+    { "name": "frame meter, the first 200 logic frames", "type": "meter", "row": 7, "col": 1, "frames": 200, "dy": 5 }
+  ]
+}
