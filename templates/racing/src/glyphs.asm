@@ -27,7 +27,6 @@
 
 .const HSTEP   = 2              // the horizon moves two lines at a time
 .const HN      = HOFF_N / HSTEP // 12 horizon offsets with glyphs
-.const GBASE   = 5              // first road glyph id
 .const GCAP    = 123            // left glyphs a set holds (5-127)
 .const KMAX    = 24             // template columns, k = 0-23
 
@@ -281,6 +280,24 @@ glyph_init:
         inc zp_code + 1
 !:      dex
         bne !glyph-
+    }
+        // the two dynamic sets: grass everywhere, road at 1 and $81
+        // (clearing $F800's last bytes clears $FFFA-$FFFF: main sets the
+        // vectors after this)
+    .for (var s = 0; s < 2; s++) {
+        .var base = s == 0 ? DYN_A : DYN_B
+        lda #0
+        tax
+!:
+      .for (var pg = 0; pg < 8; pg++) { sta base + pg * 256, x }
+        inx
+        bne !-
+        lda #$55
+        ldx #7
+!:      sta base + 8, x
+        sta base + $408, x
+        dex
+        bpl !-
     }
         lda #$35
         sta $01

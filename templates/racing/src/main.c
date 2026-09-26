@@ -21,23 +21,27 @@
 #include "frame_meter.h"
 
 // ---- memory: the KickAssembler blob at its own address, C above it -----------
+// The C region starts on the page after the blob's end (build/asm.h).
+#define C_ORG ((ASM_END + 0xff) & 0xff00)
 #pragma section( asmcode, 0 )
-#pragma region( asmreg, ASM_ORG, 0x7d00, , , { asmcode } )
-#pragma region( main, 0x7d00, 0xc000, , , { code, data, bss, heap, stack } )
+#pragma region( asmreg, ASM_ORG, C_ORG, , , { asmcode } )
+#pragma region( main, C_ORG, 0xc000, , , { code, data, bss, heap, stack } )
 #pragma data( asmcode )
 __export const char asm_blob[] = {
 #embed "asm.bin"
 };
 #pragma data( data )
 
-#if ASM_END > 0x7d00
-#error "the KickAssembler blob runs past $7D00: move the C region up"
-#endif
 
 #define TICK B(ASM_TICK)
 
 char state;
 unsigned frame;
+#if PIECETIME
+__export unsigned piece_max[8];         // (debug) by kind: rb_state 0-5, begin, end
+__export unsigned long piece_sum[8];
+__export unsigned piece_n[8];
+#endif
 char model;
 static char timer;
 static unsigned late;               // race steps lost or run past the next line 251
@@ -226,12 +230,35 @@ int main(void)
         if (now == last)
         {
             if (state != ST_GRADED)
+            {
+#if PIECETIME
+                // (debug) wall time by piece: 0-5 rb_state, 6 begin, 7 end
+                char kind = !phase_of_road() ? 6 : B(ASM_RB_STATE) ? B(ASM_RB_STATE) : B(ASM_RB_ROW_ZP) >= 7 ? 0 : 7;
+                cia1.crb = 0x00;
+                cia1.tb = 0xffff;
+                cia1.crb = 0x11;
                 road_work();
+                cia1.crb = 0x00;
+                unsigned t = 0xffff - cia1.tb;
+                if (state == ST_RACE)
+                {
+                    piece_sum[kind] += t;
+                    piece_n[kind]++;
+                    if (t > piece_max[kind])
+                        piece_max[kind] = t;
+                }
+#else
+                road_work();
+#endif
+            }
             continue;
         }
         char gap = now - last;
         last = now;
         char ticks = now;
+        // The camera's position for this frame's bands (engine.asm bpos, even:
+        // the road's code adds it to each line's z * 8, odd above the horizon).
+        *(volatile char *)0xff = (char)(car_pos[0] - ZN) & 0xfe;
         if (state == ST_RACE && gap > 1)
             late += gap - 1;            // frames that passed with no game step
 #if FRAME_METER

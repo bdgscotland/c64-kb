@@ -42,21 +42,11 @@ static int row_cref(char R)
 }
 
 // The centre road line i shows in copy `set`: its row's content centre plus
-// its XSCROLL. Line i's $D016 is an operand in the road's code (engine.asm,
-// block layout): line 0 of a row in the loads of the block above (row 7's in
-// the copy's entry, PreBlock), line 1 in its own block, lines 2-7 in the
-// loads of the block above.
+// the line's shift from it (engine.asm line_s: XSCROLL, and whole columns
+// in a sheared row).
 int line_centre(char set, char i)
 {
-    const char *code = (const char *)(set ? ASM_ROAD_B : ASM_ROAD_A);
-    char k = i & 7, d016;
-    if (i == 0)
-        d016 = ((const char *)ASM_PRE_A)[set * 10 + 1];
-    else if (k == 1)
-        d016 = code[((unsigned)i << 6) + ASM_RC_OFF_FD];
-    else
-        d016 = code[((unsigned)(i - 1) << 6) + (k == 2 ? ASM_RC_OFF_FA : ASM_RC_OFF_NA)];
-    return row_cref(i >> 3) + (d016 & 7);
+    return row_cref(i >> 3) + B(ASM_LINE_S + set * ROAD_LINES + i);
 }
 
 void road_init(void)
@@ -137,6 +127,11 @@ static void picture_end(void);
 // One piece of the next picture: its start (camera, sprites, rb_begin), one
 // row, or its end (the sprites' X; rb_ready). Nothing while the last picture
 // waits for irq_blank to take it.
+char phase_of_road(void)
+{
+    return phase;
+}
+
 void road_work(void)
 {
     if (B(ASM_RB_READY))
@@ -146,10 +141,10 @@ void road_work(void)
         picture_begin();
         phase = 1;
     }
-    else if (B(ASM_RB_ROW_ZP) >= 7)
+    else if (B(ASM_RB_STATE) || B(ASM_RB_ROW_ZP) >= 7)
     {
-        B(ASM_RB_STOP) = B(ASM_RB_ROW_ZP);     // this row only
-        __asm { jsr ASM_RB_ROWS }
+        B(ASM_RB_STOP) = 7;
+        __asm { jsr ASM_RB_PIECE }      // one piece of a row (builder.asm)
     }
     else
     {
@@ -179,7 +174,8 @@ void road_build_all(void)
 {
     picture_begin();
     B(ASM_RB_STOP) = 7;
-    __asm { jsr ASM_RB_ROWS }
+    while (B(ASM_RB_STATE) || B(ASM_RB_ROW_ZP) >= 7)
+        __asm { jsr ASM_RB_PIECE }
     picture_end();
     phase = 0;
 }
@@ -210,8 +206,11 @@ static void picture_begin(void)
     char D = L_NEAR - (H_MIN + hoff);
     W(ASM_RB_POS) = cam_pos;
     B(ASM_RB_HOFF) = hoff;
+    // The road leans half as far as a camera fixed on the centre line would
+    // make it: the horizon's end moves px / 2. Full lean sheared every row by
+    // up to 10 pixels with the car off-centre, past XSCROLL's 7.
     W(ASM_RB_CX0) = (unsigned)((160 - px) * 64);
-    W(ASM_RB_DX0) = (unsigned)(px * 64 / D);
+    W(ASM_RB_DX0) = (unsigned)(px * 32 / D);
 
     // ---- the sprites' lines: the player, then the two nearest opponents ----
     char set = B(ASM_RB_FRONT) ^ 1;
@@ -324,14 +323,14 @@ static void picture_end(void)
     {
         // The bend: the farthest road row's content centre less where a
         // straight road would put it (the builder's own rule with no
-        // curvature: 160 - px at line 202, px / D a line nearer 160 up).
+        // curvature: 160 - px at line 202, px / 2D a line nearer 160 up).
         char R = 0;
         while (!zt[R * 8])
             R++;
         char up = ROAD_LINES - 1 - (R * 8 + 7);            // lines above 202, the row's bottom
         char D = L_NEAR - (H_MIN + hoff);
-        int sb = 160 - px + (px * up) / D;
-        int st = 160 - px + (px * (up + 7)) / D;
+        int sb = 160 - px + (px * up) / (2 * D);
+        int st = 160 - px + (px * (up + 7)) / (2 * D);
         int bend = row_cref(R) - ((sb < st ? sb : st) & ~3);
         if (bend < curve_min) curve_min = bend;
         if (bend > curve_max) curve_max = bend;
