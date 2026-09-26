@@ -6,13 +6,16 @@
 
 import type { BudgetBasis, BudgetPhase, PhaseBudget } from "./budget.ts";
 
+/** A Measured frame's basis: a Cost basis, or a studied game's frame (schema 40). */
+type DesignBasis = BudgetBasis | "measured-vice-study";
+
 /** One entry of a design's `**Measured frame:**` line, as the node stores it. */
 export interface DesignMeasurement {
   phase: BudgetPhase;
   region: "PAL" | "NTSC";
   worst: number;
   typical?: number | undefined;
-  basis: BudgetBasis;
+  basis: DesignBasis;
   source: string;
 }
 
@@ -21,7 +24,7 @@ export interface MeasuredComparison {
   region: "PAL" | "NTSC";
   worst: number;
   typical: number | null;
-  basis: BudgetBasis;
+  basis: DesignBasis;
   source: string;
   /** The prediction for the same phase and region; null when none was made. */
   predicted: {
@@ -87,6 +90,24 @@ function findingText(m: DesignMeasurement, p: PhaseBudget, missing: string[]): s
         ? "a missing member can only raise the range, so the measured worst stays below it"
         : "any agreement is partial";
   return `${out}. ${n} member${n === 1 ? " has" : "s have"} no figure (${missing.join(", ")}), so the prediction is incomplete: ${consequence}`;
+}
+
+/**
+ * A studied design's measurements (schema 40): a released game measured in
+ * VICE. No recipe here builds it, so nothing is predicted beside them.
+ */
+export function studiedMeasurements(measured: DesignMeasurement[]): MeasuredComparison[] {
+  return measured.map((m) => ({
+    phase: m.phase,
+    region: m.region,
+    worst: m.worst,
+    typical: m.typical ?? null,
+    basis: m.basis,
+    source: m.source,
+    predicted: null,
+    position: "not_predicted",
+    finding: "a studied game's own frame; no recipe realises it here, so there is no recipe to predict from",
+  }));
 }
 
 /** Each measurement beside the plan's phase for the same phase and region, if the plan has one. */

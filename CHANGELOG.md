@@ -5,7 +5,27 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 843, schema 39, tools 2.17.0, package 0.29.0.
+Data 844, schema 40, tools 2.18.0, package 0.29.0.
+
+**A studied game is a GameDesign (schema 40, tools 2.18.0, data 844).**
+A page in `docs/game-design/studies/` with frontmatter `kind: studied`
+describes a released game the RE tools measured in VICE. GameDesign gains
+`kind` (built by default), and on a studied design `studied_from`,
+`irq_chain` and `memory_map` as JSON from the new `**Studied from:**`,
+`**IRQ chain:**` and `**Memory map:**` lines; `**Measured frame:**` takes
+the basis `measured-vice-study`, refused on a built page. Two edges: `STUDIES`
+to the Production of the studied title, and `DIVERGES_FROM` to a technique
+with `direction` extra or missing, from `**Diverges from archetype:**`.
+Both are MATCHed, never created; a miss is warned about and counted in the
+ingest summary. Each study line is refused whole on a malformed part.
+`c64_game_briefing`'s `designs[]` gains `kind`, `studied_from` and
+`source_doc`, and lists a studied design as "studied, not buildable here"
+with its page; `c64_plan_budget` takes a studied design, budgets no
+members, and prints its measured frame as not predicted, since no recipe
+here builds it. Before this a studied game had no place in the graph:
+`**Studied from:**` was prose and `measured-vice-study` refused the line.
+`CONVENTIONS-game-designs.md` "Studied designs" and `ONTOLOGY.md` define
+the lines. No study page lands with this change.
 
 **`c64_re_irq_chain` sees through a `JMP (pointer)` handler (tools
 2.17.0; numbered 2.15.0 on its branch before main reached 2.16.0).** Commando's only interrupt handler is `$4134: JMP ($0406)`;

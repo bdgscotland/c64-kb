@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { extractGraphEntities } from "../src/graph/extract.ts";
 import { parseComposes, parseMeasuredFrame } from "../src/graph/extract/game-design.ts";
@@ -62,6 +63,10 @@ describe("game-design extractor", () => {
         { phase: "play", region: "PAL", worst: 1, basis: "estimated", source: "a second PAL play entry" },
       ],
       source_doc: "game-design/designs/test.md",
+      // Schema 40: a page with no kind is built, and has no study lines.
+      kind: "built",
+      irq_chain: [],
+      memory_map: [],
     });
     const composes = es.flatMap((e) => (e.type === "composes" ? [`${e.technique}:${e.phase}`] : []));
     expect(composes).toEqual([
@@ -146,5 +151,181 @@ describe("game-design extractor", () => {
       ).toHaveLength(1);
     }
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+// Schema 40: a studied game is a GameDesign (kind: studied, docs/game-design/studies/).
+describe("game-design extractor: a studied design", () => {
+  const STUDY = readFileSync("test/fixtures/study-page.md", "utf8");
+  const PATH = "game-design/studies/test-shooter.md";
+
+  it("reads kind, Studied from, IRQ chain and Memory map onto the node", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const es = extractGraphEntities(STUDY, PATH);
+    const node = es.find((e) => e.type === "game_design");
+    expect(node).toMatchObject({
+      name: "test_shooter_study",
+      kind: "studied",
+      region: "PAL",
+      studied_from: {
+        title: "Test Shooter",
+        year: 1985,
+        authors: ["Ann Coder", "Test House"],
+        image_sha1: "0123456789abcdef0123456789abcdef01234567",
+        session: "studies/sessions/test-shooter.json",
+      },
+      irq_chain: [
+        {
+          phase: "play",
+          region: "PAL",
+          handlers: [
+            { pc: "$41C5", lines: [30] },
+            { pc: "$4284", lines: [50, 52] },
+            { pc: "$4389", lines: [192] },
+          ],
+          basis: "measured-vice",
+          source: "obs test#1-#3",
+        },
+        {
+          phase: "title",
+          region: "PAL",
+          handlers: [{ pc: "$4134", lines: [30] }],
+          basis: "measured-vice",
+          source: "obs test#4",
+        },
+      ],
+      memory_map: [
+        {
+          entries: [
+            { label: "VIC bank", value: "3" },
+            { label: "screen", value: "$C000" },
+            { label: "charset", value: "$D000" },
+            { label: "sprites", value: "$E000-$E7FF" },
+            { label: "$01", value: "$35", when: "play" },
+          ],
+          basis: "measured-vice",
+          source: "obs test#5-#9",
+        },
+      ],
+      measured: [
+        {
+          phase: "play",
+          region: "PAL",
+          worst: 18000,
+          typical: 15000,
+          basis: "measured-vice-study",
+          source: "frame mode over 200 frames, obs test#10",
+        },
+      ],
+      source_doc: PATH,
+    });
+    // A studied design composes nothing and is realised by no recipe: no warning for either.
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("emits STUDIES to the title and DIVERGES_FROM per technique with its direction", () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const es = extractGraphEntities(STUDY, PATH);
+    expect(es.filter((e) => e.type === "studies")).toEqual([
+      { type: "studies", design: "test_shooter_study", production: "Test Shooter" },
+    ]);
+    // Names are MATCHed at ingest; an unknown one is dropped and counted there, not here.
+    expect(es.filter((e) => e.type === "diverges_from")).toEqual([
+      {
+        type: "diverges_from",
+        design: "test_shooter_study",
+        technique: "invalid_mode_band",
+        direction: "extra",
+      },
+      {
+        type: "diverges_from",
+        design: "test_shooter_study",
+        technique: "not_a_technique",
+        direction: "extra",
+      },
+      {
+        type: "diverges_from",
+        design: "test_shooter_study",
+        technique: "soft_scroll_v",
+        direction: "missing",
+      },
+    ]);
+  });
+
+  it("a page without kind is built, and the study lines on it are refused", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const es = extractGraphEntities(STUDY.replace("kind: studied", "title: x"), PATH);
+    const node = es.find((e) => e.type === "game_design");
+    expect(node).toMatchObject({ kind: "built", irq_chain: [], memory_map: [], measured: [] });
+    expect(node).not.toHaveProperty("studied_from");
+    expect(es.filter((e) => e.type === "studies" || e.type === "diverges_from")).toEqual([]);
+    const warnings = warn.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(warnings).toContain("only read on a kind: studied page");
+    // measured-vice-study is a study's basis; on a built design the line is refused.
+    expect(warnings).toContain("measured-vice-study");
+  });
+
+  it("refuses an unknown kind and reads the page as built", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const es = extractGraphEntities(STUDY.replace("kind: studied", "kind: observed"), PATH);
+    expect(es.find((e) => e.type === "game_design")).toMatchObject({ kind: "built" });
+    expect(warn.mock.calls.map((c) => String(c[0])).join("\n")).toContain('kind "observed"');
+  });
+
+  it("refuses each malformed study line whole", () => {
+    const cases: [string, string, string][] = [
+      ["**Studied from:**", "Test Shooter (1985, Ann Coder); image sha1=abc; session x.json", "Studied from"],
+      [
+        "**Studied from:**",
+        "Test Shooter 1985; image sha1=0123456789abcdef0123456789abcdef01234567; session x.json",
+        "Studied from",
+      ],
+      ["**IRQ chain:**", "play pal: $41C5 @ line 30, $4284 at 50 (measured-vice, obs)", "IRQ chain"],
+      ["**IRQ chain:**", "play secam: $41C5 @ line 30 (measured-vice, obs)", "IRQ chain"],
+      ["**IRQ chain:**", "play pal: $41C5 @ line 30 (guessed, obs)", "IRQ chain"],
+      ["**IRQ chain:**", "play pal: $41C5 @ line 30", "IRQ chain"],
+      ["**Memory map:**", "VIC bank 3; screen at the top (measured-vice, obs)", "Memory map"],
+      ["**Memory map:**", "VIC bank 3; screen $C000", "Memory map"],
+      [
+        "**Diverges from archetype:**",
+        "extra: invalid_mode_band; surplus: soft_scroll_v",
+        "Diverges from archetype",
+      ],
+      ["**Diverges from archetype:**", "extra: invalid_mode_band, Not A Name", "Diverges from archetype"],
+    ];
+    for (const [label, value, word] of cases) {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const line = new RegExp(`^${label.replace(/\*/g, "\\*")}.*$`, "m");
+      // Every line of this label is replaced, so no good line of the same label survives.
+      const doc = STUDY.split("\n")
+        .filter((l, i, all) => !line.test(l) || all.findIndex((x) => line.test(x)) === i)
+        .join("\n")
+        .replace(line, `${label} ${value}`);
+      const es = extractGraphEntities(doc, PATH);
+      const node = es.find((e) => e.type === "game_design");
+      const warnings = warn.mock.calls.map((c) => String(c[0])).join("\n");
+      expect(warnings, value).toContain(`**${word}:** line refused`);
+      if (word === "Studied from") {
+        expect(node, value).not.toHaveProperty("studied_from");
+        expect(
+          es.filter((e) => e.type === "studies"),
+          value,
+        ).toEqual([]);
+      }
+      if (word === "IRQ chain") expect(node, value).toHaveProperty("irq_chain", []);
+      if (word === "Memory map") expect(node, value).toHaveProperty("memory_map", []);
+      if (word === "Diverges from archetype")
+        expect(
+          es.filter((e) => e.type === "diverges_from"),
+          value,
+        ).toEqual([]);
+      warn.mockRestore();
+    }
+  });
+
+  it("a studied page with no Studied from line is warned about", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    extractGraphEntities(STUDY.replace(/^\*\*Studied from:\*\*.*$/m, ""), PATH);
+    expect(warn.mock.calls.map((c) => String(c[0])).join("\n")).toContain("has no **Studied from:** line");
   });
 });

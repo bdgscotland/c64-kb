@@ -359,7 +359,9 @@ export class FalkorNodes extends FalkorBase {
    * GameDesign (schema 28): a whole game from docs/game-design/designs
    * (docs/CONVENTIONS-game-designs.md). `measured` is the page's Measured
    * frame lines as JSON; a page that drops its region or its measurements
-   * clears them.
+   * clears them. Schema 40: `kind` (built when absent) and, on a studied
+   * design, `studied_from`, `irq_chain` and `memory_map` as JSON, cleared
+   * when the page stops carrying them.
    */
   async addGameDesign(g: {
     name: string;
@@ -367,14 +369,25 @@ export class FalkorNodes extends FalkorBase {
     region?: string | undefined;
     measured: readonly object[];
     source_doc: string;
+    kind?: "built" | "studied" | undefined;
+    studied_from?: object | undefined;
+    irq_chain?: readonly object[] | undefined;
+    memory_map?: readonly object[] | undefined;
   }): Promise<void> {
-    const props = {
-      title: g.title,
-      source_doc: g.source_doc,
-      ...(g.region ? { region: g.region } : {}),
-      ...(g.measured.length > 0 ? { measured: JSON.stringify(g.measured) } : {}),
-    };
-    const clear = [...(g.region ? [] : ["region"]), ...(g.measured.length > 0 ? [] : ["measured"])];
+    const json: [key: string, value: object | undefined][] = [
+      ["measured", g.measured.length > 0 ? g.measured : undefined],
+      ["studied_from", g.studied_from],
+      ["irq_chain", g.irq_chain?.length ? g.irq_chain : undefined],
+      ["memory_map", g.memory_map?.length ? g.memory_map : undefined],
+    ];
+    const props: NodeProps = { title: g.title, source_doc: g.source_doc, kind: g.kind ?? "built" };
+    const clear: string[] = [];
+    if (g.region) props.region = g.region;
+    else clear.push("region");
+    for (const [key, value] of json) {
+      if (value !== undefined) props[key] = JSON.stringify(value);
+      else clear.push(key);
+    }
     await this.upsertNode({ label: "GameDesign", name: g.name, props, clear });
   }
 

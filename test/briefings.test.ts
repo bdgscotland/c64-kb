@@ -656,6 +656,45 @@ describe("gameBriefing reads the archetype from the graph", () => {
     expect(await f.linkRecipeScaffolds("oscar64-simple-shmup", "vertical_shmup")).toBe(true);
     // A scaffolds: entry naming an archetype the graph lacks is dropped, not stubbed.
     expect(await f.linkRecipeScaffolds("oscar64-simple-shmup", "no_such_archetype")).toBe(false);
+
+    // Schema 40: a studied design of the archetype, from the fixture study page.
+    await f.addGameDesign({
+      name: "test_shooter_study",
+      title: "Test shooter (studied)",
+      region: "PAL",
+      measured: [
+        { phase: "play", region: "PAL", worst: 18000, basis: "measured-vice-study", source: "obs test#10" },
+      ],
+      source_doc: "game-design/studies/test-shooter.md",
+      kind: "studied",
+      studied_from: {
+        title: "Test Shooter",
+        year: 1985,
+        authors: ["Ann Coder"],
+        image_sha1: "0123456789abcdef0123456789abcdef01234567",
+        session: "studies/sessions/test-shooter.json",
+      },
+    });
+    expect(await f.linkInstanceOf("test_shooter_study", "vertical_shmup")).toBe(true);
+  });
+
+  it("lists a studied design as studied, not buildable here, with its page (schema 40)", async () => {
+    const r = await gameBriefing("a shooter", "vertical_shmup");
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
+    expect(r.structured.designs).toEqual([
+      expect.objectContaining({
+        name: "test_shooter_study",
+        kind: "studied",
+        source_doc: "game-design/studies/test-shooter.md",
+        realised_by: [],
+      }),
+    ]);
+    expect(r.text).toContain(
+      "**Studied game:** test_shooter_study (Test shooter (studied)), studied from Test Shooter (1985, Ann Coder); studied, not buildable here",
+    );
+    expect(r.text).toContain("read docs/game-design/studies/test-shooter.md");
+    expect(r.text).toContain("measured play PAL worst 18000 cycles (measured-vice-study)");
+    expect(r.text).not.toContain('c64_plan_budget {"design": "test_shooter_study"} to budget');
   });
 
   afterAll(async () => f.close());

@@ -131,6 +131,8 @@ const LINKERS: { [K in keyof EdgeByType]: Linker<EdgeByType[K]> } = {
   instance_of: (f, e) => f.linkInstanceOf(e.design, e.archetype),
   realised_by: (f, e) => f.linkRealisedBy(e.design, e.recipe),
   exemplified_by: (f, e) => f.linkExemplifiedBy(e),
+  studies: (f, e) => f.linkStudies(e.design, e.production),
+  diverges_from: (f, e) => f.linkDivergesFrom(e.design, e.technique, e.direction),
   requires_device: (f, e) => f.linkRequiresDevice(e.recipe, e.device),
 };
 

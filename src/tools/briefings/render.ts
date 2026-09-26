@@ -74,6 +74,33 @@ function renderUnresolved(b: BriefingOutput): string {
   return out;
 }
 
+type BriefingDesign = NonNullable<BriefingOutput["designs"]>[number];
+
+/** One design of the archetype: a built one to budget, or a studied one to read (schema 40). */
+function designLine(d: BriefingDesign): string {
+  const measured = d.measured
+    .map(
+      (m) => `${m.phase} ${m.region} worst ${m.worst}${m.typical !== null ? `, typical ${m.typical}` : ""}`,
+    )
+    .join("; ");
+  if (d.kind === "studied") {
+    const from = d.studied_from
+      ? `studied from ${d.studied_from.title} (${[d.studied_from.year, ...d.studied_from.authors].join(", ")})`
+      : "a studied game";
+    const bases = [...new Set(d.measured.map((m) => m.basis))].join(", ");
+    return (
+      `**Studied game:** ${d.name} (${d.title}), ${from}; studied, not buildable here: ` +
+      `${measured ? `measured ${measured} cycles (${bases})` : "no measured frame"}; ` +
+      `read docs/${d.source_doc} for how it fits the frame.\n`
+    );
+  }
+  return (
+    `**Game design:** ${d.name} (${d.title}), realised by ${d.realised_by.join(", ") || "(no recipe)"}; ` +
+    `${measured ? `measured ${measured} cycles` : "no measured frame"}. ` +
+    `Budget it with c64_plan_budget {"design": "${d.name}"}.\n`
+  );
+}
+
 export function renderArchetype(b: BriefingOutput): string {
   let out = renderUnresolved(b);
   if (b.archetype) {
@@ -89,17 +116,7 @@ export function renderArchetype(b: BriefingOutput): string {
     }
     out += "\n";
   }
-  for (const d of b.designs ?? []) {
-    const measured = d.measured
-      .map(
-        (m) => `${m.phase} ${m.region} worst ${m.worst}${m.typical !== null ? `, typical ${m.typical}` : ""}`,
-      )
-      .join("; ");
-    out +=
-      `**Game design:** ${d.name} (${d.title}), realised by ${d.realised_by.join(", ") || "(no recipe)"}; ` +
-      `${measured ? `measured ${measured} cycles` : "no measured frame"}. ` +
-      `Budget it with c64_plan_budget {"design": "${d.name}"}.\n`;
-  }
+  for (const d of b.designs ?? []) out += designLine(d);
   if ((b.designs ?? []).length > 0) out += "\n";
   return out;
 }

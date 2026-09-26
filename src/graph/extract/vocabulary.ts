@@ -35,6 +35,15 @@ export function isCostBasis(word: string): word is CostBasis {
   return COST_BASIS_WORDS.some((w) => w === word);
 }
 
+// A game design's **Measured frame:** line takes one more word (schema 40):
+// measured-vice-study, a studied game's frame read by the RE tools in VICE.
+export const MEASURED_FRAME_BASIS_WORDS = [...COST_BASIS_WORDS, "measured-vice-study"] as const;
+export type MeasuredFrameBasis = (typeof MEASURED_FRAME_BASIS_WORDS)[number];
+
+export function isMeasuredFrameBasis(word: string): word is MeasuredFrameBasis {
+  return MEASURED_FRAME_BASIS_WORDS.some((w) => w === word);
+}
+
 // Technique categories the graph accepts. A technique doc whose frontmatter
 // names a category outside this set is refused with a warning, the same way
 // an unknown Demands word is; before this set existed `render` reached the

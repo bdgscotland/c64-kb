@@ -8,7 +8,9 @@ budgets its phases; `c64_game_briefing` lists the designs of the archetype
 it resolved.
 
 Pages live in `docs/game-design/designs/`, one design per file. The marker
-`<!-- doc-type: game-design -->` MUST appear in the first 10 lines.
+`<!-- doc-type: game-design -->` MUST appear in the first 10 lines. A
+studied game, a released title measured with the RE tools, is a design
+too: see "Studied designs" below (schema 40).
 
 ## The lines under each H2
 
@@ -78,7 +80,9 @@ page's prose.
 
 `<phase> <pal|ntsc> worst=N [typical=N]`, entries separated by `;`, then
 a parenthetical: the basis word first (`measured-vice`, `derived-listing`,
-`arithmetic`, `estimated`), then the instrument and where the figures are.
+`arithmetic`, `estimated`, or on a studied design `measured-vice-study`),
+then the instrument and where the figures are. `measured-vice-study` on a
+page that is not `kind: studied` refuses the line.
 A malformed line is refused whole, because part of it would read as the
 whole measurement.
 
@@ -101,6 +105,58 @@ and region and warned, although this page allowed more than one line.
 the same phase and region. The two answer different questions: the
 prediction adds up each technique's own recipe; the measurement is this
 game's listing.
+
+## Studied designs
+
+A study page describes a released game the RE tools measured in VICE
+(`docs/superpowers/specs/2026-09-23-reverse-engineering-design.md`). It
+lives in `docs/game-design/studies/`, carries the same marker, and has
+frontmatter `kind: studied`. Without `kind`, or with `kind: built`, a page
+is a built design; any other word is warned about and read as built. The
+session files in `studies/sessions/` are JSON, not pages, and are not
+ingested.
+
+```
+---
+kind: studied
+---
+<!-- doc-type: game-design -->
+
+## Commando (Elite, 1985), studied
+
+**Game design:** `commando_study`
+**Instance of:** vertical_shmup
+**Region:** PAL
+**Studied from:** Commando (1985, Chris Butler, Elite); image sha1=<40 hex digits>; session studies/sessions/commando.json
+**IRQ chain:** title pal: $41C5 @ line 30, $4284 @ line 50/52, $4389 @ line 192 (measured-vice, obs commando#…)
+**Memory map:** VIC bank 3; screen $C000; charset $D000; $01=$35 in play (measured-vice, obs commando#…)
+**Diverges from archetype:** extra: <technique>; missing: <technique>
+**Measured frame:** play pal worst=N typical=N (measured-vice-study, <instrument>, obs commando#…)
+```
+
+The IRQ chain handlers and lines are three of the five title parts the
+spec's 2026-09-24 amendment measured in VICE x64sc 3.10; the other values
+show the form only, and the study page holds the measurements.
+
+| Line | Required | Becomes |
+|---|---|---|
+| `**Studied from:**` | yes | `studied_from` JSON `{title, year, authors[], image_sha1, session}`, and a `STUDIES` edge to the Production of that title. The title is MATCHed against the Productions the archetype pages' `**Reference titles:**` create: add it there, with its source, first. |
+| `**IRQ chain:**` | no | `irq_chain` JSON. `<phase> <pal\|ntsc>: $pc @ line N, …`, groups separated by `;`; `line N/M` for a handler armed on two lines. The phase word is free (`title`, `play`). Several lines allowed. |
+| `**Memory map:**` | no | `memory_map` JSON. Entries separated by `;`: `<what> $addr`, `<what> $addr-$addr`, `<what> N`, or `$01=$nn`, each optionally followed by `in <phase>`. Several lines allowed. |
+| `**Diverges from archetype:**` | no | `DIVERGES_FROM` edges with `direction`: `extra: a, b` (the game uses them, the archetype does not list them) and `missing: c` (the archetype lists it, the game does not use it), separated by `;`. |
+
+`**IRQ chain:**` and `**Memory map:**` end in the same `(basis, source)`
+parenthetical as `**Measured frame:**`; the source names the observation
+IDs. Each study line is refused whole on any malformed part, and a built
+page carrying one is warned about and the line ignored. A studied design
+needs no `**Composes:**` or `**Realised by:**` line. Every name is
+MATCHed; an unknown technique or title is warned about and counted as
+dropped. The candidate technique goes to the page's prose and an issue.
+
+`c64_game_briefing` lists a studied design beside the archetype's built
+ones as "studied, not buildable here", with its page. `c64_plan_budget`
+accepts a studied design's name and prints its measured frame; it
+budgets no members, since no recipe here builds the game, and says so.
 
 ## What is not here
 

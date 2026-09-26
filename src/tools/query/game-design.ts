@@ -9,7 +9,7 @@ import { getFalkor } from "../../context.ts";
 import { BUDGET_PHASES, type BudgetPhase } from "../../domain/budget.ts";
 import type { CallCount } from "../../domain/calls.ts";
 import type { DesignMeasurement } from "../../domain/game-design.ts";
-import { CostBasisSchema } from "../../schemas/cost-basis.ts";
+import { MeasuredFrameBasisSchema, StudiedFromSchema } from "../../schemas/cost-basis.ts";
 import { parseRows } from "./shared.ts";
 
 export interface GameDesignRecord {
@@ -21,6 +21,9 @@ export interface GameDesignRecord {
   composes: { technique: string; phase: BudgetPhase; calls?: CallCount }[];
   measured: DesignMeasurement[];
   source_doc: string;
+  /** Schema 40: a studied design measures a released game; no recipe builds it here. */
+  kind: "built" | "studied";
+  studied_from: z.infer<typeof StudiedFromSchema> | null;
 }
 
 const StringList = z
@@ -35,7 +38,7 @@ const MeasuredSchema = z.array(
     region: z.enum(["PAL", "NTSC"]),
     worst: z.number().int(),
     typical: z.number().int().optional(),
-    basis: CostBasisSchema,
+    basis: MeasuredFrameBasisSchema,
     source: z.string(),
   }),
 );
@@ -46,6 +49,8 @@ const DesignRow = z.object({
   region: z.enum(["PAL", "NTSC", "both"]).nullable(),
   measured: z.string().nullable(),
   source_doc: z.string().nullable(),
+  kind: z.string().nullable(),
+  studied_from: z.string().nullable(),
   archetypes: StringList,
   recipes: StringList,
   composes: z.array(
@@ -65,7 +70,7 @@ const DESIGN_QUERY = `MATCH (g:GameDesign) WHERE g.name IN $names
   WITH g, archetypes, collect(DISTINCT r.name) AS recipes
   OPTIONAL MATCH (g)-[c:COMPOSES]->(t:Technique)
   RETURN g.name AS name, g.title AS title, g.region AS region, g.measured AS measured,
-         g.source_doc AS source_doc, archetypes, recipes,
+         g.source_doc AS source_doc, g.kind AS kind, g.studied_from AS studied_from, archetypes, recipes,
          collect({technique: t.name, phase: c.phase, calls_low: c.calls_low, calls_high: c.calls_high}) AS composes`;
 
 function isPhase(p: string | null): p is BudgetPhase {
@@ -95,6 +100,8 @@ function recordOf(row: z.infer<typeof DesignRow>): GameDesignRecord {
     composes,
     measured,
     source_doc: row.source_doc ?? "",
+    kind: row.kind === "studied" ? "studied" : "built",
+    studied_from: row.studied_from ? StudiedFromSchema.parse(JSON.parse(row.studied_from)) : null,
   };
 }
 

@@ -4,7 +4,7 @@
  */
 
 import { z } from "zod";
-import { CostBasisSchema } from "./cost-basis.ts";
+import { CostBasisSchema, MeasuredFrameBasisSchema, StudiedFromSchema } from "./cost-basis.ts";
 
 // c64_plan_budget (schema 27, tools 2.0.0): an ad-hoc set of techniques,
 // each in a phase, budgeted per phase and region by planBudget
@@ -70,7 +70,7 @@ const DesignMeasuredSchema = z.object({
   region: z.enum(["PAL", "NTSC"]),
   worst: z.number().int(),
   typical: z.number().int().nullable(),
-  basis: CostBasisSchema,
+  basis: MeasuredFrameBasisSchema,
   source: z.string(),
   predicted: z
     .object({
@@ -100,12 +100,21 @@ const PlanDesignSchema = z.object({
   composes: z.array(ComposesSchema),
   source_doc: z.string(),
   measured: z.array(DesignMeasuredSchema),
+  // Schema 40 (tools 2.18.0): a studied design is a released game the RE
+  // tools measured; nothing is predicted for it.
+  kind: z.enum(["built", "studied"]),
+  studied_from: StudiedFromSchema.nullable(),
 });
 // One GameDesign of the archetype c64_game_briefing resolved: whole games
 // built on it, what they compose per phase, and what their frame measured.
 export const BriefingDesignSchema = z.object({
   name: z.string(),
   title: z.string(),
+  // Schema 40 (tools 2.18.0): "studied" is a released game measured in
+  // VICE, studied, not buildable here; source_doc is its page.
+  kind: z.enum(["built", "studied"]),
+  studied_from: StudiedFromSchema.nullable(),
+  source_doc: z.string(),
   realised_by: z.array(z.string()),
   composes: z.array(ComposesSchema),
   measured: z.array(

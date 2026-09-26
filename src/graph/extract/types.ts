@@ -4,6 +4,7 @@ import type { ClaimMode, ClaimsBasis } from "../claims.ts";
 import type { ClobberBound } from "../kernal-clobbers.ts";
 import type { CallCount } from "../../domain/calls.ts";
 import type { GameDesignPhase, MeasuredFrame } from "./game-design.ts";
+import type { IrqChain, MemoryMap, StudiedFrom } from "./game-study.ts";
 import type { CostBasis, TechniqueCost } from "./vocabulary.ts";
 
 export type TargetKind = "Register" | "KernalRoutine" | "Technique";
@@ -169,6 +170,11 @@ export type GraphEntity =
       region?: "PAL" | "NTSC" | "both";
       measured: MeasuredFrame[];
       source_doc: string;
+      // Studied designs (schema 40): frontmatter kind, and the study lines.
+      kind: "built" | "studied";
+      studied_from?: StudiedFrom;
+      irq_chain: IrqChain[];
+      memory_map: MemoryMap[];
     }
   | {
       type: "composes";
@@ -179,7 +185,10 @@ export type GraphEntity =
       calls?: CallCount;
     }
   | { type: "instance_of"; design: string; archetype: string }
-  | { type: "realised_by"; design: string; recipe: string };
+  | { type: "realised_by"; design: string; recipe: string }
+  // Schema 40: a studied design names the Production it studies and where it departs from its archetype.
+  | { type: "studies"; design: string; production: string }
+  | { type: "diverges_from"; design: string; technique: string; direction: "extra" | "missing" };
 
 /** One doc-type parser: the whole page in, its entities out. */
 export type DocParser = (content: string, sourcePath: string) => GraphEntity[];

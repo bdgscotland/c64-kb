@@ -33,6 +33,8 @@ export type TrackedEdge =
   | "instance_of"
   | "realised_by"
   | "exemplified_by"
+  | "studies"
+  | "diverges_from"
   | "requires_device";
 
 type EdgeOf<K extends TrackedEdge> = Extract<EdgeEntity, { type: K }>;
@@ -56,6 +58,8 @@ const REFERENCE_KEYS: { [K in TrackedEdge]: (e: EdgeOf<K>) => string } = {
   instance_of: (e) => `${e.design}|${e.archetype}`,
   realised_by: (e) => `${e.design}|${e.recipe}`,
   exemplified_by: (e) => `${e.archetype}|${e.production}`,
+  studies: (e) => `${e.design}|${e.production}`,
+  diverges_from: (e) => `${e.design}|${e.technique}`,
   requires_device: (e) => `${e.recipe}|${e.device}`,
 };
 

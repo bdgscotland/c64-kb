@@ -375,11 +375,21 @@ prediction.
 | name | string | snake_case, from the `**Game design:**` line (e.g. "platformer_scaffold_oscar64") |
 | title | string | The H2 text |
 | region | string, optional | "PAL", "NTSC" or "both", from `**Region:**`; the budget's default region when the caller gives none |
-| measured | string, optional | JSON list of `{phase, region, worst, typical?, basis, source}` from the `**Measured frame:**` lines: what the built game's frame took, in cycles, on the realising recipe. Absent when the game was not timed; a re-ingest that drops the lines clears it |
+| measured | string, optional | JSON list of `{phase, region, worst, typical?, basis, source}` from the `**Measured frame:**` lines: what the built game's frame took, in cycles, on the realising recipe, or on a studied design what the RE tools read in VICE (basis `measured-vice-study`). Absent when the game was not timed; a re-ingest that drops the lines clears it |
 | source_doc | string | Path of the page |
+| kind | string | "built" (a recipe here builds it; the default) or "studied" (a released game measured with the RE tools), from frontmatter `kind` (schema 40) |
+| studied_from | string, optional | Studied only. JSON `{title, year, authors[], image_sha1, session}` from `**Studied from:**`: the game, the sha1 of the image the tools ran (the image stays outside the repository) and the session file that replays it |
+| irq_chain | string, optional | Studied only. JSON list of `{phase, region, handlers[{pc, lines[]}], basis, source}` from the `**IRQ chain:**` lines |
+| memory_map | string, optional | Studied only. JSON list of `{entries[{label, value, when?}], basis, source}` from the `**Memory map:**` lines |
 
-Source: `game-design/designs/*.md`, one GameDesign per H2 that carries a
-`**Game design:**` line (`CONVENTIONS-game-designs.md`).
+The four studied-only properties are cleared by a re-ingest that drops
+their lines, as `measured` is.
+
+Source: `game-design/designs/*.md` (built) and `game-design/studies/*.md`
+(studied), one GameDesign per H2 that carries a `**Game design:**` line
+(`CONVENTIONS-game-designs.md`). The extractor reads the marker and the
+frontmatter, not the path; the session JSON under `studies/sessions/` is
+not a page and is not read.
 
 ### MachineVariant
 
@@ -418,7 +428,7 @@ say to rerun the ingest. No index, no edges.
 | started_at | string | ISO time the ingest set the marker |
 | flags | string | The ingest's flags, e.g. ` --clean` |
 
-## Edge Types (30)
+## Edge Types (32)
 
 ### BELONGS_TO
 
@@ -838,6 +848,29 @@ C64-Wiki or Wikipedia URL) and `source_doc` (the archetype page)
 Meaning: "the page names this title as a reference for the archetype,
 and `source` gives its C64 genre and year" (schema 34). MATCH both;
 misses counted as `exemplified_by … dropped`. No tool reads it yet.
+
+### STUDIES
+
+Direction: `GameDesign → Production`
+
+Meaning: "this studied design measured this released title" (schema 40).
+From the title of a `**Studied from:**` line, MATCHed by name against the
+Production nodes the archetype pages' `**Reference titles:**` lines create;
+never created. A title no archetype page links is warned about and counted
+as `studies … dropped`: add the title to the archetype's Reference titles,
+with its source, before the study lands.
+
+### DIVERGES_FROM
+
+Direction: `GameDesign → Technique`, property `direction` ("extra" or
+"missing")
+
+Meaning: "this studied game uses a technique its archetype does not list"
+(`extra`), or "lacks one its archetype lists" (`missing`) (schema 40). From
+`**Diverges from archetype:**`; one edge per technique. MATCH both; an
+unknown technique is warned about and counted as `diverges_from …
+dropped`, and the candidate technique goes to the page's prose and an
+issue. No tool reads it yet.
 
 ---
 

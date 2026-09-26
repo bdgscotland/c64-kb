@@ -253,6 +253,9 @@ async function designFields(
     designs: designs.map((d) => ({
       name: d.name,
       title: d.title,
+      kind: d.kind,
+      studied_from: d.studied_from,
+      source_doc: d.source_doc,
       realised_by: d.realised_by,
       composes: d.composes,
       measured: d.measured.map((m) => ({ ...m, typical: m.typical ?? null })),
