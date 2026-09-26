@@ -216,7 +216,7 @@ Related: `game-design-patterns.md`, `../techniques/logic.md`,
 
 **Kind:** composition
 **Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, action_puzzle, beat_em_up
-**Realised by:** screen_wipe, colour_fade, colour_cycling, tile_map_render, charset_copy_rom_to_ram, kickassembler/screen-wipe, kickassembler/colour-fade, oscar64/tile-map-render, oscar64/level-rle-decoder, flip_screen_rooms, oscar64/flip-screen-rooms, checkpoint_respawn, kickassembler/checkpoint-respawn
+**Realised by:** screen_wipe, colour_fade, colour_cycling, tile_map_render, charset_copy_rom_to_ram, kickassembler/screen-wipe, kickassembler/colour-fade, oscar64/tile-map-render, oscar64/level-rle-decoder, flip_screen_rooms, oscar64/flip-screen-rooms, checkpoint_respawn, kickassembler/checkpoint-respawn, area_end_gate_wave, kickassembler/area-end-gate-wave
 **Sources:** John and Steve Rowlands, Mayhem in Monsterland diary in Commodore Format, 1992 to 1993; Andrew Braybrook, Morpheus diary in Zzap!64, 1987
 
 **Checks:**
@@ -281,6 +281,12 @@ behind the player, the object pool is freed, the visible window is
 re-spawned from the event list and the consumables are topped up
 (`checkpoint_respawn` in `../techniques/logic.md`). Lives are the one
 counter it lowers.
+
+A scrolling game can earn the level_end entry instead of reaching it on
+the last map row: `area_end_gate_wave` (`../techniques/logic.md`) stops
+the scroll, releases a counted wave, and walks the player into the exit
+once the wave is out and dead; the arrival is the level_end trigger.
+Commando (1985) ends each area that way (measured in VICE x64sc 3.10).
 
 Related: `../techniques/transitions.md`, `../techniques/scroll.md`,
 `../techniques/memory-banking.md`.
