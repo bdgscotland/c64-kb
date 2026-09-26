@@ -17,14 +17,14 @@ blank `PLAN.md`.
 A vertical run-and-gun (archetype `vertical_run_and_gun`): a soldier on foot
 walks up a jungle map that scrolls only while he pushes past the middle of
 the screen, over a black band and a three-row score panel. Trees, rocks and
-sandbags stop him; canopies draw over him. This is the first slice: the
-scroll, the redraw, the band, the multiplexer with parked slots, the
-soldier, the enemies (`objects.c`: spawn list, rifleman, runner, grenadier,
-their shots and grenades; `make enemies` proves them) and his weapons
-(`src/weapons.c/h`: shots, grenades, hit boxes; `make weapons` plays and
-grades them). Collisions, game flow and audio are stubs whose interfaces are
-in `PLAN.md`, "Modules". `README.md` has the file map and how
-to extend it. Start a program from it with
+sandbags stop him; canopies draw over him. It has the scroll, the redraw,
+the band, the multiplexer with parked slots, the soldier, the enemies
+(`objects.c`), his gun and grenades (`weapons.c`), a SID tune and five
+effects (`sound.asm`, `sound.c`), and the front end: title, attract demo,
+game over, name entry and a high-score table (`front.c`, `hiscore.c`,
+`flow.c`). Collisions, checkpoints and the area-end gate are the next
+modules; their interfaces are in `PLAN.md`, "Modules". `README.md` has the
+file map and how to extend it. Start a program from it with
 `npm run new-project -- run-and-gun <dir>` in c64-kb.
 
 What will bite you here:
@@ -36,15 +36,19 @@ What will bite you here:
   `mux_sort` and `mux_build`, then stores `K_COMMIT` once (`COMMIT_YS |
   COMMIT_MUX`). The frame IRQ applies both at line 250. A frame whose work
   runs past line 250 is lost (`LOST_FRAMES`, `$02FD`).
-- The redraw pair. On the frame YSCROLL wraps, main.c waits for the band's
-  tick (line 224) and copies 21 map rows to the screen. The copy ends on
-  line 135 (PAL) or 181 (NTSC) of the next frame, which then runs no game
-  logic. So the logic frame before a redraw must end by line 224, and every
-  IRQ cycle and sprite DMA during the copy comes off its lead over the
-  beam: 65 lines on PAL, 13 on NTSC with the enemies' eight sprites up (73
-  and 27 before them; PLAN.md, "Enemies"). Music and more sprites spend
-  what is left: 5 lines on NTSC above the verdict's 8-line floor. The
-  verdict's row 6 prints the lead; re-read it after adding either.
+- The redraw pair. On the frame YSCROLL wraps, main.c runs only the
+  soldier and the spawns (and the sprites' move and sort if they end before
+  line 64, `HOLD_LINES`), commits YSCROLL 0, and copies 21 map rows from
+  line 64 (`RD_FIRST`). The frame after runs the repeat step, the weapons,
+  collisions and rules; no enemy thinks on either frame. Work added to the
+  redraw frame delays the copy line for line; work added to the frame after
+  must still end before line 250. The copy must stay behind the beam: never
+  start it before row 1's badline, and never make it faster than 8 lines a
+  row (kernel.asm). Every IRQ cycle and sprite DMA during the copy comes off
+  its lead. Budget now (PLAN.md, "Combined budget"): lead 195 PAL and 159
+  NTSC in `make weapons`, the frame after a redraw ending by line 135 PAL
+  and 197 NTSC, 0 lost frames. Re-read verdict rows 6 and 8 and run
+  `make longplay` after adding work to either frame.
 - Sprites stop at Y 187 (last line 208), above the band IRQ. `make phases`
   (run by `make check`) checks the band and panel at all eight YSCROLL
   phases with the soldier at Y 187.
@@ -71,9 +75,21 @@ What will bite you here:
   the gate call `flow_player_died` and `flow_area_cleared` (hooks that do
   the minimum; PLAN.md, "Front end"). `make frontend` and `make fedrive`
   prove title, play, game over, name entry, table and title.
-- `make mapend` (-dMAPEND=1) proves the scroll stops at the map's top;
-  `make drive STEPS=...` plays the normal build with the stick on `$DC00`;
-  `make gallery` takes the README picture.
+- Audio: C calls `sfx(SFX_...)` (sound.h); an effect takes voices 1 and 2,
+  the tune keeps voice 3. The frame IRQ inside the redraw only counts its
+  step and the next one plays it (`sound_hold`); keep that if you move the
+  redraw. `make audio` traces the SID stores on both models.
+- CIA timers: CIA2 A is the meter's, CIA2 B the IRQ time's, CIA1 A the
+  audio stopwatch (in the frame IRQ), CIA1 B the main loop's stopwatches
+  (the redraw, `make enemies`, `make weapons`). A stopwatch in C must not
+  share a timer with an IRQ's.
+- Proofs, each its own build (`VERIFY_TARGETS`): `make mapend` (the scroll
+  stops at the map's top), `make enemies`, `make weapons`/`weaponsfault`,
+  `make audio`/`audiotest`, `make frontend`, `make fedrive`, and
+  `make longplay` (the normal build driven 2,700 frames on PAL and NTSC:
+  no lost frame, the redraw's lead). `make drive STEPS=...` plays the
+  normal build with the stick on `$DC00`; `make gallery` takes the README
+  picture.
 ## Before any code
 
 1. Brief: `npx tsx src/cli.ts game-briefing "<concept>" --archetype <name>`
