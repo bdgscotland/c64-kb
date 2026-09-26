@@ -1717,13 +1717,13 @@ The $D018 write is the most timing-sensitive of the three, and its two halves be
 
 **Complexity:** medium
 **Region:** both
-**Uses registers:** D011, D012, D018, D021
+**Uses registers:** D011, D012, D018, D019, D01A, D021
 **Demands:** midframe_raster_irqs
-**Raster band:** movable (the program picks the band's lines; the invalid-mode-band recipe holds lines 211-224 and 250)
-**Alternative to:** scroll_panel_split (nine black lines between playfield and panel; in exchange each store gets a window of 19 cycles or more instead of one line's right border and a delay per YSCROLL phase)
-**Cost:** cycles_per_frame=918, irq_slots=2, lines_active=15
+**Raster band:** movable (the program picks the band's lines; the invalid-mode-band recipe holds lines 211-224 and 250-251)
+**Alternative to:** scroll_panel_split (nine black lines between playfield and panel; in exchange each store gets a window of at least 15 cycles, measured at the switch-on's badline phase, instead of one line's right border and a delay per YSCROLL phase; an earlier version said 19 cycles or more, counted from an extrapolated edge)
+**Cost:** cycles_per_frame=918, irq_slots=2, lines_active=16
 **Cost basis:** measured-vice
-**Cost measured on:** kickassembler-invalid-mode-band (PAL, screen on; the split handler polls from line 211 to 224, the second IRQ runs on line 250)
+**Cost measured on:** kickassembler-invalid-mode-band (PAL, screen on; the split handler polls from line 211 to 224, the second IRQ runs on line 250 and, at 66 cycles, into 251; an earlier version said lines_active=15)
 **Claims:** vic_raster_irq (owns), vic_yscroll (shares), vic_char_base (shares)
 **Claims basis:** derived-listing
 
@@ -1744,8 +1744,7 @@ inside it.
    5), keeping YSCROLL as it is. From the next line the display window is
    black.
 2. Inside the band, store the panel's `$D018` and `$D021`, and set YSCROLL 7
-   before the badline check of the line after the playfield's last possible
-   row start.
+   before line 216's badline check (for a band from 214).
 3. On the band's last line, clear ECM and BMM in the right border, before
    the panel's first badline.
 
@@ -1755,7 +1754,7 @@ the panel starts on line 223. The windows in which each store shows nothing:
 
 | Store | Window (line/cycle, VICE monitor) |
 |---|---|
-| ECM+BMM on | 213/61 to 214/12 (at least to 214/14 when 214 is not a badline); 213/53 leaves 24 pixels of line 213 black |
+| ECM+BMM on | 213/61 to 214/12 (at least to 214/14 when 214 is not a badline): 15 cycles on PAL at the badline phase, the smallest window measured; 213/53 leaves 24 pixels of line 213 black, so the early edge is near 213/56 (extrapolated, 8 pixels a cycle; not a measured landing) |
 | YSCROLL 7 | 215/7 to 215/54; 215/62 at YSCROLL 0 lets line 216 fetch the next row and the panel shows the wrong rows |
 | ECM+BMM off | 222/55 to 223/10; 224/0 blacks the panel's first line |
 
@@ -1774,8 +1773,10 @@ the band are not seen. The panel's position depends only on where the next
 badline falls. Row 20 of a 24-row playfield starts on line 208+YSCROLL, so
 its next row would start on 216+YSCROLL; YSCROLL 7 set on line 215 leaves no
 match on lines 216-222 and makes 223 the next badline at all eight phases. A
-badline early in line 215 (when YSCROLL was not 7) did not move the panel in
-VICE: it fetches the row in progress again.
+store of YSCROLL 7 anywhere in 215/7-54 makes 215 a badline when YSCROLL was
+not already 7 (Bauer's model; not measured separately). That did not move the
+panel in VICE: the badline fetches the row in progress again. It does stall
+the CPU, up to about 40 cycles, inside the band, where it costs nothing seen.
 
 Sprites are not blanked. The sprite unit draws over the invalid mode as over
 any other: a sprite in the band shows (measured in the recipe, 24 pixels on
@@ -1798,8 +1799,9 @@ in the band, turn them off or point them at an empty sprite block there.
   `ecm_with_mcm_set_is_invalid_black_mode` (`pitfalls/text-mode-render.md`).
   Here BMM is set on purpose; `$D016` MCM does not matter.
 - Clearing ECM gives 16 black pixels from a cell boundary before the text
-  returns (`hardware/vic-ii-reference.md`, "Mode-switch timing"), so the
-  clear belongs in the right border, not in the panel's first line.
+  returns (`hardware/vic-ii-reference.md`, "Mode-switch timing"; measured
+  there for ECM alone on the 8565, not measured with BMM), so the clear
+  belongs in the right border, not in the panel's first line.
 - A delay loop spanning a badline is 40 cycles longer. Poll `$D012` for the
   line, then delay, and give the badline phase its own count.
 

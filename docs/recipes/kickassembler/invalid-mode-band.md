@@ -8,7 +8,7 @@ file_formats: [PRG]
 uses_registers: [D000, D001, D010, D011, D012, D015, D016, D018, D019, D01A, D01B, D01C, D020, D021, D027, DC0D, DD0D]
 uses_kernal: []
 claims: [cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), cia2_timer_a (init), cia2_timer_b (init), cia2_tod (init), sprite_0 (owns)]
-ram: [colour=$D800-$DBFF, sprite=$0340-$037E]
+ram: [screen=$0400-$07FF, idle=$3FFF, colour=$D800-$DBFF, sprite=$0340-$037E]
 ---
 
 <!-- doc-type: recipe -->
@@ -158,8 +158,8 @@ spr:    sta SPRDATA,x
         cli
         jmp *
 
-// The split. Each $D011 store has a window of 20 cycles or more in which it
-// shows nothing: the right border of the line before, or the band itself.
+// The split. Each $D011 store has a window of at least 15 cycles (PAL) in
+// which it shows nothing: the right border of the line before, or the band.
 // A plain $D012 poll (one read every 7 cycles) lands well inside each one.
 split_irq:
         pha
@@ -295,9 +295,11 @@ panel's dark grey, at any YSCROLL, on either model. The sprite covers x
 
 With `:ys=0 :band=0` (PAL) the picture differs from the `:ys=0` build on
 lines 214-222 only. Those lines are no longer black: the playfield's
-light-blue last stripe runs on to line 222 (272 pixels a line), and on lines
-215-222 x 160-183 is 12 black and 12 dark-grey pixels. That is what the band
-hides. The panel still starts on line 223.
+light-blue last stripe runs on to line 222. Line 214 has 296 light-blue
+pixels and the 24-pixel sprite. Lines 215-222 have 272 light-blue pixels, the
+sprite, and at x 160-183 12 black and 12 dark-grey pixels: the late character
+fetch of the badline that the YSCROLL store starts on line 215 (see "Why this
+works"). That is what the band hides. The panel still starts on line 223.
 
 Pinned in `runs.json`: the default build (YSCROLL 3) on PAL and NTSC as
 `screenshots/invalid-mode-band.png` and `-ntsc.png`, `@ys0` and `@ys7` on
@@ -331,7 +333,7 @@ the others.
 Traced in VICE (`trace exec` on the handler's first instruction and its
 `RTI`): the split handler runs from line 211 to line 224, 852 cycles on PAL
 and 874 on NTSC including the 7-cycle interrupt entry and the `RTI`, most of
-it polling. The line-250 handler costs 66. That is 918 cycles a frame on PAL.
+it polling. The line-250 handler costs 66, more than one line, so it runs into line 251. That is 918 cycles a frame on PAL.
 
 ## Why this works
 
@@ -343,19 +345,26 @@ hold. Sprites are drawn over it as usual, which the yellow block shows. The
 pitfall `ecm_with_mcm_set_is_invalid_black_mode`
 (`pitfalls/text-mode-render.md`) is the same mode reached by accident.
 
-The band turns three exact-cycle stores into stores with windows of 19 cycles
-or more. The switch-on lands in line 213's right border or before the window
+The band turns three exact-cycle stores into stores with windows of at least
+15 cycles. The smallest measured is the switch-on at the badline phase
+(YSCROLL 6): 213/61 to 214/12, 15 cycles on PAL. Its early edge near 213/56 is
+extrapolated from the too-early landings (rung 3), not measured as a clean
+landing. An earlier version said 19 cycles or more here and 20 in the
+listing, both counted from that edge. The switch-on lands in line 213's right border or before the window
 opens on line 214. The charset (`$D018`) and background (`$D021`) stores can
 land anywhere in the band. The YSCROLL store is the one that decides where
 the panel starts: the playfield's row 20 starts on line 208+YSCROLL, so its
 next row would start on 216+YSCROLL. With YSCROLL 7 in place before line
 216's badline check, no line from 216 to 222 matches, and the next badline is
-223 at every playfield phase. A store early in line 215 makes 215 a badline
-when YSCROLL was not 7, and in VICE that did not move the panel either
-(stores at 215/7-10 gave the same panel): a badline in the middle of a row
-fetches the same row again, because the row base advances only when the row
-counter reaches 7 (Bauer's VIC article; consistent with this run, not
-measured further). The switch-off lands in
+223 at every playfield phase. Every store in the 215/7-54 window makes 215 a
+badline when YSCROLL was not already 7, the listing's own stores at 215/28-32
+included (Bauer's model; not measured separately). In VICE that did not move
+the panel (stores at 215/7-10 and the listing's gave the same panel): a
+badline in the middle of a row fetches the same row again, because the row
+base advances only when the row counter reaches 7 (Bauer's VIC article;
+consistent with this run, not measured further). The badline stalls the CPU
+for up to about 40 cycles, inside the band. Its late character fetch is the
+12 black and 12 dark-grey pixels at x 160-183 in the `@noband` picture. The switch-off lands in
 line 222's right border, before the panel's badline stalls the CPU on line
 223.
 
