@@ -41,7 +41,7 @@ multiplexer whose slot count is fixed (`sprite_slot_parking` in
 //
 // Before the display starts, CIA2 timer A times the routines with the
 // screen off (no badlines, no sprite DMA) and the results are printed
-// in hex on rows 20-24.
+// in hex on rows 19-24.
 
 .const PARK_Y  = 0            // parked slots sort to the top and leave the
                               // frame before the first real sprite
@@ -413,6 +413,26 @@ measure:
     jsr time_it
     ldx #8
     jsr keep
+    ldx #15                  // worst case: 16 distinct Ys in reverse order
+!:  lda ys, x
+    sta backup, x
+    txa
+    sta ys, x                // ys[x] = x
+    eor #$0f
+    sta order, x             // order[x] = 15 - x: largest Y first
+    dex
+    bpl !-
+    lda #<sort
+    ldx #>sort
+    jsr time_it
+    ldx #10
+    jsr keep
+    ldx #15
+!:  lda backup, x
+    sta ys, x
+    dex
+    bpl !-
+    jsr sort                 // back to the real order
     rts
 
 keep:                        // results[x] = res - cal
@@ -446,10 +466,10 @@ jv: jsr empty
 empty:
     rts
 
-results: .fill 10, 0
+results: .fill 12, 0
 
 // ---------------------------------------------------------------------------
-// Screen: black, five labelled hex results on rows 20-24.
+// Screen: black, six labelled hex results on rows 19-24.
 // ---------------------------------------------------------------------------
 show_results:
     ldx #0
@@ -467,13 +487,13 @@ show_results:
     bne !-
     ldx #0
 !:  lda labels, x
-    sta SCREEN + 20 * 40, x
+    sta SCREEN + 19 * 40, x
     inx
-    cpx #200
+    cpx #240
     bne !-
-    .for (var r = 0; r < 5; r++) {
-        PrintHex(results + 2 * r + 1, SCREEN + (20 + r) * 40 + 32)
-        PrintHex(results + 2 * r, SCREEN + (20 + r) * 40 + 34)
+    .for (var r = 0; r < 6; r++) {
+        PrintHex(results + 2 * r + 1, SCREEN + (19 + r) * 40 + 32)
+        PrintHex(results + 2 * r, SCREEN + (19 + r) * 40 + 34)
     }
     rts
 
@@ -499,6 +519,7 @@ labels: .text "group a, no test                        "
         .text "group a, test, 0 of 8 parked            "
         .text "group b, no test                        "
         .text "sort of 16                              "
+        .text "sort of 16, reversed                    "
 ```
 
 ## Build
@@ -507,7 +528,7 @@ labels: .text "group a, no test                        "
 java -jar KickAss.jar sprite-slot-parking.asm -o sprite-slot-parking.prg
 ```
 
-`-showmem`: code `$0810-$1063`, shapes `$2000-$207F`, slot tables
+`-showmem`: code `$0810-$10EF`, shapes `$2000-$207F`, slot tables
 `$3000-$30C9`, sine `$3100-$31FF`. The slot tables must stay inside one
 page: a load that crosses a page costs 5 cycles, not 4, and the group
 write would no longer be constant.
@@ -522,15 +543,21 @@ and `screenshots/sprite-slot-parking-ntsc.png`. A PIL script found in each:
   rows at lines 51, 57, 81, 87, 93, 99, 131, 141, 161 and 176: Y 50, 56,
   80, 86, 92, 98, 130, 140, 160 and 175, each 21 lines tall. The six
   parked slots draw nothing.
-- White text on rows 20-24, decoded against the character ROM:
+- White text on rows 19-24, decoded against the character ROM:
 
 | Row | Routine timed | Hex | Cycles |
 |---|---|---|---|
-| 20 | group A (8 entries), no test | `019E` | 414 |
-| 21 | group A with the test, 6 of 8 entries parked | `00E1` | 225 |
-| 22 | group A with the test, 0 of 8 entries parked | `022A` | 554 |
-| 23 | group B (4 entries), no test | `00DA` | 218 |
-| 24 | insertion sort of 16, list already in order | `03C5` | 965 |
+| 19 | group A (8 entries), no test | `019E` | 414 |
+| 20 | group A with the test, 6 of 8 entries parked | `00E1` | 225 |
+| 21 | group A with the test, 0 of 8 entries parked | `022A` | 554 |
+| 22 | group B (4 entries), no test | `00DA` | 218 |
+| 23 | insertion sort of 16, list already in order | `03C5` | 965 |
+| 24 | insertion sort of 16 distinct Ys in reverse order | `103B` | 4,155 |
+
+Row 24 is the sort's worst case: `measure` sets Y = slot number and the
+order to 15 down to 0, times the sort, then restores the Ys and sorts
+again. An earlier version of this recipe timed only the in-order sort, and
+the technique's Cost line left the sort out.
 
 PAL and NTSC print the same figures: the screen is off while they are
 taken. Each figure is the routine's body; the empty JSR/RTS is subtracted.
@@ -593,6 +620,15 @@ depending on what is in use, against a constant 414 without the test: 16
 cycles saved on every entry in use, 39 lost on every parked entry, and 140
 saved in the worst case, which is the one an IRQ part has to be scheduled
 for.
+
+Those are instruction cycles only. A parked sprite is enabled, so the
+VIC-II still fetches it on its 21 lines and stalls the CPU; a skip that
+clears its `$D015` bit does not. In a probe build (not this listing) one
+parked sprite at Y 0 cost 105 cycles a frame of DMA on PAL and six cost
+358 (`sprite_slot_parking` in `techniques/sprite.md` has the figures).
+Counting that, the skip takes fewer cycles as soon as one entry is parked;
+parking's gain is the constant IRQ cost and no mid-frame `$D015` merge.
+An earlier version of this section compared instruction cycles alone.
 
 ### Region
 

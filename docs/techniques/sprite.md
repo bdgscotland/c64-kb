@@ -495,9 +495,9 @@ families). cadaver/c64gameframework, https://github.com/cadaver/c64gameframework
 **Uses registers:** D000, D001, D010, D012, D015, D019, D01A, D027
 **Uses kernal:** (none)
 **Demands:** midframe_raster_irqs, changes_sprite_set
-**Cost:** cycles_per_frame=1170, irq_slots=3
+**Cost:** cycles_per_frame=5334, irq_slots=3
 **Cost basis:** arithmetic
-**Cost measured on:** kickassembler-sprite-slot-parking (16 slots in groups of 8, 4 and 4: group writes 414 + 218 measured with CIA2 timer A, screen off, group C taken as equal to B; 317 cycles of interrupt entry through $FF48, re-arm and $EA81 exit for the three parts by arithmetic; the sort not included)
+**Cost measured on:** kickassembler-sprite-slot-parking (worst frame, CPU cycles only: 16 slots in groups of 8, 4 and 4, group writes 414 + 218 measured with CIA2 timer A, screen off, group C taken as equal to B; 317 cycles of interrupt entry through $FF48, re-arm and $EA81 exit for the three parts by arithmetic; the insertion sort of 16 distinct Ys in reverse order, 4,155 measured, plus 12 for its JSR/RTS; the sprite DMA of parked slots not included, 358 more for the recipe's six at Y 0 on PAL)
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
 **Alternative to:** sprite_multiplex_game (a fixed slot count written unconditionally in fixed groups: constant IRQ cost and no build pass, but no reject of a ninth sprite on a band and no late guard, so an overloaded band loses sprites silently)
@@ -533,10 +533,11 @@ same way.
 ### Why it works
 
 A parked entry is an ordinary sprite to the VIC-II: it is switched on and
-drawn for 21 lines, with nothing to see. The only thing it takes is a
-hardware sprite for those 21 lines, and the parking Y decides which lines.
-The IRQ code runs the same instructions every frame, so its cost is a
-constant that can be scheduled.
+drawn for 21 lines, with nothing to see. It takes a hardware sprite for
+those 21 lines, and the parking Y decides which lines. It also takes sprite
+DMA: the VIC-II fetches its blank data on every one of those lines and
+stalls the CPU, as for a visible sprite. The IRQ code runs the same
+instructions every frame, so its cost is a constant that can be scheduled.
 
 Measured in `recipes/kickassembler/sprite-slot-parking.md` (VICE x64sc
 3.10, CIA2 timer A, screen off): writing one sorted entry costs 50 cycles
@@ -545,21 +546,45 @@ whatever the entries hold. The same group A with an "in use" test and the
 `$D015` mask a correct skip needs costs 66 cycles per entry in use and 11
 per entry skipped: 554 with all 8 in use, 225 with 6 of 8 parked. Parking
 saves 16 cycles on every entry in use and 140 on group A's worst case; it
-spends 39 more than a skip on every parked entry. Parking is the cheaper
-of the two when fewer than about 29 % of the entries in a group are parked
-(arithmetic from those figures), and it is constant in every case.
+spends 39 more than a skip on every parked entry. Counting instructions
+only, parking is the cheaper of the two for group A while fewer than 2.5
+of its 8 entries are parked, about 32 % (554 - 55p = 414; arithmetic from
+the measured figures; 29 % per entry, 16 / 55).
+
+Sprite DMA changes that comparison. A skip that clears the `$D015` bit
+stops the fetches; a parked sprite is still fetched. Measured in a probe
+build (VICE x64sc 3.10, CIA2 timer A across lines 0-174, sprites at Y 0
+and X 356 on the blank shape, `$D015` set against clear): one parked
+sprite costs 105 cycles a frame on PAL, six cost 358 and eight 442; on
+NTSC (6567R8) 70, 253 and 309, a difference not explained here. With
+that added, group A with one parked entry is 414 + 105 = 519 cycles on PAL
+against 499 for the skip, and 414 + 70 = 484 on NTSC; with six parked,
+772 on PAL against 225 (arithmetic from the measured figures). So a skip
+with a `$D015` clear takes fewer cycles once one entry is parked on PAL
+and two on NTSC, before the cost of merging `$D015` mid-frame in groups B
+and C, which was not measured. What parking buys is an IRQ cost that does
+not change and no `$D015` merge, not cycles.
 
 A frame of the recipe's group writes is 414 + 218 + 218 = 850 cycles
 (group C is group B's code with another mask), plus 107, 107 and 103
 cycles of interrupt, `$FF48` dispatch, re-arm and `$EA81` exit for the
-three parts (arithmetic from the listing): 1,167, the Cost line's 1,170.
-The sort is extra: 965 cycles for 16 entries already in order, measured.
+three parts (arithmetic from the listing): 1,167. The sort runs every
+frame: 965 cycles for 16 entries already in order and 4,155 for 16
+distinct Ys in reverse order, both measured, plus 12 for the JSR/RTS. The
+worst frame is 1,167 + 4,167 = 5,334 cycles, the Cost line; the recipe's
+own frames, whose objects move only in X, are 1,167 + 977 = 2,144. The
+DMA of parked slots comes on top of both. An earlier version of this page gave
+1,170 on the Cost line, which left out the sort, and said a parked entry
+takes nothing but a hardware sprite, which left out its DMA.
 
 ### When not to use it
 
 - **Many slots idle most of the time.** Each parked entry costs a full
-  50-cycle write; with 12 of 16 slots free, a compact list of the active
-  ones is cheaper.
+  50-cycle write and its sprite DMA. With 12 of 16 slots free, the group
+  writes alone are 16 × 50 = 800 cycles against 4 × 50 = 200 for a compact
+  list of the 4 active ones; the list's build pass has to cost less than
+  the 600 difference (arithmetic, rung 3; the build pass was not measured
+  here).
 - **More than eight sprites on one band.** The fixed groups have no
   reject step and no rotation. `sprite_multiplex_game` rejects a ninth
   sprite and guards against a late IRQ.
@@ -598,7 +623,7 @@ pile-up lasts (measured over five consecutive frames).
 Two consequences were measured. A shot slot is unparked with its new X
 one frame before its display Y leaves the parking line, so a new bullet
 shows for one frame at Y 194. In 1,321 frames no visible object at Y 193
-or below reached sprites 4-7, which the game never blanks before its
+or more (on or below line 193) reached sprites 4-7, which the game never blanks before its
 status panel; that the parked shot slots at Y 194 are what keeps them out
 is inferred (rung 4), not measured. Sprite work there costs about 5,400
 cycles a frame, half of it the sort.
