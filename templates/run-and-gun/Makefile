@@ -26,7 +26,7 @@ SHOT_CYCLES_PAL  := 10000000
 SHOT_CYCLES_NTSC := 10000000
 
 # make watch (run by make check): the SID is written in at least SID_FRAMES frames
-# of the autopilot run. Measured (make watch): 324 frames on PAL, 371 on NTSC in
+# of the autopilot run. Measured (make watch): 324 frames on PAL, 370-371 on NTSC in
 # 10,000,000 cycles (the driver starts about 160 frames in); the NO_PLAYER build
 # writes it in 2 (the start-up's copy of the blob and audio_init), which make
 # watchtest wants to fail.
@@ -95,14 +95,17 @@ check: phases
 # monitor store trace and wants: no music store to voices 1-2 while an effect
 # runs, no effect store to voice 3, voice 3's stores identical in both builds,
 # voices 1-2's identical outside the effects, voice 3's note-ons on the steps
-# the tune data gives, one driver step a frame. PAL and NTSC.
+# the tune data gives, one driver step a frame with as many steps as frames,
+# $D418 at $0F and voice 3's pitches from the table. PAL and NTSC.
 # audiotest: the -define AUDIO_FAULT build (the music writes voices 1-2 during
-# an effect) must fail the trace on both models.
+# an effect) must fail owned, and the -define AUDIO_DROP build (the first owed
+# step after a redraw is never played) must fail frames, on both models.
 PRG_NOSFX := build/$(NAME)-nosfx.prg
 $(PRG_NOSFX): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
 	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dNO_SFX=1 -o=$@ $(C_MAIN)
 $(eval $(call variant_prg,audiofault,AUDIO_FAULT))
+$(eval $(call variant_prg,audiodrop,AUDIO_DROP))
 
 # 20,000,000 cycles: past one whole loop of the tune (768 frames) after the start-up.
 AUDIO_CYCLES := 20000000
@@ -117,13 +120,22 @@ audio: $(PRG_AUTO) $(PRG_NOSFX)
 	 [ "$$(cat shots/audio-pal.st)" = 0 ] && [ "$$(cat shots/audio-ntsc.st)" = 0 ] || { echo "audio: FAIL"; exit 1; }
 	@echo "audio: PASS"
 
-audiotest: build/$(NAME)-audiofault.prg $(PRG_NOSFX)
+# $(1) the variant, $(2) the check its build must fail: exit 1, a FAIL line for that
+# check, and no Python traceback (a crashed checker also exits 1).
+define audio_must_fail
 	@for m in pal ntsc; do \
-	  $(SIDTRACE) --model $$m --cycles $(AUDIO_CYCLES) --sym build/audiofault/kernel.sym --sym-nofx build/kernel.sym build/$(NAME)-audiofault.prg $(PRG_NOSFX) > shots/audiotest-$$m.txt 2>&1; st=$$?; \
-	  grep '^FAIL' shots/audiotest-$$m.txt | head -3; \
-	  if [ $$st -eq 1 ]; then echo "audiotest: the AUDIO_FAULT build fails the trace on $$m: PASS"; \
-	  else cat shots/audiotest-$$m.txt; echo "audiotest: FAIL, the AUDIO_FAULT build passed on $$m (exit $$st)"; exit 1; fi; \
+	  $(SIDTRACE) --model $$m --cycles $(AUDIO_CYCLES) --sym build/$(1)/kernel.sym --sym-nofx build/kernel.sym build/$(NAME)-$(1).prg $(PRG_NOSFX) > shots/audiotest-$(1)-$$m.txt 2>&1; st=$$?; \
+	  grep '^FAIL' shots/audiotest-$(1)-$$m.txt | head -3; \
+	  if [ $$st -eq 1 ] && grep -q '^FAIL .* $(2):' shots/audiotest-$(1)-$$m.txt && ! grep -q '^Traceback' shots/audiotest-$(1)-$$m.txt; then \
+	    echo "audiotest: the $(1) build fails $(2) on $$m: PASS"; \
+	  else cat shots/audiotest-$(1)-$$m.txt; echo "audiotest: FAIL, the $(1) build did not fail $(2) on $$m (exit $$st)"; exit 1; fi; \
 	done
+endef
+
+audiotest: build/$(NAME)-audiofault.prg build/$(NAME)-audiodrop.prg $(PRG_NOSFX)
+	@mkdir -p shots
+	$(call audio_must_fail,audiofault,owned)
+	$(call audio_must_fail,audiodrop,frames)
 
 check: audio
 selftest: audiotest

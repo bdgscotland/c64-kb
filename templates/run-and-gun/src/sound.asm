@@ -23,7 +23,9 @@
 // (note 0); a pattern table per voice (the read is patched per voice); the
 // NTSC frequency table and one tick count skipped in six on NTSC; the start
 // pitches from the table; the hold; counters and a CIA1 timer A stopwatch
-// for the verdict (aud_prof, AUTOPILOT builds).
+// for the verdict (aud_prof, AUTOPILOT builds). Two fault builds for make
+// audiotest: AUDIO_FAULT (the music writes every voice) and AUDIO_DROP (the
+// first owed step is never played).
 //
 // Nothing here may use zero page (Oscar64 owns it). CIA1 timer A is the
 // stopwatch: nothing else in FIREBASE uses it (KERNAL out, CIA1 IRQs off).
@@ -103,6 +105,13 @@ audio_play:
 !:      lda aud_owed
         beq au_step
         dec aud_owed
+#if AUDIO_DROP
+        lda au_dropped          // make audiotest: the first owed step is lost for good
+        bne au_keep
+        inc au_dropped
+        jmp audio_play
+au_keep:
+#endif
         jsr au_step
         jmp audio_play
 
@@ -371,6 +380,9 @@ au_six:     .byte 0
 au_tick:    .byte 0
 au_wflag:   .byte 0
 au_flo:     .byte 0
+#if AUDIO_DROP
+au_dropped: .byte 0
+#endif
 au_dur:     .fill 3, 0
 au_ppos:    .fill 3, 0
 au_note:    .fill 3, 0

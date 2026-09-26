@@ -307,12 +307,12 @@ static void play_enter(void)
     play_frames = 0;
     light = 0;
     state = ST_PLAY;
-#if AUTOPILOT
-    sound_start();
-#endif
 #if FRAME_METER
     meter_init((unsigned)SCRATCH, 9, 1, PF_CRAM, METER_HOLD);
     have_main = 0;
+#endif
+#if AUTOPILOT
+    sound_start();                      // after meter_init: its calibration drops two frame IRQs
 #endif
 }
 

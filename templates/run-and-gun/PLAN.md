@@ -583,6 +583,10 @@ Nobody has listened to it: `+sound` is off in every run here.
 | `SFX_KILL` | 4 | 18 | stuttering pulse falling E6-A#4, saw a fourth down |
 | `SFX_DEATH` | 5 | 72 | triangle falling G5-G2, a stuttering pulse a fifth down |
 
+The lengths are driver steps, one a frame. The tune skips one tick count in
+six on NTSC; the effects do not, so on NTSC every effect runs a sixth
+faster and shorter (SHOT: 160 ms on PAL, 133 ms on NTSC; arithmetic).
+
 The numbers are `src/sound.h`. Weapons, objects and flow call `sfx()`;
 until they exist, the AUTOPILOT build's script (`src/sound.c`) requests
 SHOT, THROW, BLAST, KILL, SHOT, DEATH, SHOT, SHOT on play frames 10, 30,
@@ -613,7 +617,10 @@ stopwatch's 5):
 | One step, typical (median) | 343 | 350 | the same (row 3 `T`) |
 | One step, least | 235 | 242 | `make audio` log |
 | An effect's start, the engine alone | 395-418 | 382-418 | `make audio`: the same step of the `NO_SFX` build subtracted |
-| Worst step possible: a start on a three-note-on step | about 1,190 | about 1,195 | arithmetic from the two rows above; the MAPEND run met 1,000 on PAL |
+| Worst step possible: a start on a three-note-on step | about 1,190 | about 1,200 | arithmetic from the two rows above; the MAPEND run met 1,000 on PAL |
+| Frame IRQ after a redraw: the owed step and its own, worst of the run | 1,008 | 1,188 | `make audio`: VICE clock, first step's `aud_mark` store to the second's last log store (13 such IRQs in the logged steps) |
+| Between the two steps of that IRQ | 158 | 158 | the same, less the two steps' stopwatch readings |
+| Frame IRQ's audio, worst possible: the owed step with a start, then a three-note-on step | about 2,120 | about 2,140 | arithmetic: 1,200 + 782 + 158 on NTSC (PAL 1,192 + 774 + 158) |
 | Frame IRQ under the hold (inside the redraw) | 15 | 15 | arithmetic from kernel.asm (the stub's `jsr`/`rts` was 12) |
 | Redraw's smallest lead over the beam | 72 lines | 27 lines | verdict row 6 (before audio: 73, 27) |
 | Logic frame, worst (IRQs in) | 4,068 | 4,108 | harness meter (before audio: 3,049, 3,071); the worst holds two steps |
@@ -625,10 +632,21 @@ stopwatch's 5):
 The PAL lead reads 72 or 73 lines from build to build with the same
 interrupt path: the redraw's end line moves with where C's `band_tick`
 poll leaves it (an earlier build of this module read 73; arithmetic says
-the hold path costs 3 cycles more than the stub). The worst step
-possible, about 1,190 cycles, is 18 NTSC lines: from line 250, after the
-sprites, it runs past line 262 into the next frame (arithmetic); a
-multiplexer zone due before it ends runs late, through the late guard.
+the hold path costs 3 cycles more than the stub).
+
+**The worst frame IRQ.** The frame IRQ after a redraw's light frame runs
+two steps back to back. The worst measured, 1,188 cycles on NTSC, is 19
+lines; the worst possible, about 2,140 cycles, is 33 NTSC lines (34 on
+PAL at 63 cycles a line). From line 250, after the sprites, that reaches
+line 20 of the next NTSC frame (line 284 of 312 on PAL; arithmetic). The
+frame IRQ arms the first multiplexer zone's line after the audio, so a
+zone due before about line 25 on NTSC (line 20 plus the sprites' part
+of the IRQ, which runs first) can be armed after its line has passed
+and fire a frame late. The zones must start below that, or the zone
+module must arm the first zone before the audio (it then runs late,
+through the late guard). An earlier version of this paragraph gave
+the worst as one step, about 1,190 cycles and 18 lines: it missed the
+two-step IRQ.
 
 `make audio` (run by `make check`): a store trace of `$D400-$D418`
 proves the takeover. Both builds, 20,000,000 cycles (one whole loop of
@@ -640,20 +658,36 @@ PASS PAL   voice3: effect stores 681, to $D40E-$D418 0; in the NOFX build 0
 PASS PAL   same3: voice 3 music stores in 845 steps: 2106 and 2106, identical in step, register and value
 PASS PAL   same12: voices 1-2 music stores in the 673 steps no effect owns: 769 and 769, identical
 PASS PAL   tempo: voice 3 note-ons on 52 steps; the tune data gives 52; the same steps
-PASS PAL   frames: from play's start (step 7), 839 steps in 839 frames; each step in its own frame or the next (frame minus step spans 8..9, 13 steps a frame late); gaps outside 0-2 frames: 0
+PASS PAL   frames: from play's start (step 7), 839 steps in 839 frames, net drift 0; 13 steps a frame late; offsets outside 8..9: 0, a late step not caught up: 0, gaps outside 0-2 frames: 0
+PASS PAL   sid: $D418 stores 2, set to $0F by audio_init and never changed: yes; voice 3 note-on pitches 52, off the PAL table: 0
 PASS NTSC  owned: 172 steps start with an effect running; music stores to voices 1-2 in them: 0
 PASS NTSC  voice3: effect stores 681, to $D40E-$D418 0; in the NOFX build 0
 PASS NTSC  same3: voice 3 music stores in 966 steps: 2332 and 2332, identical in step, register and value
 PASS NTSC  same12: voices 1-2 music stores in the 794 steps no effect owns: 805 and 805, identical
 PASS NTSC  tempo: voice 3 note-ons on 50 steps; the tune data gives 50; the same steps
-PASS NTSC  frames: from play's start (step 7), 960 steps in 960 frames; each step in its own frame or the next (frame minus step spans 8..9, 13 steps a frame late); gaps outside 0-2 frames: 0
+PASS NTSC  frames: from play's start (step 7), 960 steps in 960 frames, net drift 0; 13 steps a frame late; offsets outside 8..9: 0, a late step not caught up: 0, gaps outside 0-2 frames: 0
+PASS NTSC  sid: $D418 stores 2, set to $0F by audio_init and never changed: yes; voice 3 note-on pitches 50, off the NTSC table: 0
 ```
 
-`make audiotest` (run by `make selftest`): the `AUDIO_FAULT` build, whose
-music writes every voice during an effect, fails `owned` on both models
-(221 stores on PAL, 137 on NTSC). `make watch` (`SID_FRAMES` 300): the
-SID is written in 324 frames on PAL and 371 on NTSC; the `NO_PLAYER`
-build in 2.
+`frames` is the only check that sees a lost or extra step: `same3`,
+`same12` and `tempo` count in steps, and `sound_ok` compares two counters
+the same frame IRQ increments. It wants each late step followed by its
+frame's own and as many steps as frames at the end. An earlier version
+only bounded the spread of frame minus step, which a step lost for good
+passed.
+
+`make audiotest` (run by `make selftest`), both models; each build must
+exit 1 with a FAIL line for its check and no traceback:
+
+- `AUDIO_FAULT`, whose music writes every voice during an effect, fails
+  `owned` (221 stores on PAL, 137 on NTSC).
+- `AUDIO_DROP`, which never plays the first owed step, fails `frames`
+  (838 steps in 839 frames on PAL, 959 in 960 on NTSC) and passes the
+  other six.
+
+`make watch` (`SID_FRAMES` 300): the SID is written in at least 300
+frames (324 measured on PAL, 370-371 on NTSC); the `NO_PLAYER` build in
+2.
 
 Two things the trace showed that no page said. Oscar64's start-up copies
 the blob into place, so a trace of the blob's addresses sees three
@@ -661,7 +695,10 @@ the blob into place, so a trace of the blob's addresses sees three
 code. And the meter's calibration in `play_enter` (harness `meter_init`,
 four waits for line 0 with interrupts off) drops two frame IRQs, so the
 AUTOPILOT build loses two music steps at the start of play; the normal
-build does not call `meter_init`.
+build does not call `meter_init`. `sound_start` runs after `meter_init`,
+so the gap falls before the counters and the trace's first timed step,
+and `frames` sees every step after it (an earlier build called
+`sound_start` first).
 
 Memory: `src/sound.asm` and `src/gen/tune.asm` take `$11DE-$1A23` of the
 blob: 830 bytes of data (two frequency tables of 190, three patterns of
@@ -804,7 +841,9 @@ passed".
   cycle steps every 6 moved frames.
 - Open: the enemies' zones come out of the redraw's NTSC lead (27
   lines); measure it after adding them. The music does not ("Audio"); an
-  earlier version of this item said it did. A `DEADLINE_LINE`
+  earlier version of this item said it did. The frame IRQ after a redraw
+  can run its audio to about line 20 of the next NTSC frame ("The worst
+  frame IRQ"): no zone may be due above that. A `DEADLINE_LINE`
   (harness `make watch`) of 224 would check the pre-redraw rule on every
   frame; it needs an `OVERRUN` build and is not wired yet.
 - Open: the README gallery and the archetype page's `**Starter:**` line
