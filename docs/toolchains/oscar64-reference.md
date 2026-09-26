@@ -852,6 +852,7 @@ and writes no PRG. Paths are printed absolute; they are shortened here.
 | `crt.c(30, 5) : error 3025: Function declaration differs 'main'` | `void-main.c` | `void main(void)`: the startup code in `include/crt.c` calls `main` as `int main(void)`, so the error is reported in crt.c, not in your file | Declare `int main(void)` and return a value |
 | `error 3005: Struct member identifier not found 'border'` | `unknown-vic-field.c` | A field name `vic.h` does not have. The border colour register is `vic.color_border`, the background `vic.color_back` | Read the struct in `include/c64/vic.h`, or the [headers reference](oscar64-headers-reference.md) |
 | (no error; exit 0) | `volatile-store-load-reorder.c` | Built with the local build (1.32.271 + c1270bc), v1.32.273 and upstream 6cb1a6c, not build 2026-05-19. The `$DC01` load is emitted after the `cia1.pra = 0xff` store that follows it in the source (Pitfalls, "A volatile load can be moved past a later volatile store") | Put a store-then-load on a port in `__asm`; read the `.asm` for the order |
+| `error 3068: Invalid define expansion closing argument` at the macro's opening line, then one or more `error 3006` lines (`Term starts with invalid token '')''`, `')' expected`, `';' expected`) on the next | `macro-args-span-lines.c` | Local build (1.32.271 + c1270bc) only, not build 2026-05-19: a function-like macro call whose argument list continues on the next line, here `CHECK(a == 1 &&` / `b == 2);`. Any macro and any break point fails the same way (`ADD(1,` / `2)`, `ID(a` / `+ b)`), at `-O0` to `-O3`; exit 20, no PRG. v1.32.273 and upstream 6cb1a6c build it (exit 0, PRG written); the macro-argument rework between 709bd70 and v1.32.273 is the likely fix (not bisected) | Keep each macro call on one line: put a long test in a local first (`char t = a == 1 && b == 2; CHECK(t);`, which builds) |
 
 One thing seen while building this section is a crash, not an error. With
 `while (border_calls) ;` as the idle loop in `main.c` (a global `char`,
@@ -950,6 +951,20 @@ int main(void)
         prev = j;
     }
     return 0;
+}
+```
+
+`macro-args-span-lines.c`
+
+```text
+#define CHECK(c) do { if (!(c)) fail = 1; } while (0)
+char fail;
+int main(void)
+{
+    char a = 1, b = 2;
+    CHECK(a == 1 &&
+          b == 2);
+    return fail;
 }
 ```
 
