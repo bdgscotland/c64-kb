@@ -38,18 +38,31 @@ void meter_init(unsigned screen, char row, char col, char colour, char hold)
     cia2.ta = 0xffff;                           // the latch every METER_START reloads
     acc = cia2.icr;                             // read to clear a stale underflow flag
     meter_zero = 0xffff;
-    __asm volatile { php
-                     sei }                      // no interrupt inside the calibration
-    for (char k = 0; k < 4; k++)                // the empty bracket, at line 0: no DMA there
+    // The empty bracket, four times, each at line 0 (no DMA there) with
+    // interrupts masked only from line 256 on: at most 56 lines PAL, 7 NTSC
+    // (arithmetic), so an IRQ that comes less often than that is delayed, not
+    // lost (no KERNAL timer IRQ lost, same trace as below). An earlier version
+    // masked all four waits for $D012 = 0 (lines 0 and 256 alike): 26,945
+    // cycles in one PAL run, one KERNAL timer IRQ lost (VICE store trace of
+    // $A2), and in run-and-gun two music steps at the start of play.
+    for (char k = 0; k < 4; k++)
     {
-        while (vic.raster == 0) ;
-        while (vic.raster != 0) ;
+        for (;;)
+        {
+            while (!(vic.ctrl1 & 0x80)) ;       // wait, unmasked, for line 256
+            __asm volatile { php
+                             sei }
+            if (vic.ctrl1 & 0x80)
+                break;                          // still before line 0: masked from here
+            __asm volatile { plp }              // an IRQ carried us past line 0: again
+        }
+        while (vic.ctrl1 & 0x80) ;
         METER_START;
         unsigned z = meter_read();
+        __asm volatile { plp }
         if (z < meter_zero)
             meter_zero = z;
     }
-    __asm volatile { plp }
     meter_last = meter_worst = meter_typical = meter_frames = 0;
     acc = 0;
     printed[0] = printed[1] = printed[2] = 0xffff;

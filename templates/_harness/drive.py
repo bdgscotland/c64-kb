@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """drive.py PRG STEP...: play a program headless over VICE's binary monitor,
-with the joystick pressed on the real $DC00.
+with the joysticks pressed on the real $DC00 (port 2) and $DC01 (port 1).
 
     python3 harness/drive.py build/game.prg "until:PRESS FIRE" tap:fire \\
         "until:LIVES 3" hold:right "until:GAME OVER" print
@@ -11,6 +11,18 @@ sets. The default device, a joystick, ignores that command, which is why an
 earlier version of this harness said the windowless VICE's joyport commands
 never reach $DC00 and had each game read its port byte from RAM (JOY_SOURCE).
 
+Control port 1 is the same device (-controlport1device 37), set through
+joyport 0. Both options come after -default, which resets them. The device
+drives five lines: with the port released $DC00 reads $1F and $DC01 reads $1F
+(CIA1 port A all output at $FF, measured through the monitor), so bits 5-7
+read 0, not 1. Mask them before testing the byte (AND #$1F, or ORA #$E0 before
+folding another input into bit 5); a game that folded a key into bit 5
+unmasked read it as held for ever. Before its first joyport command the
+device holds every line low ($DC01 read $00: port-1 fire held from power-on),
+so the script releases both ports before the power cycle. With port 1 set
+this way a program returned to BASIC and sat at READY for 300 frames with
+nothing typed: the device did not show as keys in the KERNAL's scan.
+
 Time is counted in frames of the emulated machine, not in wall-clock
 seconds: every wait stops the machine at raster line 0 through a checkpoint,
 so the same steps give the same run every time (a fire press at the same
@@ -19,12 +31,16 @@ connected: it releases the port, power-cycles the machine and autostarts the
 program through the monitor. Started from the command line instead, the
 machine had run for as long as the connection took, and the title came 180,
 185 or 190 frames in (six runs of the platformer starter); started this way,
-190 in six of six. -initbreak does not help: with no client connected yet it
-opens the text monitor, which reads end of input and lets the machine run.
+190 in six of six. -raminitrandomchance 0 turns off -default's random
+power-on RAM (issue #126): without it joyprobe's fire frame was 65 in 16 of
+18 runs and 66 or 67 in two; with it, 65 in ten of ten. -initbreak does not
+help: with no client connected yet it opens the text monitor, which reads
+end of input and lets the machine run.
 
 Steps:
   hold:DIR     hold up, down, left, right or fire (DIR+DIR for two); hold:none releases
   tap:DIR      press for 3 frames, then release for 6
+  hold1:DIR, tap1:DIR  the same on control port 1 ($DC01)
   wait:FRAMES  let the machine run that many frames
   run:SECONDS  the same, in seconds of emulated time (50 frames PAL, 60 NTSC)
   until:TEXT   run until TEXT is in the screen text, checked every 5 frames
@@ -50,7 +66,7 @@ Environment:
                 The machine is then stopped at raster line 0, so the picture is the
                 whole frame just drawn (make gallery)
   X64SC         the emulator (default: the windowless build)
-It is also a module: Vice(prg).joy(bits), .frames(n), .mem(addr, n), .rows(),
+It is also a module: Vice(prg).joy(bits), .joy1(bits), .frames(n), .mem(addr, n), .rows(),
 .quit(); tools/joytest.py in the shmup-vertical starter uses it that way.
 """
 import os
@@ -62,8 +78,8 @@ import sys
 X64SC = os.environ.get("X64SC", os.path.expanduser("~/Developer/c64/vice-headless/bin/x64sc"))
 BITS = {"none": 0, "up": 1, "down": 2, "left": 4, "right": 8, "fire": 16}
 KEYS = {"RETURN": b"\r", "DEL": b"\x14"}
-JOYPORT_2 = 1                    # VICE's index for control port 2 (JOYPORT_1 is 0)
-IO_SIMULATION = "37"             # -controlport2device: Joyport I/O simulation
+JOYPORT_1, JOYPORT_2 = 0, 1      # VICE's indexes for control ports 1 and 2
+IO_SIMULATION = "37"             # -controlport1device, -controlport2device: Joyport I/O simulation
 STOPPED = 0x62                   # the monitor's "machine stopped" event
 
 
@@ -100,8 +116,9 @@ class Vice:
         port = int(os.environ.get("DRIVE_PORT") or free_port())
         sink = os.environ.get("DRIVE_SOUND", "off")
         sound = ["+sound"] if sink == "off" else ["-sound", "-sounddev", sink, "-soundarg", os.devnull]
-        args = [X64SC, "-default", "-warp", *sound, "+autostart-delay-random", "-autostartprgmode", "1",
-                "-controlport2device", IO_SIMULATION,
+        args = [X64SC, "-default", "-warp", *sound, "+autostart-delay-random", "-raminitrandomchance", "0",
+                "-autostartprgmode", "1",
+                "-controlport1device", IO_SIMULATION, "-controlport2device", IO_SIMULATION,
                 "-binarymonitor", "-binarymonitoraddress", f"ip4://127.0.0.1:{port}"]
         args += ["-model", "ntsc"] if self.model == "ntsc" else []
         args += ["-8", disk] if disk else []
@@ -111,6 +128,7 @@ class Vice:
         self.sock = self._connect(port)
         self.rid = 0
         self.joy(0)                                       # the device starts with every line low
+        self.joy1(0)
         self.cmd(0xcc, b"\x01")                           # power cycle
         name = os.path.abspath(prg).encode()
         self.cmd(0xdd, struct.pack("<BHB", 1, 0, len(name)) + name)
@@ -179,6 +197,10 @@ class Vice:
         """Port 2 lines, active low as $DC00 reads them: bits 0-4 up, down, left, right, fire."""
         self.cmd(0xa2, struct.pack("<HH", JOYPORT_2, 0xff & ~bits))
 
+    def joy1(self, bits):
+        """Port 1 lines, active low as $DC01 reads them: bits 0-4 as joy()."""
+        self.cmd(0xa2, struct.pack("<HH", JOYPORT_1, 0xff & ~bits))
+
     def feed(self, petscii):                              # the keyboard feed: into $0277
         self.cmd(0x72, bytes([len(petscii)]) + petscii)
 
@@ -209,11 +231,12 @@ class Vice:
 
 
 def step(vice, name, arg):
-    if name in ("hold", "tap"):
-        vice.joy(sum(BITS[d] for d in arg.split("+")))
-        if name == "tap":
+    if name in ("hold", "tap", "hold1", "tap1"):
+        press = vice.joy1 if name.endswith("1") else vice.joy
+        press(sum(BITS[d] for d in arg.split("+")))
+        if name.startswith("tap"):
             vice.frames(3)
-            vice.joy(0)
+            press(0)
             vice.frames(6)
     elif name == "wait":
         vice.frames(int(arg))

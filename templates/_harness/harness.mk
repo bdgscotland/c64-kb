@@ -400,16 +400,19 @@ gallery: $(PRG)
 
 # joyprobe: drive.py's own proof. A KickAssembler program waits for fire on
 # $DC00; drive.py presses it at the same frame in three runs. The press must
-# show, and the three screens and CIA1 timer A readings must match.
-JOYPROBE_STEPS = "until:RUN" wait:100 tap:fire "until:FIRE AT FRAME" peek:d020,dc04,dc05 print
+# show, and the three screens and CIA1 timer A readings must match. Then fire
+# on port 1 ($DC01): green before tap1 (port 1 was not held from power-on),
+# blue after it.
+JOYPROBE_STEPS = "until:RUN" wait:100 tap:fire "until:FIRE AT FRAME" peek:d020,dc04,dc05 wait:20 peek:d020 tap1:fire "until:PORT 1 FIRE" peek:d020 print
 joyprobe: $(HARNESS_DIR)/joyprobe.asm
 	@mkdir -p build
 	$(KICKASS) $(HARNESS_DIR)/joyprobe.asm -odir $(CURDIR)/build -o $(CURDIR)/build/joyprobe.prg > build/joyprobe.log || { cat build/joyprobe.log; exit 1; }
 	@for i in 1 2 3; do DRIVE_SCREEN=0400:0-24 X64SC='$(X64SC)' $(TIMEOUT) $(VICE_TIMEOUT) $(PYTHON) $(HARNESS_DIR)/drive.py build/joyprobe.prg $(JOYPROBE_STEPS) > build/joyprobe-$$i.txt || { cat build/joyprobe-$$i.txt; exit 1; }; done
 	@cat build/joyprobe-1.txt
 	@for i in 2 3; do diff build/joyprobe-1.txt build/joyprobe-$$i.txt || { echo "joyprobe: FAIL, runs 1 and $$i differ"; exit 1; }; done
-	@grep -q 'peek d020: 245' build/joyprobe-1.txt || { echo "joyprobe: FAIL, the border is not green: fire never reached \$$DC00"; exit 1; }
-	@echo "joyprobe: PASS, fire read on \$$DC00 at the same frame in 3 of 3 runs"
+	@grep -q 'peek d020: 245' build/joyprobe-1.txt || { echo "joyprobe: FAIL, the border is not green: fire never reached \$$DC00, or port 1 read fire before its press"; exit 1; }
+	@grep -q 'peek d020: 246' build/joyprobe-1.txt || { echo "joyprobe: FAIL, the border is not blue: port-1 fire never reached \$$DC01"; exit 1; }
+	@echo "joyprobe: PASS, fire read on \$$DC00 at the same frame in 3 of 3 runs, and port-1 fire on \$$DC01 only when pressed"
 
 # The starter's own proof targets, one line, for verify-templates to read.
 verify-targets:
