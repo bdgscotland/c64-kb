@@ -2666,5 +2666,17 @@
       "pal": "screenshots/speedcode-road.png",
       "ntsc": "screenshots/speedcode-road-ntsc.png"
     }
+  },
+  "kickassembler/sprite-slot-parking": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sprite-slot-parking.png",
+      "ntsc": "screenshots/sprite-slot-parking-ntsc.png"
+    }
   }
 }
