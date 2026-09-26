@@ -304,6 +304,152 @@ the update pass with all eight slots live, which is the per-frame figure.
 - `recipes/oscar64/object-pool.md` — eight slots, scan allocator, wave table, scripted spawns and despawns checked against a Python checksum, with the cycle harness on screen
 - `recipes/oscar64/platformer-scaffold.md` — six enemy slots in parallel arrays fed by a wave table and an LFSR, despawn off screen, inside a whole single-file platformer
 
+## grenade_lob — A thrown grenade: fixed flight, a height animation, then a box blast around the landing point
+
+**Complexity:** low
+**Region:** both
+**Cost:** cycles_per_frame=956
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-grenade-lob (worst tick: the first blast tick, 12 live targets of which 7 die, each kill a colour write; run from line 251, below the display)
+**Claims:** none
+**Claims basis:** derived-listing
+
+**Why.** A shooter wants a second weapon that clears a crowd or reaches
+behind cover: the grenade. It must be cheap. A true ballistic arc needs a
+height coordinate, gravity and a landing test against terrain. A top-down
+or vertically scrolled game can fake all of that: the grenade flies a
+fixed distance, its sprite changes size to suggest height, and when it
+lands it becomes a blast that kills everything inside a box. The whole
+object is a velocity, an age counter and one box test a frame.
+
+**How.**
+
+1. **Throw.** On the throw input, if a grenade is left and its slot is
+   free, take the slot, place the object at the thrower, set a fixed
+   velocity and age 0, and decrement the count.
+2. **Flight.** Each frame add the velocity and increment the age. Pick
+   the sprite shape from a table indexed by age: small, larger, largest,
+   larger, small reads as a rise and fall. Test nothing: a lob goes over
+   walls and enemies.
+3. **Land.** At a fixed age the object becomes a blast at the same
+   position. Work out the box's corner once: blast X − (L − 1) and blast
+   Y − (M − 1), for a box −L < dx ≤ +L, −M < dy ≤ +M.
+4. **Blast.** For a fixed number of frames, test every live target that
+   can die to a blast. Subtract the corner from the target: it is inside
+   when the X difference is 0 to 2L − 1 and the Y difference 0 to
+   2M − 1. Kill it, mark it, and keep testing the rest.
+5. **Free.** At the end of the blast free the slot.
+
+**Why it works.** With a fixed velocity and a fixed flight time, the
+landing point is known at the throw, so the flight needs no physics
+and no collision. Moving the box to a corner turns the two-sided test
+per axis into one subtraction and one unsigned compare: a target left
+of the box gives a negative difference, which is a large unsigned one,
+and fails the same compare as a target to the right. Neither edge is
+computed on its own, so neither can wrap. X on the C64 runs past 255
+(playfield 0-319, sprite X 0-511), so the X subtraction is 16 bits and
+a non-zero high byte is a miss. Y can stay 8 bits when every Y is 0 to
+199: a difference plus M − 1 then cannot wrap into 0 to 2M − 1.
+
+Measured in `recipes/kickassembler/grenade-lob.md` (VICE x64sc 3.10, PAL
+and NTSC): with L = 18 and M = 22, twelve targets on and beside each
+edge die exactly inside −17 to +18 in dx and −21 to +22 in dy, read from
+the screenshot, and a target at X 259 dies to a blast at X 250, across
+X 256. The same targets under 8-bit bounds (X − 18 and X + 18 computed in
+one byte, high bytes required equal) all survive: X + 18 = 268 wraps to
+12.
+
+**Variations.**
+
+- **Aimed lob.** Give the throw a velocity from the thrower-to-target
+  vector, scaled down by a shift, and add a Y velocity that starts
+  negative and rises by one every few frames. The height is then folded
+  into screen Y as an arc, and the range depends on the distance. Commando's
+  enemy grenades do this (below).
+- **Separate height.** Keep a height byte with its own velocity and
+  gravity, draw the grenade at Y − height and a shadow sprite at Y. Land
+  when height reaches 0. It costs a second sprite and a few more cycles.
+- **Blast on contact.** End the flight early when the grenade's own box
+  meets a target or a blocking cell (`tile_grid_collision`); a lob that
+  should go over walls must not do this.
+
+**Cycle budget.** Measured in the recipe with CIA2 timer A, on PAL and
+NTSC alike: a flight tick is at most 84 cycles; the worst tick, the first
+blast tick with 12 live targets of which 7 die, is 956. That total
+splits exactly by instruction count (arithmetic, matching the
+measurement): 62 of dispatch, bookkeeping and call, then per target 12
+when already dead, 32 to 49 for a miss, and 99 for a kill, 51 of which
+are the recipe's colour write. A game's kill does more (score, an
+explosion object), so budget its own kill cost on top of up to 48 per
+target tested.
+
+**When not to use it.**
+
+- **The projectile must stop at walls or bounce.** Then it needs a
+  collision test on every flight frame, as a bullet does.
+- **The game is side-on.** A side view shows height directly; use a real
+  Y velocity with gravity and a landing test against the ground.
+- **The blast must be round.** A box kills in its corners, about 25
+  pixels out on the diagonal at L = 18 (arithmetic). A round blast needs
+  dx² + dy² from a table of squares and a 16-bit compare per target
+  (not measured here).
+
+**Pitfalls.**
+
+- **8-bit bounds.** Computing X − L and X + L in one byte fails near
+  both ends: above X 255 − L the upper bound wraps small and nothing is
+  inside, below X L the lower bound wraps large. Requiring equal high
+  bytes as well misses every target across X 256. Use the corner form
+  with a 16-bit X, or clamp the bounds to 0 and 255 inside one high-byte
+  page and test the neighbouring page too.
+- **Testing the blast once.** A blast tested only on its first frame
+  misses a target that walks in during the blast. Test every blast frame
+  and mark kills so a target dies once.
+- **The edges.** `−L < d ≤ +L` is 2L values, not 2L + 1; the corner is
+  X − (L − 1), not X − L. Place a target on each edge and on each side
+  of it in a test, as the recipe does; off by one shows as a box one
+  pixel wide on one side.
+- **The sprite's X past 255.** The grenade's sprite must carry bit 8 into
+  `$D010` on every move (`sprite_x_high_bit_wrong_register`,
+  `pitfalls/sprite.md`).
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (rung 1; the
+teardown's object, flow and audio findings). The player's grenade is
+thrown on CIA1 port B bit 4 (`$DC01`: the space bar or joystick port 1
+fire), apart from the gun on port 2. It needs a grenade in hand and the
+fourth shot slot free: the grenade shares that slot with the gun, so it
+cannot be thrown while the fourth bullet flies, and a held key throws
+again as soon as the slot frees. The count is BCD, five per life, and
+topped back up to five on every respawn. The grenade always flies
+straight up at 2 pixels a frame whatever the aim, 39 frames and 78
+pixels, over solid terrain, with its sprite frame changing on the way.
+It then becomes a still blast for 20 frames that kills an object when
+−18 < dx ≤ +18 and −22 < dy ≤ +22 of it (hits at −17, +18, −21 and +22;
+misses at −18, +19, −22 and +23). A per-type flag decides what can die to
+it: enemy bullets and some other objects do not. One sound effect, 32
+frames long, covers throw and blast; the frame that starts it was the
+music driver's most expensive frame in play, 1,558 cycles.
+
+Enemy grenades are aimed lobs: vx = trunc(dx / 64) and vy = trunc(dy /
+64) − 2, with dx, dy the player minus the launch point, and vy rising by
+1 every 16 ticks (−2, −1, 0, +1, +2) (101 of 101 throws). At age 80 the
+grenade becomes an explosion for 20 ticks, which kills the player by
+touch; the grenade in flight does not. The Y steps sum to zero over 80
+ticks, so a throw lands about 80 × trunc(d / 64) pixels away on each axis:
+the aim comes in 80-pixel steps, and a player within 63 pixels on an axis
+gets no offset on it (arithmetic from the measured rule, rung 3).
+
+Its box tests compare X in 8 bits with the high bytes required equal.
+Measured on the bullet test: a bullet at X 250 missed a target at X 255,
+because X + 10 wrapped to 4, and a target at X 260 missed because the
+high bytes differed. The blast box was not measured at the wrap.
+
+### Recipes
+
+- `recipes/kickassembler/grenade-lob.md` — a straight-up throw with a three-size height animation, a 20-frame blast against twelve targets on and beside each box edge across X 256, the 16-bit test against an 8-bit one, tick cycles on screen, PAL and NTSC
+
 ## actor_activation_window — Level-placed actors that wake near the view and return to the level table
 
 **Complexity:** medium

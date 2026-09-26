@@ -2758,5 +2758,43 @@
     "shots": {
       "pal": "screenshots/invalid-mode-band-noband.png"
     }
+  },
+  "kickassembler/grenade-lob": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/grenade-lob.png",
+      "ntsc": "screenshots/grenade-lob-ntsc.png"
+    }
+  },
+  "kickassembler/grenade-lob@flight": {
+    "cycles": 8000000,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "build": [
+      ":stop=20"
+    ],
+    "shots": {
+      "pal": "screenshots/grenade-lob-flight.png"
+    }
+  },
+  "kickassembler/grenade-lob@blast": {
+    "cycles": 8000000,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "build": [
+      ":stop=45"
+    ],
+    "shots": {
+      "pal": "screenshots/grenade-lob-blast.png"
+    }
   }
 }
