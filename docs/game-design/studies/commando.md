@@ -28,7 +28,7 @@ frame, 312 lines × 63 = 19,656 cycles.
 **Region:** PAL
 **Studied from:** Commando (1985, Chris Butler, Rob Hubbard, Elite); image sha1=b2ca47949468c3d1790dfe8b2fc9b54cb9638c3f; session studies/sessions/commando.json
 **Composes:** vic_bank_select (init), frame_sync_loop, soft_scroll_v, threshold_scroll_v, row_map_redraw, scroll_panel_split, invalid_mode_band, sprite_multiplex_game, sprite_slot_parking, object_pool, wave_director, char_attribute_flags, facing_turn_step, grenade_lob, area_end_gate_wave, sfx_voice_takeover, sid_play_routine_pattern, decimal_print, checkpoint_respawn (transition), high_score_table_insert (transition)
-**IRQ chain:** play pal: $41C5 @ line 30, $4284 @ line 50/60, $4389 @ line 161/198, $4137 @ line 213, $4188 @ line 222 (measured-vice, obs commando#irq-1-#irq-6 from c64_re_irq_chain on the session, 1264 play frames with no input; the $4389 extremes 161 and 198 from obs commando#frame-2, 750 frames with up held)
+**IRQ chain:** play pal: $41C5 @ line 30, $4284 @ line 50/60, $4389 @ line 161/198, $4137 @ line 213, $4188 @ line 222 (measured-vice, obs commando#irq-1-#irq-6 from c64_re_irq_chain on the session, 1264 play frames with no input; the $4389 range 161-198 from obs commando#frame-2 and #frame-5, 750 frames standing and 750 walking)
 **Memory map:** VIC bank 3; $DD00=$94; screen $E000-$E3E7; charset area 0 $C000-$C7FF; charset area 1 $C800-$CFFF; HUD charset $D000-$D7FF; sprite blocks $E400-$FFBF; blank sprite (block $FF) $FFC0-$FFFF; variables and objects $0400-$0504; code and tables $0850-$44FF; sound $5000-$5FB1; map area 0 $6000-$7E9F; map area 1 $8000-$9D37; charset area 3 $D800-$DFFF; map area 3 $A000-$BD37; free $4500-$4FFF; $01=$36 in play; $D018=$80 in area 0; $D018=$86 in area 3; $D018=$84 in HUD band (measured-vice, obs commando#snap-1 and #mem-1-#mem-5, #map-1 and #area3-1)
 **Diverges from archetype:** extra: vic_bank_select, scroll_panel_split, sid_play_routine_pattern, decimal_print, high_score_table_insert
 **Measured frame:** play pal worst=13664 typical=11524 (measured-vice-study, normal frames only: 19656 minus the idle wait measured per frame over 590 standing frames, obs commando#frame-1 and #frame-3)
@@ -80,9 +80,10 @@ boxes are one per object type, not per animation frame, so
   starts. Areas run 0, 1, 3 and loop (`$04F3`); index 2 selects the
   interlude screen (from the game's code, not seen running).
 - The enemy fire mask `$0504` is read from a table at $3ED2 indexed by
-  `$04F3` AND 7: $3F, $1F, $0F, then $0F for every later index, so from
-  the second loop on it stays $0F (from the game's code, not seen
-  running past loop 2, where $0F was measured). No other use of
+  `$04F3` AND 7: $3F for index 0, $1F for 1, and $0F for 2 to 7. The
+  first loop's areas 0, 1 and 3 get $3F, $1F and $0F, and every later
+  area gets $0F (from the game's code; $0F was measured in the second
+  loop). No other use of
   difficulty was found (from the game's code, not seen running).
 
 ### Object tables
@@ -250,14 +251,14 @@ with the same image can replay them from the session file.
 
 | Claim | Rung | Where measured | Observations |
 |---|---|---|---|
-| Five-part chain, handlers and lines | 2 | `c64_re_irq_chain` on the session (1,264 play frames, no input: $4389 on lines 177-192) and a separate monitor trace (750 frames still, 750 walking: $4389 on 161-198) agree | commando#irq-1-#irq-7, #frame-2 |
+| Five-part chain, handlers and lines | 2 | `c64_re_irq_chain` on the session (1,264 play frames, no input: $4389 on lines 177-192; $4137 once at 224, the first frame of play) and a separate monitor trace (750 frames still, 750 walking: $4389 on 161-198) agree | commando#irq-1-#irq-7, #frame-2, #frame-5 |
 | Bank 3, screen $E000, `$01` = $36 at play start | 1 | `c64_re_snapshot` at the session's `in_play` ($0FEB, clock 35,080,026) | commando#snap-1 |
 | `$01` never written in play; `$DD00` written once, $94 | 1 | store traces, 1,910 play frames | commando#mem-1, #mem-2 |
 | Area charsets, HUD charset, `$D018` per band | 1 | `$D018` store trace in area 0; area 3 by setting `$04F3`; HUD row rendered with each charset | commando#mem-3, #area3-1 |
 | Map bases, start rows, rows shown | 1 | screen compared with the map in areas 0, 1 and 3 | commando#map-1, #area3-1 |
 | Free RAM $4500-$4FFF and the rest | 1 | VICE memmap from init to 1,910 play frames | commando#mem-4 |
 | Sprite blocks $90-$FF | 1 | pointer stores over 1,910 frames | commando#mem-5 |
-| Part costs, frame budget, no dropped frame | 1 | checkpoint trace on every part, 750 + 750 frames | commando#frame-1, #frame-2 |
+| Part costs, frame budget, no dropped frame | 1 | checkpoint trace on every part, 750 + 750 frames | commando#frame-1, #frame-2, #frame-5 |
 | Measured frame figures | 3 | 19,656 minus the measured idle wait per frame | commando#frame-3 |
 | Redraw cost 15,714 and the beam lead | 1 | trace of the copy, entry to RTS | commando#frame-4 |
 | Load span, stubs, depack stages, entry $0850 | 1 | `c64_re_load_map` on the session | commando#load-1-#load-3 |

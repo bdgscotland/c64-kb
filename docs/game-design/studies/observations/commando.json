@@ -120,7 +120,8 @@
       "armed_before": [
         213,
         223
-      ]
+      ],
+      "note": "Line 213 is the armed line every frame. The single entry at 224 is the first one after the start of play: the arming routine sets $D012 = 223 once, so after a start or respawn the chain begins with this part entered at line 223-224 for one frame (armed_before holds 223)."
     },
     {
       "id": "commando#irq-6",
@@ -378,7 +379,92 @@
           ]
         }
       ],
-      "walking_4389_lines": "161-198"
+      "entry_lines_4389_top": {
+        "178": 658,
+        "187": 9,
+        "189": 9,
+        "185": 8,
+        "179": 7,
+        "181": 7
+      }
+    },
+    {
+      "id": "commando#frame-5",
+      "tool": "VICE x64sc 3.10 monitor checkpoint trace (teardown; the monitor files stay local)",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "raster parts over 750 frames walking up (the map scrolling), frames 100-850 after play start",
+      "parts": [
+        {
+          "pc": "$41C5",
+          "cycles": [
+            1097,
+            1131,
+            1283
+          ],
+          "entry_lines_top": {
+            "30": 750,
+            "286": 1
+          }
+        },
+        {
+          "pc": "$4284",
+          "cycles": [
+            399,
+            447,
+            533
+          ],
+          "entry_lines_top": {
+            "50": 462,
+            "60": 265,
+            "146": 4,
+            "61": 4,
+            "58": 2,
+            "59": 2
+          }
+        },
+        {
+          "pc": "$4389",
+          "cycles": [
+            408,
+            457,
+            538
+          ],
+          "entry_lines_top": {
+            "161": 279,
+            "172": 86,
+            "174": 34,
+            "184": 18,
+            "186": 18,
+            "190": 17
+          }
+        },
+        {
+          "pc": "$4137",
+          "cycles": [
+            203,
+            255,
+            258
+          ],
+          "entry_lines_top": {
+            "213": 719,
+            "214": 31,
+            "223": 1
+          }
+        },
+        {
+          "pc": "$4188",
+          "cycles": [
+            529,
+            1026,
+            1462
+          ],
+          "entry_lines_top": {
+            "222": 751
+          }
+        }
+      ],
+      "range_4389_lines": "161-198 over the standing and walking runs together, as the teardown reported it; only the six commonest lines per part were kept, so 198 has no per-line count here"
     },
     {
       "id": "commando#frame-3",
