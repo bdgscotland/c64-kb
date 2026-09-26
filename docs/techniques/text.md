@@ -157,6 +157,106 @@ before this measurement.
 
 - `recipes/oscar64/text-input.md`
 
+## joystick_name_entry — Initials entered with the joystick: a letter wheel, accept, back, arming and a timeout
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** DC00
+**Requires:** joystick_edge_detect, joystick_autorepeat
+**Alternative to:** text_input_line (needs no keyboard and no KERNAL, so it works with `$01` = `$35`; slower to enter, and only the wheel's letters)
+**Claims:** cia1_port_a (reads)
+**Claims basis:** derived-listing
+**Cost:** cycles_per_frame=338, bytes_code=369, bytes_data=3
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+**Cost measured on:** kickassembler-joystick-name-entry (worst frame of two scripted entries, port byte to drawn field, in the vertical blank; bytes are entry_init through log, the recipe's event log included)
+
+### Why
+
+A game that banks the KERNAL out has no GETIN, so `text_input_line`
+cannot read a key. The player is also holding a joystick, not sitting at
+the keyboard. The arcade answer is a letter wheel: the stick picks each
+initial and fire accepts it. `front_end_and_attract`
+(`game-design/game-structure.md`) offers it beside typed entry.
+
+### How
+
+Hold three letters, a cursor 0-2 and five bytes of state: `prev` (last
+frame's lines), `held` and `count` (the repeat), `armed`, and a 16-bit
+`idle`. Once per frame, from one read of the port:
+
+1. **Arm.** Until every line has been released once, ignore the stick
+   and only count `idle`. A fire button still held from the game-over
+   screen would otherwise accept the first letter on the first frame.
+2. **Edges.** `fresh = pressed AND NOT prev`, as `joystick_edge_detect`
+   does.
+3. **Repeat.** Up or down steps the wheel on the frame it is pressed. If
+   held, it steps again after `DELAY` frames and then every `RATE`, from
+   one counter as in `joystick_autorepeat`. Up with down is not a
+   direction.
+4. **Wheel.** Up gives the next letter, down the one before, over
+   A to Z and then `.`, wrapping both ways. The `.` lets a player enter
+   fewer than three letters.
+5. **Accept.** A fresh fire, or a fresh right, moves the cursor on and
+   starts the next letter at A. The third accept closes the entry.
+6. **Back.** A fresh left, with the cursor above 0, sets the current
+   letter to `.` and moves back one. The letter it returns to keeps its
+   value.
+7. **Timeout.** A frame with no fresh line and no up/down adds 1 to
+   `idle`; anything else clears it. At the limit the entry closes, and
+   every letter not yet accepted becomes `.`.
+
+Draw the field every frame, with the cursor's letter in another colour
+and a mark under it. The name goes to `high_score_table_insert`'s write
+step.
+
+In `recipes/kickassembler/joystick-name-entry.md` the frame's work, port
+byte to drawn field, took at most 338 cycles, measured with CIA1 timer A
+in VICE x64sc 3.10, the same on PAL and NTSC. A scripted stick entered
+`DAB`, with a repeat, a wrong letter and a step back, and then `B` and a
+timeout, which gave `B..`. Both matched a Python model of the listing.
+
+### Why it works
+
+Every rule is one byte of state and a compare, so the whole entry costs
+about as much as one joystick read and a few screen writes. Edges and
+the repeat counter come from the same port byte, so an accept and a
+wheel step can land in one frame without either being lost. The `armed`
+byte and the timeout are what make it safe at the end of a game: the
+first handles a button that is already down, and the second a player who
+has walked away. The attract mode then comes back on its own.
+
+### Variations
+
+- **Walk and shoot.** Draw the alphabet as a grid and let the player's
+  sprite walk to a letter and fire at it. It needs more screen and more
+  code; not built here.
+- **Keyboard too.** Where the KERNAL is in, feed GETIN's letters into the
+  same field (`text_input_line`) and keep the wheel for the stick.
+- **Timeout.** FIREBASE's is 1,000 frames (20 seconds on PAL); the
+  recipe's is 150, so its run stays short.
+
+### Pitfalls
+
+- Without the arming rule the fire that ended the game accepts `A`. The
+  recipe's fault build did that: its trail began `+` and the name was
+  `ADA`.
+- Count `idle` in the unarmed frames too. Otherwise a stuck fire button
+  never releases, never arms and never times out, and the game hangs on
+  the entry.
+- A repeat on fire or right accepts letters faster than anyone can see.
+  Accept on the edge only.
+
+### In the run-and-gun starter
+
+FIREBASE (`templates/run-and-gun`, `src/front.c`, `entry_frame`) enters
+its initials this way, in Oscar64 C. Its builders' `make fedrive` run
+typed DAB and B.. on the real `$DC00`.
+
+### Recipes
+
+- `recipes/kickassembler/joystick-name-entry.md`
+
 ## decimal_print — Decimal score and counters written as screen codes
 
 **Complexity:** low
@@ -245,7 +345,7 @@ with plain `CMP`.
    choice and not an accident of `BCS` where `BEQ` plus `BCS` was
    meant.
 3. **Hand-off.** Between the rank and the write comes the name entry
-   (`text_input_line`). The rank is known first, so the game can show
+   (`text_input_line`, or `joystick_name_entry` when the KERNAL is out). The rank is known first, so the game can show
    the place the score will take and can skip the entry when the score
    does not qualify. The typed name goes into the new row's name bytes
    and the write follows. Keep rank and place as two calls with the

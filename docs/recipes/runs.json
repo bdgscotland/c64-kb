@@ -2901,5 +2901,17 @@
       "pal": "screenshots/aimed-shot-octant.png",
       "ntsc": "screenshots/aimed-shot-octant-ntsc.png"
     }
+  },
+  "kickassembler/joystick-name-entry": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/joystick-name-entry.png",
+      "ntsc": "screenshots/joystick-name-entry-ntsc.png"
+    }
   }
 }
