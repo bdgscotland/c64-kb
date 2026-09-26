@@ -5,7 +5,45 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 843, schema 39, tools 2.16.0, package 0.29.0.
+Data 844, schema 40, tools 2.18.0, package 0.29.0.
+
+**A studied game is a GameDesign (schema 40, tools 2.18.0, data 844).**
+A page in `docs/game-design/studies/` with frontmatter `kind: studied`
+describes a released game the RE tools measured in VICE. GameDesign gains
+`kind` (built by default), and on a studied design `studied_from`,
+`irq_chain` and `memory_map` as JSON from the new `**Studied from:**`,
+`**IRQ chain:**` and `**Memory map:**` lines; `**Measured frame:**` takes
+the basis `measured-vice-study`, refused on a built page. Two edges: `STUDIES`
+to the Production of the studied title, and `DIVERGES_FROM` to a technique
+with `direction` extra or missing, from `**Diverges from archetype:**`.
+Both are MATCHed, never created; a miss is warned about and counted in the
+ingest summary. Each study line is refused whole on a malformed part.
+`c64_game_briefing`'s `designs[]` gains `kind`, `studied_from` and
+`source_doc`, and lists a studied design as "studied, not buildable here"
+with its page; `c64_plan_budget` takes a studied design, budgets no
+members, and prints its measured frame as not predicted, since no recipe
+here builds it. Before this a studied game had no place in the graph:
+`**Studied from:**` was prose and `measured-vice-study` refused the line.
+`CONVENTIONS-game-designs.md` "Studied designs" and `ONTOLOGY.md` define
+the lines. No study page lands with this change.
+
+**`c64_re_irq_chain` sees through a `JMP (pointer)` handler (tools
+2.17.0; numbered 2.15.0 on its branch before main reached 2.16.0).** Commando's only interrupt handler is `$4134: JMP ($0406)`;
+each raster part rewrites `$0406/$0407`, so all 11,374 entries landed on
+`$4134` and its five parts a frame were invisible. When a handler's first
+instruction is `JMP ($xxxx)`, a third run traces the pointer's two bytes:
+each entry gains `target`, each handler `pointer` and `dispatch` (entries,
+lines and armed lines per target). Measured in VICE x64sc 3.10, PAL, 60M
+cycles (image not in the repo): `$41C5` on line 30, `$4284` on 50/52,
+`$4389` on 192, `$4137` on 213, `$4188` on 222, about 2,275 entries each.
+Three more faults, ported from the unmerged `re-irq-dispatch` branch:
+stores logged at an interrupt's clock are applied before its dispatch is
+read (VICE logs the handler's first exec before them); the banking comes
+from `$00` with `$01` (`CpuPort`), so a RAM `$FFFE` value is no candidate
+while the KERNAL is mapped (Commando listed `$0000`, `$0334` and `$CA53`
+as installed handlers); `$FFFE` and `$FFFA` naming one RAM handler are
+both in `via` and the interrupt is named under unknowns.
+sprite-multiplex-game and raster-bars give the same result as before.
 
 **A sprite stretcher over the badlines, a $D012 poll that cannot enter one, and a hires FLI measured (data 843).** The disk demo's sprite stretcher was rebuilt on the text screen's own badlines after its FLD background turned out to paint bus noise (data 842), and what the rebuild measured over 151 traced frames is now on the stretcher's page as a variation: a badline forces every sprite's row to advance, so a row lasts at most eight lines and the rows are spread by an accumulator that counts the forced advances; a `$D012` poll re-syncs on the sprite stall every line, exit read at cycles 1 to 7 whatever sprites still fetch; and the poll cannot enter the badline itself, which is the new pitfall `d012_poll_cannot_enter_badline_under_sprites` in `pitfalls/raster-and-badline.md`, with the line-before handling and the wait-by-number that the trace confirmed. `fli_image` gains a hires four-page variation from the demo's title part: every line forced, pixel-exact against its converter on both models, 12,841 cycles a frame on PAL, and an honest open question about a first build that forced every second line and broke where UFLI does not.
 

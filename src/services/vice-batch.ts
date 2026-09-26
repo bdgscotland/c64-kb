@@ -21,7 +21,7 @@
  * off, so two runs of the same PRG hit the same line.
  */
 import { spawn } from "node:child_process";
-import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdtempSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { resolveX64sc, type X64scChoice } from "./vice-bin.ts";
@@ -37,10 +37,14 @@ export interface BatchRun {
   disk?: string;
   /** Extra x64sc arguments (a recipe's runs.json `flags`: controller ports, an REU, a key buffer). */
   args?: readonly string[];
+  /** Stop the emulator once the monitor log passes this many bytes; the result then says truncated. */
+  maxLogBytes?: number;
 }
 
 export interface BatchResult {
   log: string;
+  /** True when maxLogBytes stopped the run before -limitcycles did: the log ends early, its last line may be cut. */
+  truncated: boolean;
   work: string;
   dispose(): void;
 }
@@ -60,7 +64,23 @@ const SCHEMAS = "/opt/homebrew/share/glib-2.0/schemas";
 const TIMEOUT_MS = 600_000;
 
 function viceArgs(run: BatchRun, log: string): string[] {
-  const args = ["-default", "+autostart-delay-random", "-warp", "+sound", "-autostartprgmode", "1"];
+  // +autostart-delay-random: cold autostarts land on the same raster line.
+  // -raminitrandomchance 0: VICE -default sets RAMInitRandomChance=10, which
+  // flips power-on RAM bits with a per-run random seed; two c64_re_snapshot
+  // runs at clock 35,080,026 differed at $07EA ($FB vs $FF), and four default
+  // irq-chain recipe runs gave two distinct RAM images. Four runs with this
+  // flag gave one. Passing it here makes every runBatch caller's RAM
+  // byte-for-byte reproducible.
+  const args = [
+    "-default",
+    "+autostart-delay-random",
+    "-raminitrandomchance",
+    "0",
+    "-warp",
+    "+sound",
+    "-autostartprgmode",
+    "1",
+  ];
   if (run.model === "ntsc") args.push("-model", "ntsc");
   if (run.disk) args.push("-8", "d.d64");
   args.push(...(run.args ?? []));
@@ -82,26 +102,46 @@ function checked(run: BatchRun, resolve: () => X64scChoice | null): X64scChoice 
   return x64sc;
 }
 
-/** Run x64sc to its exit; resolves with the status, or null and the error when it did not exit normally. */
+const LOG_POLL_MS = 100;
+
+/** The log's size in bytes, 0 before it exists. */
+const sizeOf = (log: string): number => (existsSync(log) ? statSync(log).size : 0);
+
+/**
+ * Run x64sc to its exit; resolves with the status, or null and the error
+ * when it did not exit normally. With a cap, the log is polled every
+ * LOG_POLL_MS and the emulator killed once it passes: a full-memory trace
+ * can write gigabytes before -limitcycles ends the run.
+ */
 function exitOf(
   bin: string,
   args: string[],
   work: string,
-): Promise<{ status: number | null; error: string }> {
+  cap?: { log: string; bytes: number },
+): Promise<{ status: number | null; error: string; truncated: boolean }> {
   const env = { ...process.env, GSETTINGS_SCHEMA_DIR: process.env.GSETTINGS_SCHEMA_DIR ?? SCHEMAS };
   return new Promise((resolve) => {
     const child = spawn(bin, args, { cwd: work, env, stdio: "ignore" });
     let error = "";
+    let truncated = false;
     const timer = setTimeout(() => {
       error = `killed after ${TIMEOUT_MS / 1000} s`;
       child.kill("SIGKILL");
     }, TIMEOUT_MS);
+    const poll = cap
+      ? setInterval(() => {
+          if (truncated || sizeOf(cap.log) < cap.bytes) return;
+          truncated = true;
+          child.kill("SIGKILL");
+        }, LOG_POLL_MS)
+      : undefined;
     child.on("error", (e) => {
       error = e.message;
     });
     child.on("close", (status) => {
       clearTimeout(timer);
-      resolve({ status, error });
+      clearInterval(poll);
+      resolve({ status, error, truncated });
     });
   });
 }
@@ -116,8 +156,9 @@ export async function runBatch(run: BatchRun, resolve = resolveX64sc): Promise<B
   if (run.disk !== undefined) copyFileSync(run.disk, join(work, "d.d64"));
   writeFileSync(join(work, "watch.mon"), run.monCommands);
   const log = join(work, "trace.log");
-  const r = await exitOf(x64sc.path, viceArgs(run, log), work);
-  if (r.status !== 0 && r.status !== 1) {
+  const cap = run.maxLogBytes !== undefined ? { log, bytes: run.maxLogBytes } : undefined;
+  const r = await exitOf(x64sc.path, viceArgs(run, log), work, cap);
+  if (!r.truncated && r.status !== 0 && r.status !== 1) {
     dispose();
     throw new ViceBatchError("exit", `x64sc exited ${String(r.status)} ${r.error}`);
   }
@@ -125,5 +166,5 @@ export async function runBatch(run: BatchRun, resolve = resolveX64sc): Promise<B
     dispose();
     throw new ViceBatchError("no-log", `x64sc wrote no monitor log at ${log}`);
   }
-  return { log, work, dispose };
+  return { log, work, dispose, truncated: r.truncated };
 }

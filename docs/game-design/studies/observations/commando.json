@@ -1,0 +1,608 @@
+{
+  "game": "commando",
+  "title": "Commando",
+  "page": "docs/game-design/studies/commando.md",
+  "session": "docs/game-design/studies/sessions/commando.json",
+  "image": {
+    "sha1": "b2ca47949468c3d1790dfe8b2fc9b54cb9638c3f",
+    "file": "commando",
+    "file_sha1": "0c19361689f6c977afe2e00e80be303a3d16be5b"
+  },
+  "vice": "x64sc 3.10 windowless",
+  "model": "pal (-default: C64C, 8565, 8580, 8521)",
+  "note": "Addresses, lines, clocks and counts only; no image bytes. c64_re_* entries are those tools' structured output on the session, condensed; the teardown entries are monitor traces whose scripts are not committed.",
+  "observations": [
+    {
+      "id": "commando#irq-1",
+      "tool": "c64_re_irq_chain",
+      "basis": "measured-vice",
+      "rung": 1,
+      "run": "run limit 60,000,000 cycles; post-play window from play start at 35,080,026 cycles; no input",
+      "what": "one IRQ handler, reached through $0314",
+      "handler": "$4134",
+      "via": [
+        "irq_0314"
+      ],
+      "entries": 6318,
+      "pointer": "$0406",
+      "interrupts": 6318
+    },
+    {
+      "id": "commando#irq-2",
+      "tool": "c64_re_irq_chain",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "dispatch target through the pointer: line-30 part",
+      "target": "$41C5",
+      "entries": 1264,
+      "entry_lines": [
+        30,
+        286,
+        287
+      ],
+      "armed_before": [
+        30,
+        286
+      ]
+    },
+    {
+      "id": "commando#irq-3",
+      "tool": "c64_re_irq_chain",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "dispatch target through the pointer: second sprite zone",
+      "target": "$4284",
+      "entries": 1264,
+      "entry_lines": [
+        50,
+        60
+      ],
+      "armed_before": [
+        50,
+        60
+      ]
+    },
+    {
+      "id": "commando#irq-4",
+      "tool": "c64_re_irq_chain",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "dispatch target through the pointer: third sprite zone",
+      "target": "$4389",
+      "entries": 1261,
+      "entry_lines": [
+        177,
+        178,
+        179,
+        180,
+        181,
+        182,
+        184,
+        185,
+        186,
+        187,
+        188,
+        189,
+        190,
+        192
+      ],
+      "armed_before": [
+        177,
+        178,
+        179,
+        180,
+        181,
+        182,
+        183,
+        184,
+        185,
+        186,
+        187,
+        188,
+        189,
+        190,
+        191,
+        192
+      ]
+    },
+    {
+      "id": "commando#irq-5",
+      "tool": "c64_re_irq_chain",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "dispatch target through the pointer: line-213 part",
+      "target": "$4137",
+      "entries": 1264,
+      "entry_lines": [
+        213,
+        224
+      ],
+      "armed_before": [
+        213,
+        223
+      ],
+      "note": "Line 213 is the armed line every frame. The single entry at 224 is the first one after the start of play: the arming routine sets $D012 = 223 once, so after a start or respawn the chain begins with this part entered at line 223-224 for one frame (armed_before holds 223)."
+    },
+    {
+      "id": "commando#irq-6",
+      "tool": "c64_re_irq_chain",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "dispatch target through the pointer: line-222 part",
+      "target": "$4188",
+      "entries": 1265,
+      "entry_lines": [
+        222
+      ],
+      "armed_before": [
+        222
+      ]
+    },
+    {
+      "id": "commando#irq-7",
+      "tool": "c64_re_irq_chain",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "transient hardware vector writes in play",
+      "transient": [
+        {
+          "vector": "nmi_fffa",
+          "value": 0,
+          "writes": 6
+        },
+        {
+          "vector": "irq_fffe",
+          "value": 0,
+          "writes": 6
+        }
+      ],
+      "unknowns": []
+    },
+    {
+      "id": "commando#snap-1",
+      "tool": "c64_re_snapshot",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "VIC and CPU port at the session's in_play ($0FEB)",
+      "clock": 35080026,
+      "vic_bank": 3,
+      "screen": "$E000",
+      "charset": "$D000",
+      "d011": "$77",
+      "d016": "$D8",
+      "d018_read": "$85",
+      "cpu_port_00": "$2F",
+      "cpu_port_01": "$36",
+      "ram_sha1": "f0f49fdab30454a4f90bf9b26073188f052b931e",
+      "note": "the dump's $D018 read shows bit 0 as 1; the value is read at the title's exit, before the play chain's line-30 part; earlier runs without -raminitrandomchance 0 gave 783da690832c956d708b68a71bdfc2d232d42dad (differed at $07EA: $FF vs $FB), which was a VICE power-on RAM randomisation artefact; the hash is now stable"
+    },
+    {
+      "id": "commando#load-1",
+      "tool": "c64_re_load_map",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "PRG span and BASIC stubs",
+      "load": "$0801",
+      "end": "$AFFC",
+      "stubs": [
+        {
+          "addr": "$0801",
+          "sys": 2217,
+          "text": "COMPUTERBRAINS"
+        },
+        {
+          "addr": "$08E5",
+          "sys": 2066,
+          "text": "C.C.S."
+        },
+        {
+          "addr": "$9E8D",
+          "sys": 2061,
+          "text": ""
+        }
+      ]
+    },
+    {
+      "id": "commando#load-2",
+      "tool": "c64_re_load_map",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "depacker writers running from the stack page",
+      "writers": [
+        {
+          "pc_range": [
+            "$0101",
+            "$01A6"
+          ],
+          "stores": 435169,
+          "first_clock": 3404411,
+          "last_clock": 8916816,
+          "stage": 1
+        },
+        {
+          "pc_range": [
+            "$0104",
+            "$019E"
+          ],
+          "stores": 528765,
+          "first_clock": 8992780,
+          "last_clock": 15190653,
+          "stage": 2
+        }
+      ]
+    },
+    {
+      "id": "commando#load-3",
+      "tool": "c64_re_load_map",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "game entry and first dispatch",
+      "entry_pc": "$0850",
+      "first_program_dispatch_clock": 15243156,
+      "unknowns": [
+        "arm write at $e5ad: $D011 never written before it, so the armed line is unknown",
+        "$00/$01 not known at the interrupt at clock 8922213; both the KERNAL and the RAM vectors are candidates",
+        "$00/$01 not known at the interrupt at clock 8992716; both the KERNAL and the RAM vectors are candidates",
+        "3 of 11444 interrupts entered no traced handler within 94 cycles"
+      ]
+    },
+    {
+      "id": "commando#frame-1",
+      "tool": "VICE x64sc 3.10 monitor checkpoint trace (teardown; the monitor files stay local)",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "frame budget per frame kind: IRQ, main-loop and idle cycles, min/median/max",
+      "frame_cycles": 19656,
+      "kinds": [
+        {
+          "kind": "normal, standing",
+          "n": 590,
+          "irq": [
+            2780,
+            3298,
+            3733
+          ],
+          "main": [
+            6943,
+            8209,
+            10359
+          ],
+          "idle": [
+            5992,
+            8132,
+            9702
+          ]
+        },
+        {
+          "kind": "normal, walking up",
+          "n": 587,
+          "irq": [
+            2734,
+            3344,
+            3856
+          ],
+          "main": [
+            7205,
+            8220,
+            10065
+          ],
+          "idle": [
+            6229,
+            8030,
+            9528
+          ]
+        },
+        {
+          "kind": "redraw (hard scroll), walking up",
+          "n": 77,
+          "irq": [
+            3032,
+            3329,
+            3814
+          ],
+          "main": [
+            14163,
+            14589,
+            15162
+          ],
+          "idle": [
+            859,
+            1652,
+            2371
+          ]
+        }
+      ],
+      "dropped_frames": 0,
+      "worst_margin": {
+        "normal": 6630,
+        "redraw": 1040
+      }
+    },
+    {
+      "id": "commando#frame-2",
+      "tool": "VICE x64sc 3.10 monitor checkpoint trace (teardown; the monitor files stay local)",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "cost of each raster part, entry to RTI, 750 frames standing, min/median/max",
+      "parts": [
+        {
+          "pc": "$41C5",
+          "line": "30",
+          "cycles": [
+            1097,
+            1097,
+            1273
+          ]
+        },
+        {
+          "pc": "$4284",
+          "line": "50 or 60",
+          "cycles": [
+            442,
+            442,
+            538
+          ]
+        },
+        {
+          "pc": "$4389",
+          "line": "161-198",
+          "cycles": [
+            426,
+            457,
+            536
+          ]
+        },
+        {
+          "pc": "$4137",
+          "line": "213",
+          "cycles": [
+            194,
+            255,
+            255
+          ]
+        },
+        {
+          "pc": "$4188",
+          "line": "222",
+          "cycles": [
+            529,
+            974,
+            1449
+          ]
+        },
+        {
+          "pc": "all five",
+          "cycles": [
+            2324,
+            3250,
+            3725
+          ]
+        }
+      ],
+      "entry_lines_4389_top": {
+        "178": 658,
+        "187": 9,
+        "189": 9,
+        "185": 8,
+        "179": 7,
+        "181": 7
+      }
+    },
+    {
+      "id": "commando#frame-5",
+      "tool": "VICE x64sc 3.10 monitor checkpoint trace (teardown; the monitor files stay local)",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "raster parts over 750 frames walking up (the map scrolling), frames 100-850 after play start",
+      "parts": [
+        {
+          "pc": "$41C5",
+          "cycles": [
+            1097,
+            1131,
+            1283
+          ],
+          "entry_lines_top": {
+            "30": 750,
+            "286": 1
+          }
+        },
+        {
+          "pc": "$4284",
+          "cycles": [
+            399,
+            447,
+            533
+          ],
+          "entry_lines_top": {
+            "50": 462,
+            "60": 265,
+            "146": 4,
+            "61": 4,
+            "58": 2,
+            "59": 2
+          }
+        },
+        {
+          "pc": "$4389",
+          "cycles": [
+            408,
+            457,
+            538
+          ],
+          "entry_lines_top": {
+            "161": 279,
+            "172": 86,
+            "174": 34,
+            "184": 18,
+            "186": 18,
+            "190": 17
+          }
+        },
+        {
+          "pc": "$4137",
+          "cycles": [
+            203,
+            255,
+            258
+          ],
+          "entry_lines_top": {
+            "213": 719,
+            "214": 31,
+            "223": 1
+          }
+        },
+        {
+          "pc": "$4188",
+          "cycles": [
+            529,
+            1026,
+            1462
+          ],
+          "entry_lines_top": {
+            "222": 751
+          }
+        }
+      ],
+      "range_4389_lines": "161-198 over the standing and walking runs together, as the teardown reported it; only the six commonest lines per part were kept, so 198 has no per-line count here"
+    },
+    {
+      "id": "commando#frame-3",
+      "tool": "arithmetic",
+      "basis": "arithmetic",
+      "rung": 3,
+      "what": "busy cycles per frame = 19,656 minus the idle wait, from commando#frame-1",
+      "normal": {
+        "worst": 13664,
+        "typical": 11524
+      },
+      "redraw": {
+        "worst": 18797,
+        "typical": 18004
+      }
+    },
+    {
+      "id": "commando#frame-4",
+      "tool": "VICE x64sc 3.10 monitor checkpoint trace (teardown; the monitor files stay local)",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "redraw copy: 21 rows, 840 bytes",
+      "entry_line": 244,
+      "rts_line_next_frame": 181,
+      "cycles": [
+        15714,
+        15707
+      ],
+      "min_lead_lines": 26
+    },
+    {
+      "id": "commando#mem-1",
+      "tool": "VICE x64sc 3.10 monitor checkpoint trace (teardown; the monitor files stay local)",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "stores to $0001 in play",
+      "frames": 1910,
+      "stores": 0,
+      "value": "$36"
+    },
+    {
+      "id": "commando#mem-2",
+      "tool": "VICE x64sc 3.10 monitor checkpoint trace (teardown; the monitor files stay local)",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "$DD00 writes",
+      "writes": 1,
+      "pc": "$35C0",
+      "value": "$94"
+    },
+    {
+      "id": "commando#mem-3",
+      "tool": "VICE x64sc 3.10 monitor checkpoint trace (teardown; the monitor files stay local)",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "$D018 stores in play, area 0",
+      "stores": [
+        {
+          "pc": "$4258",
+          "line": 30,
+          "value": "$80"
+        },
+        {
+          "pc": "$4160",
+          "line": 216,
+          "value": "$84"
+        }
+      ]
+    },
+    {
+      "id": "commando#mem-4",
+      "tool": "VICE x64sc 3.10 monitor checkpoint trace (teardown; the monitor files stay local)",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "VICE memmap from init through 1,910 play frames: ranges never accessed",
+      "untouched": [
+        "$4500-$4FFF",
+        "$0505-$07FF",
+        "$0200-$0313",
+        "$031A-$03FF",
+        "$0100-$01E8",
+        "$0800-$084F",
+        "$E3E8-$E3F7"
+      ],
+      "written_in_play_outside_zero_page_and_stack": [
+        "$0314-$0315",
+        "$0400-$0504",
+        "$14E5-$14E6",
+        "$1600-$1601",
+        "$3FDD-$3FE1",
+        "$53DE",
+        "$54EB-$5530",
+        "$5591-$55A1",
+        "$56F9-$56FE",
+        "$E000-$E36F",
+        "$E398-$E3BF",
+        "$E3F8-$E3FF",
+        "$FFC0-$FFFF",
+        "map stamps"
+      ]
+    },
+    {
+      "id": "commando#mem-5",
+      "tool": "VICE x64sc 3.10 monitor checkpoint trace (teardown; the monitor files stay local)",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "sprite pointer values stored in area 0 over 1,910 frames",
+      "blocks": "$90-$AF, $B8, $BB, $C6-$C8, $D5-$E4, $FF (and six stores of $15)"
+    },
+    {
+      "id": "commando#map-1",
+      "tool": "VICE x64sc 3.10 monitor checkpoint trace (teardown; the monitor files stay local)",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "screen rows 0-20 equal the area map at map + row x 40",
+      "areas": {
+        "0": {
+          "map": "$6000",
+          "start_row": 175
+        },
+        "1": {
+          "map": "$8000",
+          "start_row": 166
+        }
+      }
+    },
+    {
+      "id": "commando#area3-1",
+      "tool": "VICE x64sc 3.10 monitor script: $04F3 set to 3 at $08B8 (area start), dump at the 101st line-30 part after it",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "area 3 start",
+      "clock": 37074137,
+      "row": 166,
+      "d018_store": "$86",
+      "charset": "$D800",
+      "screen_equals_map_at": "$A000 + 166 x 40, all 840 bytes",
+      "map_rows_displayed_from_start": "0-186, $A000-$BD37"
+    }
+  ]
+}

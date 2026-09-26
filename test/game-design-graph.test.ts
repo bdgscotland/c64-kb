@@ -3,6 +3,10 @@ import { FalkorService } from "../src/services/falkor.ts";
 import { planBudgetTool } from "../src/tools/query.ts";
 import { designsOfArchetype } from "../src/tools/query/game-design.ts";
 import { PlanBudgetSchema } from "../src/schemas/tool-outputs.ts";
+import { readFileSync } from "node:fs";
+import { extractGraphEntities } from "../src/graph/extract.ts";
+import { applyEdge, applyNode, isNodeEntity } from "../src/graph/apply.ts";
+import { EdgeTally } from "../src/ingest/tally.ts";
 
 // Schema 28: GameDesign, COMPOSES (with phase), INSTANCE_OF, REALISED_BY,
 // and c64_plan_budget taking a design name.
@@ -179,5 +183,145 @@ describe("GameDesign in the graph and in c64_plan_budget", () => {
       `MATCH (:GameDesign {name: 'calls_test'})-[c:COMPOSES]->() RETURN c.calls_low AS l, c.calls_high AS h`,
     );
     expect(r.data).toEqual([{ l: null, h: null }]);
+  });
+});
+
+// Schema 40: a studied game is a GameDesign. The fixture page goes through
+// the extractor and apply.ts, as an ingest would take it.
+describe("a studied GameDesign in the graph, the budget and the briefing's list", () => {
+  let f: FalkorService;
+  const PATH = "game-design/studies/test-shooter.md";
+  const entities = () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const es = extractGraphEntities(readFileSync("test/fixtures/study-page.md", "utf8"), PATH);
+    warn.mockRestore();
+    return es;
+  };
+  beforeAll(async () => {
+    f = new FalkorService();
+    await f.connect();
+    await f.clean();
+    await f.ensureSchema();
+    for (const name of ["invalid_mode_band", "soft_scroll_v"])
+      await f.addTechnique({ name, title: name, category: "raster", complexity: "low" });
+    await f.addArchetype({
+      name: "vertical_shmup",
+      title: "Vertical Shmup",
+      kind: "game",
+      source_doc: "a.md",
+    });
+    await f.addProduction({ name: "Test Shooter", kind: "game", year: 1985, url: "https://example.org/ts" });
+  });
+  afterAll(async () => {
+    await f.close();
+  });
+
+  it("stores kind and the study lines on the node; STUDIES and DIVERGES_FROM land, an unknown technique is counted", async () => {
+    const es = entities();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const tally = new EdgeTally();
+    for (const e of es) {
+      if (isNodeEntity(e)) await applyNode(f, e);
+      else tally.record(e, await applyEdge(f, e));
+    }
+    const node = await f.roQuery(
+      `MATCH (g:GameDesign {name: 'test_shooter_study'})
+       RETURN g.kind AS kind, g.studied_from AS sf, g.irq_chain AS irq, g.memory_map AS mm`,
+    );
+    const row = node.data[0] as { kind: string; sf: string; irq: string; mm: string };
+    expect(row.kind).toBe("studied");
+    expect(JSON.parse(row.sf)).toMatchObject({
+      title: "Test Shooter",
+      year: 1985,
+      authors: ["Ann Coder", "Test House"],
+    });
+    expect(JSON.parse(row.irq)).toHaveLength(2);
+    expect((JSON.parse(row.mm) as { entries: unknown[] }[])[0]?.entries).toHaveLength(5);
+    const studies = await f.roQuery(`MATCH (:GameDesign)-[:STUDIES]->(p:Production) RETURN p.name AS p`);
+    expect(studies.data).toEqual([{ p: "Test Shooter" }]);
+    const div = await f.roQuery(
+      `MATCH (:GameDesign)-[d:DIVERGES_FROM]->(t:Technique) RETURN t.name AS t, d.direction AS d ORDER BY t`,
+    );
+    expect(div.data).toEqual([
+      { t: "invalid_mode_band", d: "extra" },
+      { t: "soft_scroll_v", d: "missing" },
+    ]);
+    expect(tally.dropped("diverges_from")).toBe(1);
+    expect(tally.distinct("diverges_from")).toBe(3);
+    expect(tally.dropped("studies")).toBe(0);
+    expect(warn.mock.calls.map((c) => String(c[0])).join("\n")).toContain("not_a_technique");
+    warn.mockRestore();
+  });
+
+  it("a STUDIES title that names no Production is dropped, never created", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    expect(await f.linkStudies("test_shooter_study", "No Such Game")).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+    const r = await f.roQuery(`MATCH (p:Production {name: 'No Such Game'}) RETURN p`);
+    expect(r.data).toHaveLength(0);
+  });
+
+  it("c64_plan_budget prints a studied design's measured frame and says there is no recipe to predict from", async () => {
+    const { structured, text } = await planBudgetTool({ design: "test_shooter_study" });
+    PlanBudgetSchema.parse(structured);
+    expect(structured.design?.kind).toBe("studied");
+    expect(structured.design?.studied_from?.title).toBe("Test Shooter");
+    expect(structured.phases).toEqual([]);
+    expect(structured.design?.measured).toEqual([
+      expect.objectContaining({
+        phase: "play",
+        region: "PAL",
+        worst: 18000,
+        typical: 15000,
+        basis: "measured-vice-study",
+        predicted: null,
+        position: "not_predicted",
+      }),
+    ]);
+    expect(structured.design?.measured[0]?.finding).toContain("no recipe to predict from");
+    expect(text).toContain("Studied from Test Shooter (1985, Ann Coder, Test House)");
+    expect(text).toContain("worst 18000, typical 15000");
+    expect(text).toContain("no recipe to predict from");
+  });
+
+  it("a studied design lists with its kind among the archetype's designs", async () => {
+    const ds = await designsOfArchetype("vertical_shmup");
+    expect(ds.map((d) => [d.name, d.kind, d.source_doc])).toEqual([["test_shooter_study", "studied", PATH]]);
+  });
+
+  it("a re-ingest through the extractor of the page without its IRQ chain lines clears them and keeps the rest", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const doc = readFileSync("test/fixtures/study-page.md", "utf8")
+      .split("\n")
+      .filter((l) => !l.startsWith("**IRQ chain:**"))
+      .join("\n");
+    for (const e of extractGraphEntities(doc, PATH)) if (isNodeEntity(e)) await applyNode(f, e);
+    warn.mockRestore();
+    const r = await f.roQuery(
+      `MATCH (g:GameDesign {name: 'test_shooter_study'})
+       RETURN g.kind AS kind, g.irq_chain AS irq, g.memory_map AS mm`,
+    );
+    const row = r.data[0] as { kind: string; irq: string | null; mm: string };
+    expect(row.kind).toBe("studied");
+    expect(row.irq).toBeNull();
+    expect((JSON.parse(row.mm) as unknown[]).length).toBe(1);
+  });
+
+  it("a re-ingest as a built page clears kind and the study lines", async () => {
+    await f.addGameDesign({
+      name: "test_shooter_study",
+      title: "T",
+      measured: [],
+      source_doc: PATH,
+      kind: "built",
+      irq_chain: [],
+      memory_map: [],
+    });
+    const r = await f.roQuery(
+      `MATCH (g:GameDesign {name: 'test_shooter_study'})
+       RETURN g.kind AS kind, g.studied_from AS sf, g.irq_chain AS irq, g.memory_map AS mm`,
+    );
+    expect(r.data[0]).toEqual({ kind: "built", sf: null, irq: null, mm: null });
   });
 });

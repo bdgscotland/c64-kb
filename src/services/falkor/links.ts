@@ -519,6 +519,42 @@ export class FalkorLinks extends FalkorNodes {
     return false;
   }
 
+  /**
+   * STUDIES (schema 40): a studied design names the released title it
+   * measured, by the **Studied from:** title. MATCH both; a title no
+   * archetype page links as a Production is dropped, never created.
+   */
+  async linkStudies(design: string, production: string): Promise<boolean> {
+    return this.mergeOrWarn({
+      from: { label: "GameDesign", name: design },
+      rel: "STUDIES",
+      to: { label: "Production", name: production },
+      warn: `linkStudies: ${design} -> ${production} (Production) — game design or production not found`,
+    });
+  }
+
+  /**
+   * DIVERGES_FROM (schema 40): a studied design uses a technique its
+   * archetype does not list (`extra`), or lacks one it does (`missing`).
+   * One edge per technique; the direction is set, so a page that flips it
+   * updates the edge. MATCH both.
+   */
+  async linkDivergesFrom(design: string, technique: string, direction: string): Promise<boolean> {
+    const rows = await this.write(
+      `MATCH (g:GameDesign {name: $design})
+       MATCH (t:Technique {name: $technique})
+       MERGE (g)-[d:DIVERGES_FROM]->(t)
+       SET d.direction = $direction
+       RETURN 1`,
+      { design, technique, direction },
+    );
+    if (rows.length > 0) return true;
+    console.warn(
+      `[falkor] linkDivergesFrom: ${design} -> ${technique} (Technique) — game design or technique not found, edge dropped`,
+    );
+    return false;
+  }
+
   /** REQUIRES_DEVICE (schema 36): the recipe's run attaches this device. MATCH both. */
   async linkRequiresDevice(recipe: string, device: string): Promise<boolean> {
     return this.mergeOrWarn({

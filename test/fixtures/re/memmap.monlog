@@ -1,0 +1,99 @@
+#1 (Stop on  exec fce2)    0/$000,   6/$06
+.C:fce2  A2 FF       LDX #$FF       - A:00 X:00 Y:00 SP:00 ..-..IZ.          6
+TRACE: 1  C:$080e  (Trace exec)
+Setting checkpoint 1 command to: memmapzap; disable 1
+TRACE: 2  C:$d019  (Trace store)
+Will ignore the next 7 hits of checkpoint #2
+Setting checkpoint 2 command to: memmapshow; disable 2
+#1 (Trace  exec 080e)   39/$027,   8/$08
+.C:080e  78          SEI            - A:00 X:00 Y:00 SP:f6 ..-.....    2970521
+Executing: memmapzap; disable 1
+#2 (Trace store d019)  200/$0c8,  50/$32
+.C:0876  8D 19 D0    STA $D019      - A:01 X:F0 Y:00 SP:f0 ..-..I..    3000362
+Executing: memmapshow; disable 2
+addr: IO  ROM RAM
+01f0: --- --- r-- (dummy)
+01f1: --- --- rw-
+01f2: --- --- rw-
+01f3: --- --- rw-
+01f4: --- --- rw-
+01f5: --- --- rw-
+01f6: --- --- rw-
+0314: --- --- rw-
+0315: --- --- rw-
+033c: --- --- rw-
+033d: --- --- rw-
+080e: --- --- --x (uninitialized exec)
+080f: --- --- --x (uninitialized exec)
+0811: --- --- --x (uninitialized exec)
+0814: --- --- --x (uninitialized exec)
+0817: --- --- --x (uninitialized exec)
+0819: --- --- --x (uninitialized exec)
+081c: --- --- --x (uninitialized exec)
+081e: --- --- --x (uninitialized exec)
+0821: --- --- --x (uninitialized exec)
+0823: --- --- --x (uninitialized exec)
+0826: --- --- --x (uninitialized exec)
+0828: --- --- --x (uninitialized exec)
+082b: --- --- --x (uninitialized exec)
+082d: --- --- --x (uninitialized exec)
+0830: --- --- --x (uninitialized exec)
+0832: --- --- --x (uninitialized exec)
+0835: --- --- --x (uninitialized exec)
+0837: --- --- --x (uninitialized exec)
+083a: --- --- --x (uninitialized exec)
+083c: --- --- --x (uninitialized exec)
+083f: --- --- --x (uninitialized exec)
+0840: --- --- r-x (uninitialized exec)
+0843: --- --- --x (uninitialized exec)
+0846: --- --- --x (uninitialized exec)
+0848: --- --- --x (uninitialized exec)
+084b: --- --- --x (uninitialized exec)
+084d: --- --- --x (uninitialized exec)
+0850: --- --- --x (uninitialized exec)
+0852: --- --- --x (uninitialized exec)
+0855: --- --- --x (uninitialized exec)
+0857: --- --- --x (uninitialized exec)
+085a: --- --- --x (uninitialized exec)
+085d: --- --- --x (uninitialized exec)
+085f: --- --- --x (uninitialized exec)
+0862: --- --- --x (uninitialized exec)
+0864: --- --- --x (uninitialized exec)
+0867: --- --- --x (uninitialized exec)
+0869: --- --- --x (uninitialized exec)
+086c: --- --- --x (uninitialized exec)
+086e: --- --- --x (uninitialized exec)
+0871: --- --- --x (uninitialized exec)
+0874: --- --- --x (uninitialized exec)
+0876: --- --- --x (uninitialized exec)
+0879: --- --- --x (uninitialized exec)
+087b: --- --- --x (uninitialized exec)
+087e: --- --- --x (uninitialized exec)
+0880: --- --- --x (uninitialized exec)
+0883: --- --- --x (uninitialized exec)
+0885: --- --- --x (uninitialized exec)
+0888: --- --- --x (uninitialized exec)
+d011: -w- --- ---
+d012: -w- --- ---
+d019: -w- --- ---
+d01a: -w- --- ---
+dc0d: rw- --- ---
+ea81: --- --x ---
+ea82: --- --x ---
+ea83: --- --x ---
+ea84: --- --x ---
+ea85: --- --x ---
+ea86: --- --x ---
+ff48: --- --x ---
+ff49: --- --x ---
+ff4a: --- --x ---
+ff4b: --- --x ---
+ff4c: --- --x ---
+ff4d: --- --x ---
+ff4e: --- --x ---
+ff51: --- --x ---
+ff53: --- --x ---
+ff55: --- r-- ---
+ff58: --- --x ---
+fffe: --- r-- ---
+ffff: --- r-- ---

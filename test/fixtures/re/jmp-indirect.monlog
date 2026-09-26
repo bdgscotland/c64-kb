@@ -1,0 +1,461 @@
+Excerpt of a real -monlog from the windowless x64sc 3.10 (PAL, -default), PRG built from jmp-indirect.asm with KickAssembler 5.25, run with c64_re_irq_chain's pass-C checkpoints (the pointer $033C/$033D traced). Kept: every store before the entry clock except page 1 (they seed the state), then every hit from the entry to the end of the run. Lines not starting with # or .C: are ignored by readHits.
+#5 (Trace store dc0d)    0/$000,  58/$3a
+.C:fda5  8D 0D DC    STA $DC0D      - A:7F X:05 Y:00 SP:fd ..-..I.C         58
+#6 (Trace store dd0d)    0/$000,  62/$3e
+.C:fda8  8D 0D DD    STA $DD0D      - A:7F X:05 Y:00 SP:fd ..-..I.C         62
+#7 (Trace store 0001)    1/$001,  58/$3a
+.C:fdd7  85 01       STA $01        - A:E7 X:FF Y:00 SP:fd N.-..I.C        121
+#5 (Trace store dc0d)    2/$002,  28/$1c
+.C:ff70  8D 0D DC    STA $DC0D      - A:81 X:FF Y:00 SP:fd N.-..I.C        154
+#1 (Trace store 0314)    9/$009,  43/$2b
+.C:fd59  99 00 03    STA $0300,Y    - A:00 X:FF Y:14 SP:fd ..-..I.C        610
+#1 (Trace store 0315)   10/$00a,   0/$00
+.C:fd59  99 00 03    STA $0300,Y    - A:00 X:FF Y:15 SP:fd ..-..I.C        630
+#1 (Trace store 0316)   10/$00a,  20/$14
+.C:fd59  99 00 03    STA $0300,Y    - A:00 X:FF Y:16 SP:fd ..-..I.C        650
+#1 (Trace store 0317)   10/$00a,  40/$28
+.C:fd59  99 00 03    STA $0300,Y    - A:00 X:FF Y:17 SP:fd ..-..I.C        670
+#1 (Trace store 0318)   10/$00a,  60/$3c
+.C:fd59  99 00 03    STA $0300,Y    - A:00 X:FF Y:18 SP:fd ..-..I.C        690
+#1 (Trace store 0319)   11/$00b,  17/$11
+.C:fd59  99 00 03    STA $0300,Y    - A:00 X:FF Y:19 SP:fd ..-..I.C        710
+#9 (Trace store 033c)   22/$016,  24/$18
+.C:fd59  99 00 03    STA $0300,Y    - A:00 X:FF Y:3C SP:fd ..-..I.C       1410
+#9 (Trace store 033d)   22/$016,  44/$2c
+.C:fd59  99 00 03    STA $0300,Y    - A:00 X:FF Y:3D SP:fd ..-..I.C       1430
+#1 (Trace store 0319)  298/$12a,  12/$0c
+.C:fd29  99 14 03    STA $0314,Y    - A:FE X:30 Y:05 SP:fd N.-..I..    2004042
+#1 (Trace store 0318)  298/$12a,  39/$27
+.C:fd29  99 14 03    STA $0314,Y    - A:47 X:30 Y:04 SP:fd ..-..I..    2004069
+#1 (Trace store 0317)  299/$12b,   3/$03
+.C:fd29  99 14 03    STA $0314,Y    - A:FE X:30 Y:03 SP:fd N.-..I..    2004096
+#1 (Trace store 0316)  299/$12b,  30/$1e
+.C:fd29  99 14 03    STA $0314,Y    - A:66 X:30 Y:02 SP:fd ..-..I..    2004123
+#1 (Trace store 0315)  299/$12b,  57/$39
+.C:fd29  99 14 03    STA $0314,Y    - A:EA X:30 Y:01 SP:fd N.-..I..    2004150
+#1 (Trace store 0314)  300/$12c,  21/$15
+.C:fd29  99 14 03    STA $0314,Y    - A:31 X:30 Y:00 SP:fd ..-..I..    2004177
+#4 (Trace store d01a)  305/$131,  35/$23
+.C:e5ad  9D FF CF    STA $CFFF,X    - A:00 X:1B Y:FF SP:f9 ..-..IZ.    2004506
+#3 (Trace store d012)  307/$133,  21/$15
+.C:e5ad  9D FF CF    STA $CFFF,X    - A:37 X:13 Y:FF SP:f9 ..-..I..    2004618
+#3 (Trace store d011)  307/$133,  35/$23
+.C:e5ad  9D FF CF    STA $CFFF,X    - A:9B X:12 Y:FF SP:f9 N.-..I..    2004632
+#5 (Trace store dc0d)  256/$100,  46/$2e
+.C:ff70  8D 0D DC    STA $DC0D      - A:81 X:01 Y:84 SP:fd N.-..I.C    2060398
+#7 (Trace store 0001)  259/$103,  23/$17
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:f9 ..-..I.C    2060564
+#7 (Trace store 0001)  207/$0cf,  43/$2b
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:e6 ..-..I.C    2076964
+#7 (Trace store 0001)  157/$09d,   4/$04
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:e8 ..-..I.C    2093431
+#7 (Trace store 0001)  105/$069,   0/$00
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:e8 ..-..I.C    2109807
+#7 (Trace store 0001)   53/$035,  57/$39
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:f3 ..-..I.C    2126244
+#7 (Trace store 0001)    2/$002,  31/$1f
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2142661
+#7 (Trace store 0001)  264/$108,  51/$33
+.C:ea79  85 01       STA $01        - A:37 X:0E Y:00 SP:ed ..-..I..    2159187
+#7 (Trace store 0001)  212/$0d4,  30/$1e
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2175546
+#7 (Trace store 0001)  160/$0a0,  30/$1e
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2191926
+#7 (Trace store 0001)  109/$06d,  50/$32
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2208389
+#7 (Trace store 0001)   57/$039,  49/$31
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2224768
+#7 (Trace store 0001)    6/$006,  31/$1f
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2241193
+#7 (Trace store 0001)  267/$10b,   9/$09
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2257614
+#7 (Trace store 0001)  215/$0d7,  51/$33
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2274036
+#7 (Trace store 0001)  165/$0a5,   9/$09
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2290500
+#7 (Trace store 0001)  113/$071,   9/$09
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2306880
+#7 (Trace store 0001)   62/$03e,   4/$04
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2323318
+#7 (Trace store 0001)   10/$00a,  29/$1d
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2339723
+#7 (Trace store 0001)  271/$10f,   7/$07
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2356144
+#7 (Trace store 0001)  220/$0dc,  29/$1d
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2372609
+#7 (Trace store 0001)  168/$0a8,  28/$1c
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2388988
+#7 (Trace store 0001)  117/$075,  51/$33
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2405454
+#7 (Trace store 0001)   65/$041,  49/$31
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2421832
+#7 (Trace store 0001)   14/$00e,  28/$1c
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2438254
+#7 (Trace store 0001)  275/$113,   9/$09
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2454678
+#7 (Trace store 0001)  223/$0df,  52/$34
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2471101
+#7 (Trace store 0001)  174/$0ae,   1/$01
+.C:ea79  85 01       STA $01        - A:37 X:0E Y:00 SP:ed ..-..I.C    2487619
+#7 (Trace store 0001)  121/$079,  10/$0a
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2503945
+#7 (Trace store 0001)   70/$046,   2/$02
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2520380
+#7 (Trace store 0001)   18/$012,  29/$1d
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2536787
+#7 (Trace store 0001)  279/$117,   8/$08
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2553209
+#7 (Trace store 0001)  228/$0e4,  29/$1d
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2569673
+#7 (Trace store 0001)  176/$0b0,  30/$1e
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2586054
+#7 (Trace store 0001)  125/$07d,  51/$33
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2602518
+#7 (Trace store 0001)   73/$049,  50/$32
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2618897
+#7 (Trace store 0001)   22/$016,  30/$1e
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2635320
+#7 (Trace store 0001)  283/$11b,   9/$09
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2651742
+#7 (Trace store 0001)  231/$0e7,  52/$34
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2668165
+#7 (Trace store 0001)  181/$0b5,   8/$08
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2684627
+#7 (Trace store 0001)  129/$081,  10/$0a
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2701009
+#7 (Trace store 0001)   78/$04e,   3/$03
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2717445
+#7 (Trace store 0001)   26/$01a,  28/$1c
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2733850
+#7 (Trace store 0001)  287/$11f,   7/$07
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2750272
+#7 (Trace store 0001)  236/$0ec,  30/$1e
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2766738
+#7 (Trace store 0001)  184/$0b8,  30/$1e
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2783118
+#7 (Trace store 0001)  133/$085,  51/$33
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2799582
+#7 (Trace store 0001)   84/$054,  11/$0b
+.C:ea79  85 01       STA $01        - A:37 X:0E Y:00 SP:ed ..-..I..    2816111
+#7 (Trace store 0001)   30/$01e,  30/$1e
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2832384
+#7 (Trace store 0001)  291/$123,   9/$09
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2848806
+#7 (Trace store 0001)  239/$0ef,  51/$33
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2865228
+#7 (Trace store 0001)  189/$0bd,  11/$0b
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2881694
+#7 (Trace store 0001)  137/$089,  10/$0a
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2898073
+#7 (Trace store 0001)   86/$056,   3/$03
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2914509
+#7 (Trace store 0001)   34/$022,  28/$1c
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2930914
+#7 (Trace store 0001)  295/$127,   7/$07
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:ed ..-..I.C    2947336
+#7 (Trace store 0001)  244/$0f4,  24/$18
+.C:ea79  85 01       STA $01        - A:37 X:FF Y:00 SP:f3 ..-..I.C    2963796
+#16 (Trace  exec 080e)   39/$027,   8/$08
+.C:080e  78          SEI            - A:00 X:00 Y:00 SP:f6 ..-.....    2970521
+#5 (Trace store dc0d)   39/$027,  16/$10
+.C:0811  8D 0D DC    STA $DC0D      - A:7F X:00 Y:00 SP:f6 ..-..I..    2970529
+#9 (Trace store 033c)   39/$027,  26/$1a
+.C:0819  8D 3C 03    STA $033C      - A:46 X:00 Y:00 SP:f6 ..-..I..    2970539
+#9 (Trace store 033d)   39/$027,  32/$20
+.C:081e  8D 3D 03    STA $033D      - A:08 X:00 Y:00 SP:f6 ..-..I..    2970545
+#1 (Trace store 0314)   39/$027,  38/$26
+.C:0823  8D 14 03    STA $0314      - A:43 X:00 Y:00 SP:f6 ..-..I..    2970551
+#1 (Trace store 0315)   39/$027,  44/$2c
+.C:0828  8D 15 03    STA $0315      - A:08 X:00 Y:00 SP:f6 ..-..I..    2970557
+#3 (Trace store d011)   39/$027,  50/$32
+.C:082d  8D 11 D0    STA $D011      - A:1B X:00 Y:00 SP:f6 ..-..I..    2970563
+#3 (Trace store d012)   39/$027,  56/$38
+.C:0832  8D 12 D0    STA $D012      - A:32 X:00 Y:00 SP:f6 ..-..I..    2970569
+#4 (Trace store d01a)   40/$028,   5/$05
+.C:083c  8D 1A D0    STA $D01A      - A:01 X:00 Y:00 SP:f6 ..-..I..    2970581
+#15 (Trace  exec ff48)   50/$032,  11/$0b
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    2971217
+#8 (Trace store 01f6)   50/$032,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2971217
+#8 (Trace store 01f5)   50/$032,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2971217
+#8 (Trace store 01f4)   50/$032,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2971217
+#8 (Trace store 01f3)   50/$032,  14/$0e
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    2971220
+#8 (Trace store 01f2)   50/$032,  19/$13
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    2971225
+#8 (Trace store 01f1)   50/$032,  24/$18
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    2971230
+#10 (Trace  exec 0843)   50/$032,  40/$28
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    2971246
+#3 (Trace store d012)   50/$032,  57/$39
+.C:084d  8D 12 D0    STA $D012      - A:78 X:F0 Y:00 SP:f0 ..-..I..    2971263
+#9 (Trace store 033c)   51/$033,   0/$00
+.C:0852  8D 3C 03    STA $033C      - A:5D X:F0 Y:00 SP:f0 ..-..I..    2971269
+#9 (Trace store 033d)   51/$033,   6/$06
+.C:0857  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    2971275
+#15 (Trace  exec ff48)  120/$078,  11/$0b
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    2975627
+#8 (Trace store 01f6)  120/$078,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2975627
+#8 (Trace store 01f5)  120/$078,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2975627
+#8 (Trace store 01f4)  120/$078,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2975627
+#8 (Trace store 01f3)  120/$078,  14/$0e
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    2975630
+#8 (Trace store 01f2)  120/$078,  19/$13
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    2975635
+#8 (Trace store 01f1)  120/$078,  24/$18
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    2975640
+#10 (Trace  exec 0843)  120/$078,  40/$28
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    2975656
+#3 (Trace store d012)  120/$078,  57/$39
+.C:0864  8D 12 D0    STA $D012      - A:C8 X:F0 Y:00 SP:f0 N.-..I..    2975673
+#9 (Trace store 033c)  121/$079,   0/$00
+.C:0869  8D 3C 03    STA $033C      - A:74 X:F0 Y:00 SP:f0 ..-..I..    2975679
+#9 (Trace store 033d)  121/$079,   6/$06
+.C:086e  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    2975685
+#15 (Trace  exec ff48)  200/$0c8,   9/$09
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    2980665
+#8 (Trace store 01f6)  200/$0c8,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2980665
+#8 (Trace store 01f5)  200/$0c8,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2980665
+#8 (Trace store 01f4)  200/$0c8,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2980665
+#8 (Trace store 01f3)  200/$0c8,  12/$0c
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    2980668
+#8 (Trace store 01f2)  200/$0c8,  17/$11
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    2980673
+#8 (Trace store 01f1)  200/$0c8,  22/$16
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    2980678
+#10 (Trace  exec 0843)  200/$0c8,  38/$26
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    2980694
+#3 (Trace store d012)  200/$0c8,  55/$37
+.C:087b  8D 12 D0    STA $D012      - A:32 X:F0 Y:00 SP:f0 ..-..I..    2980711
+#9 (Trace store 033c)  200/$0c8,  61/$3d
+.C:0880  8D 3C 03    STA $033C      - A:46 X:F0 Y:00 SP:f0 ..-..I..    2980717
+#9 (Trace store 033d)  201/$0c9,   4/$04
+.C:0885  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    2980723
+#15 (Trace  exec ff48)   50/$032,   9/$09
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    2990871
+#8 (Trace store 01f6)   50/$032,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2990871
+#8 (Trace store 01f5)   50/$032,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2990871
+#8 (Trace store 01f4)   50/$032,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2990871
+#8 (Trace store 01f3)   50/$032,  12/$0c
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    2990874
+#8 (Trace store 01f2)   50/$032,  17/$11
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    2990879
+#8 (Trace store 01f1)   50/$032,  22/$16
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    2990884
+#10 (Trace  exec 0843)   50/$032,  38/$26
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    2990900
+#3 (Trace store d012)   50/$032,  55/$37
+.C:084d  8D 12 D0    STA $D012      - A:78 X:F0 Y:00 SP:f0 ..-..I..    2990917
+#9 (Trace store 033c)   50/$032,  61/$3d
+.C:0852  8D 3C 03    STA $033C      - A:5D X:F0 Y:00 SP:f0 ..-..I..    2990923
+#9 (Trace store 033d)   51/$033,   4/$04
+.C:0857  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    2990929
+#15 (Trace  exec ff48)  120/$078,   9/$09
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    2995281
+#8 (Trace store 01f6)  120/$078,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2995281
+#8 (Trace store 01f5)  120/$078,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2995281
+#8 (Trace store 01f4)  120/$078,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    2995281
+#8 (Trace store 01f3)  120/$078,  12/$0c
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    2995284
+#8 (Trace store 01f2)  120/$078,  17/$11
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    2995289
+#8 (Trace store 01f1)  120/$078,  22/$16
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    2995294
+#10 (Trace  exec 0843)  120/$078,  38/$26
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    2995310
+#3 (Trace store d012)  120/$078,  55/$37
+.C:0864  8D 12 D0    STA $D012      - A:C8 X:F0 Y:00 SP:f0 N.-..I..    2995327
+#9 (Trace store 033c)  120/$078,  61/$3d
+.C:0869  8D 3C 03    STA $033C      - A:74 X:F0 Y:00 SP:f0 ..-..I..    2995333
+#9 (Trace store 033d)  121/$079,   4/$04
+.C:086e  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    2995339
+#15 (Trace  exec ff48)  200/$0c8,  10/$0a
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    3000322
+#8 (Trace store 01f6)  200/$0c8,  10/$0a
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3000322
+#8 (Trace store 01f5)  200/$0c8,  10/$0a
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3000322
+#8 (Trace store 01f4)  200/$0c8,  10/$0a
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3000322
+#8 (Trace store 01f3)  200/$0c8,  13/$0d
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    3000325
+#8 (Trace store 01f2)  200/$0c8,  18/$12
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    3000330
+#8 (Trace store 01f1)  200/$0c8,  23/$17
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    3000335
+#10 (Trace  exec 0843)  200/$0c8,  39/$27
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    3000351
+#3 (Trace store d012)  200/$0c8,  56/$38
+.C:087b  8D 12 D0    STA $D012      - A:32 X:F0 Y:00 SP:f0 ..-..I..    3000368
+#9 (Trace store 033c)  200/$0c8,  62/$3e
+.C:0880  8D 3C 03    STA $033C      - A:46 X:F0 Y:00 SP:f0 ..-..I..    3000374
+#9 (Trace store 033d)  201/$0c9,   5/$05
+.C:0885  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    3000380
+#15 (Trace  exec ff48)   50/$032,  10/$0a
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    3010528
+#8 (Trace store 01f6)   50/$032,  10/$0a
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3010528
+#8 (Trace store 01f5)   50/$032,  10/$0a
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3010528
+#8 (Trace store 01f4)   50/$032,  10/$0a
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3010528
+#8 (Trace store 01f3)   50/$032,  13/$0d
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    3010531
+#8 (Trace store 01f2)   50/$032,  18/$12
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    3010536
+#8 (Trace store 01f1)   50/$032,  23/$17
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    3010541
+#10 (Trace  exec 0843)   50/$032,  39/$27
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    3010557
+#3 (Trace store d012)   50/$032,  56/$38
+.C:084d  8D 12 D0    STA $D012      - A:78 X:F0 Y:00 SP:f0 ..-..I..    3010574
+#9 (Trace store 033c)   50/$032,  62/$3e
+.C:0852  8D 3C 03    STA $033C      - A:5D X:F0 Y:00 SP:f0 ..-..I..    3010580
+#9 (Trace store 033d)   51/$033,   5/$05
+.C:0857  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    3010586
+#15 (Trace  exec ff48)  120/$078,  10/$0a
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    3014938
+#8 (Trace store 01f6)  120/$078,  10/$0a
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3014938
+#8 (Trace store 01f5)  120/$078,  10/$0a
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3014938
+#8 (Trace store 01f4)  120/$078,  10/$0a
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3014938
+#8 (Trace store 01f3)  120/$078,  13/$0d
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    3014941
+#8 (Trace store 01f2)  120/$078,  18/$12
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    3014946
+#8 (Trace store 01f1)  120/$078,  23/$17
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    3014951
+#10 (Trace  exec 0843)  120/$078,  39/$27
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    3014967
+#3 (Trace store d012)  120/$078,  56/$38
+.C:0864  8D 12 D0    STA $D012      - A:C8 X:F0 Y:00 SP:f0 N.-..I..    3014984
+#9 (Trace store 033c)  120/$078,  62/$3e
+.C:0869  8D 3C 03    STA $033C      - A:74 X:F0 Y:00 SP:f0 ..-..I..    3014990
+#9 (Trace store 033d)  121/$079,   5/$05
+.C:086e  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    3014996
+#15 (Trace  exec ff48)  200/$0c8,  11/$0b
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    3019979
+#8 (Trace store 01f6)  200/$0c8,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3019979
+#8 (Trace store 01f5)  200/$0c8,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3019979
+#8 (Trace store 01f4)  200/$0c8,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3019979
+#8 (Trace store 01f3)  200/$0c8,  14/$0e
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    3019982
+#8 (Trace store 01f2)  200/$0c8,  19/$13
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    3019987
+#8 (Trace store 01f1)  200/$0c8,  24/$18
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    3019992
+#10 (Trace  exec 0843)  200/$0c8,  40/$28
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    3020008
+#3 (Trace store d012)  200/$0c8,  57/$39
+.C:087b  8D 12 D0    STA $D012      - A:32 X:F0 Y:00 SP:f0 ..-..I..    3020025
+#9 (Trace store 033c)  201/$0c9,   0/$00
+.C:0880  8D 3C 03    STA $033C      - A:46 X:F0 Y:00 SP:f0 ..-..I..    3020031
+#9 (Trace store 033d)  201/$0c9,   6/$06
+.C:0885  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    3020037
+#15 (Trace  exec ff48)   50/$032,  11/$0b
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    3030185
+#8 (Trace store 01f6)   50/$032,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3030185
+#8 (Trace store 01f5)   50/$032,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3030185
+#8 (Trace store 01f4)   50/$032,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3030185
+#8 (Trace store 01f3)   50/$032,  14/$0e
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    3030188
+#8 (Trace store 01f2)   50/$032,  19/$13
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    3030193
+#8 (Trace store 01f1)   50/$032,  24/$18
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    3030198
+#10 (Trace  exec 0843)   50/$032,  40/$28
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    3030214
+#3 (Trace store d012)   50/$032,  57/$39
+.C:084d  8D 12 D0    STA $D012      - A:78 X:F0 Y:00 SP:f0 ..-..I..    3030231
+#9 (Trace store 033c)   51/$033,   0/$00
+.C:0852  8D 3C 03    STA $033C      - A:5D X:F0 Y:00 SP:f0 ..-..I..    3030237
+#9 (Trace store 033d)   51/$033,   6/$06
+.C:0857  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    3030243
+#15 (Trace  exec ff48)  120/$078,  11/$0b
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    3034595
+#8 (Trace store 01f6)  120/$078,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3034595
+#8 (Trace store 01f5)  120/$078,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3034595
+#8 (Trace store 01f4)  120/$078,  11/$0b
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3034595
+#8 (Trace store 01f3)  120/$078,  14/$0e
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    3034598
+#8 (Trace store 01f2)  120/$078,  19/$13
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    3034603
+#8 (Trace store 01f1)  120/$078,  24/$18
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    3034608
+#10 (Trace  exec 0843)  120/$078,  40/$28
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    3034624
+#3 (Trace store d012)  120/$078,  57/$39
+.C:0864  8D 12 D0    STA $D012      - A:C8 X:F0 Y:00 SP:f0 N.-..I..    3034641
+#9 (Trace store 033c)  121/$079,   0/$00
+.C:0869  8D 3C 03    STA $033C      - A:74 X:F0 Y:00 SP:f0 ..-..I..    3034647
+#9 (Trace store 033d)  121/$079,   6/$06
+.C:086e  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    3034653
+#15 (Trace  exec ff48)  200/$0c8,   9/$09
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    3039633
+#8 (Trace store 01f6)  200/$0c8,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3039633
+#8 (Trace store 01f5)  200/$0c8,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3039633
+#8 (Trace store 01f4)  200/$0c8,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3039633
+#8 (Trace store 01f3)  200/$0c8,  12/$0c
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    3039636
+#8 (Trace store 01f2)  200/$0c8,  17/$11
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    3039641
+#8 (Trace store 01f1)  200/$0c8,  22/$16
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    3039646
+#10 (Trace  exec 0843)  200/$0c8,  38/$26
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    3039662
+#3 (Trace store d012)  200/$0c8,  55/$37
+.C:087b  8D 12 D0    STA $D012      - A:32 X:F0 Y:00 SP:f0 ..-..I..    3039679
+#9 (Trace store 033c)  200/$0c8,  61/$3d
+.C:0880  8D 3C 03    STA $033C      - A:46 X:F0 Y:00 SP:f0 ..-..I..    3039685
+#9 (Trace store 033d)  201/$0c9,   4/$04
+.C:0885  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    3039691
+#15 (Trace  exec ff48)   50/$032,   9/$09
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f3 ..-..I..    3049839
+#8 (Trace store 01f6)   50/$032,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3049839
+#8 (Trace store 01f5)   50/$032,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3049839
+#8 (Trace store 01f4)   50/$032,   9/$09
+.C:0840  4C 40 08    JMP $0840      - A:01 X:00 Y:00 SP:f3 ..-..I..    3049839
+#8 (Trace store 01f3)   50/$032,  12/$0c
+.C:ff48  48          PHA            - A:01 X:00 Y:00 SP:f2 ..-..I..    3049842
+#8 (Trace store 01f2)   50/$032,  17/$11
+.C:ff4a  48          PHA            - A:00 X:00 Y:00 SP:f1 ..-..IZ.    3049847
+#8 (Trace store 01f1)   50/$032,  22/$16
+.C:ff4c  48          PHA            - A:00 X:00 Y:00 SP:f0 ..-..IZ.    3049852
+#10 (Trace  exec 0843)   50/$032,  38/$26
+.C:0843  6C 3C 03    JMP ($033C)    - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    3049868
+#3 (Trace store d012)   50/$032,  55/$37
+.C:084d  8D 12 D0    STA $D012      - A:78 X:F0 Y:00 SP:f0 ..-..I..    3049885
+#9 (Trace store 033c)   50/$032,  61/$3d
+.C:0852  8D 3C 03    STA $033C      - A:5D X:F0 Y:00 SP:f0 ..-..I..    3049891
+#9 (Trace store 033d)   51/$033,   4/$04
+.C:0857  8D 3D 03    STA $033D      - A:08 X:F0 Y:00 SP:f0 ..-..I..    3049897

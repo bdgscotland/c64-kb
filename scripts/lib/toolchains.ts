@@ -4,11 +4,18 @@
  * CLAUDE.md names). check-listings and verify-recipes each had their own
  * copy of this lookup, without the defaults; with no variables set, both
  * reported the Oscar64 recipes as "not found" on a machine that had it.
+ *
+ * findC1541 moved to src/services/c1541-bin.ts (src/re/image.ts needs it
+ * too, and src/ must not import scripts/); re-exported here so existing
+ * callers are unchanged.
  */
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { findC1541 } from "../../src/services/c1541-bin.ts";
+
+export { findC1541 };
 
 export interface Toolchains {
   /** KickAss.jar; needs `java` too. */
@@ -33,19 +40,6 @@ export function which(cmd: string, env: NodeJS.ProcessEnv = process.env): string
 /** `path` if it names an existing file, else null. */
 function existing(path: string | undefined): string | null {
   return path && existsSync(path) ? path : null;
-}
-
-/** The c1541 that `npm run vice:headless` installs beside its x64sc. */
-const HEADLESS_C1541 = join(new URL("../..", import.meta.url).pathname, ".tools/vice-headless/bin/c1541");
-
-/**
- * c1541, which verify-recipes needs for the disk-backed recipes: C1541,
- * then PATH, then the headless VICE build. On a machine where only the
- * headless build supplies it, the disk recipes used to fail with "c1541 is
- * not on PATH".
- */
-export function findC1541(env: NodeJS.ProcessEnv = process.env): string | null {
-  return existing(env.C1541) ?? which("c1541", env) ?? existing(HEADLESS_C1541);
 }
 
 /**

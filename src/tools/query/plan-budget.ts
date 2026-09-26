@@ -16,7 +16,7 @@ import {
   type PhaseBudget,
 } from "../../domain/budget.ts";
 import { callsText, splitCalls, type CallCount } from "../../domain/calls.ts";
-import { compareMeasured } from "../../domain/game-design.ts";
+import { compareMeasured, studiedMeasurements } from "../../domain/game-design.ts";
 import { CostBasisSchema, type PlanBudgetOutput } from "../../schemas/tool-outputs.ts";
 import { fetchGameDesign, knownGameDesigns, type GameDesignRecord } from "./game-design.ts";
 import { parseRows } from "./shared.ts";
@@ -216,6 +216,11 @@ function bytesLine(bytes: PlanBudgetOutput["bytes"]): string {
   return `Sum ${bytes.sum} over ${bytes.contributors.map((c) => `${c.name} (${c.basis})`).join(", ")}${basis}${floor}.${inside}`;
 }
 
+function studiedLine(from: NonNullable<PlanBudgetOutput["design"]>["studied_from"]): string {
+  const what = from ? `Studied from ${from.title} (${[from.year, ...from.authors].join(", ")})` : "Studied";
+  return `${what}: a released game measured in VICE, studied, not buildable here. There is no recipe to predict from, so its members are not budgeted.\n`;
+}
+
 function renderDesign(b: PlanBudgetOutput): string {
   if (b.design_not_found) {
     const known = b.design_not_found.known.join(", ") || "(none in this graph)";
@@ -224,8 +229,9 @@ function renderDesign(b: PlanBudgetOutput): string {
   const d = b.design;
   if (!d) return "";
   let out = `\nDesign: ${d.title} (\`${d.name}\`), ${d.source_doc}. Instance of ${d.instance_of.join(", ") || "(none)"}; realised by ${d.realised_by.join(", ") || "(no recipe)"}.\n`;
+  if (d.kind === "studied") out += studiedLine(d.studied_from);
   if (d.measured.length === 0) return `${out}The design states no measured frame.\n`;
-  out += `\nMeasured beside predicted:\n`;
+  out += d.kind === "studied" ? `\nMeasured frame:\n` : `\nMeasured beside predicted:\n`;
   for (const m of d.measured) {
     const typical = m.typical !== null ? `, typical ${m.typical}` : "";
     out += `- ${m.phase} ${m.region}: worst ${m.worst}${typical} (${m.source}); ${m.finding}\n`;
@@ -313,28 +319,41 @@ async function resolveDesign(
   return { design: null, notFound: { requested: wanted, known: await knownGameDesigns() } };
 }
 
+/** The design as the tool returns it: a built one's measured frame beside the prediction, a studied one's alone. */
+function designOutput(
+  design: GameDesignRecord,
+  phases: PhaseBudget[],
+): NonNullable<PlanBudgetOutput["design"]> {
+  return {
+    name: design.name,
+    title: design.title,
+    region: design.region,
+    instance_of: design.instance_of,
+    realised_by: design.realised_by,
+    composes: design.composes,
+    source_doc: design.source_doc,
+    measured:
+      design.kind === "studied"
+        ? studiedMeasurements(design.measured)
+        : compareMeasured(design.measured, phases),
+    kind: design.kind,
+    studied_from: design.studied_from,
+  };
+}
+
 export async function planBudgetTool(req: PlanBudgetRequest): Promise<PlanBudgetResult> {
   const { design, notFound } = await resolveDesign(req.design);
-  const inputs = [...(design ? designSpecs(design) : []), ...(req.techniques ?? [])];
-  if (inputs.length === 0 && !notFound) throw new Error("give techniques, a design, or both");
+  // A studied design (schema 40) has no recipe; its measured frame is printed, not predicted.
+  const studied = design?.kind === "studied";
+  const inputs = [...(design && !studied ? designSpecs(design) : []), ...(req.techniques ?? [])];
+  if (inputs.length === 0 && !notFound && !studied) throw new Error("give techniques, a design, or both");
   const { specs, refused } = parseMemberSpecs(inputs);
   const members = await fetchBudgetMembers(specs);
   // A design's own region is the default; the caller's word overrides it.
   const region = req.region ?? design?.region ?? undefined;
   const plan = planBudget(members, { ...req, region });
   const structured: PlanBudgetOutput = {
-    design: design
-      ? {
-          name: design.name,
-          title: design.title,
-          region: design.region,
-          instance_of: design.instance_of,
-          realised_by: design.realised_by,
-          composes: design.composes,
-          source_doc: design.source_doc,
-          measured: compareMeasured(design.measured, plan.phases),
-        }
-      : null,
+    design: design ? designOutput(design, plan.phases) : null,
     ...(notFound ? { design_not_found: notFound } : {}),
     techniques: specs.map(specText),
     refused,
