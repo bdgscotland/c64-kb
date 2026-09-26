@@ -2326,6 +2326,29 @@ expanded frame uses the expanded width: `48 - 2 * offset - 2 * box_width`
 (arithmetic from the two rules, not measured here). Scaling the box in
 compiled C with variable shifts took 158 cycles a box in that recipe.
 
+**Half the pool a frame, with a deadline.** In a game frame that already
+runs the objects, the weapons and a 16-slot multiplexer, the pass above
+did not fit. Measured in the run-and-gun starter (`templates/run-and-gun`,
+`src/collide.c`, `make weapons` on NTSC, VICE x64sc 3.10): every object
+against every box with 16-bit boxes cost 1,379 cycles at one moment with
+interrupts off and lost 16 frames. What fitted, step by step: test half
+the pool a frame by pool index against the frame count's low bit (778
+cycles); skip the pass when nothing that hits is live (568); keep each
+bullet's box from its draw, no call and no shifts (1 frame still lost);
+skip a pass that would start after line 100, keeping its half for the next
+frame, never twice in a row (0 lost). The pair test itself rejects first on
+one byte of Y in sprite-line coordinates (Y + row: every shown slot is at
+Y 0-187 and a box is at most 21 high, so it cannot alias in 8 bits,
+arithmetic), then a window of lines, then 16-bit X. The result: 465 cycles for one
+pass of four objects, 660 a frame on average in `make weapons` and 750 in a
+full 11-slot wave (VICE profiler, `prof flat`, NTSC). The tunnelling bound:
+an object is tested every second frame, so a bullet at 5 pixels a frame
+moves 10 between tests, and three frames (15) after a skipped pass; the
+smallest shootable box and a bullet share 17 lines, so nothing passes
+through (arithmetic from the speeds; check it against your fastest shot
+and smallest box). A deadline read from `$D012` must act only on frames
+that began on time in a metered build (`templates/_harness/meter/frame_meter.h`).
+
 **Guard.** A fighter's guard replaces the body box with a guard box: `fighter_guard_state` below, and the pattern of that name in `game-design/enemy-behaviour-and-difficulty.md`.
 
 ### Cycle budget

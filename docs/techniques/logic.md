@@ -1106,6 +1106,19 @@ screen: `alive` then never reaches 0; free those slots when they leave.
 - **Input or collision left on.** A bullet still in flight kills the
   player during the walk, and a held stick fights the script. Commando
   skips its hit test for the whole walk.
+- **The gathered wave is the game's worst frame, not the wave's tick.**
+  The 599 above is the wave logic alone, with plain sprites. In a game the
+  wave's riflemen walk to the player's column and stop above him, so a full
+  pool gathers in one band of lines: more than eight sprites a line for the
+  multiplexer, and every object's logic running over lines with sprite
+  DMA. Measured in the run-and-gun starter (`templates/run-and-gun`, `make
+  fullpool`: a wave of 12 into 11 slots, VICE x64sc 3.10, the harness
+  meter's logic frame with its IRQs): the worst frame was 14,261 cycles on
+  NTSC and lost a frame, until a thinking object whose tick would start
+  after line 95 only followed the ground that frame (objects.c `OBJ_LATE`);
+  then 13,568 worst and 11,945 typical on NTSC, 13,691 and 11,517 on PAL,
+  no frame lost (60 ticks skipped on NTSC, none on PAL). Budget the gathered
+  wave, and give the objects' logic a deadline.
 - **A death during the wave.** Decide whether the wave restarts. Commando
   resets it to 20 at every respawn, and a death at the gate restarts the
   player 19 rows back (measured).
@@ -1431,8 +1444,18 @@ the scan starts at event 0 every time, and the death at 40 skipped 14 of
 the 26. A long list can keep a second column in the checkpoint table, the
 index of the first event inside each checkpoint's window, and start the
 scan there (not measured here). Redrawing the visible map at the restart
-row costs far more than the scan; a game runs it behind the death
-sequence or a blank screen.
+row costs far more than the scan. A game that already scrolls with
+`row_map_redraw` needs neither a blank screen nor a death sequence to hide
+it: the restart is one more redraw frame. Commit the new view with YSCROLL
+0, start the copy on line 64, and the old view stays on screen until the
+frame IRQ applies the new one, because the copy stays behind the beam
+(`row_map_redraw`, the start rule). Measured in the run-and-gun starter
+(`templates/run-and-gun`, `make death`, VICE x64sc 3.10): the restart's
+logic (pool cleared, the window's events re-spawned, soldier and weapons
+reset, grenades topped up) 1,480 cycles on PAL and NTSC, the redraw's
+smallest lead 231 lines PAL and 189 NTSC, no frame lost over three deaths.
+An earlier version of this paragraph said the redraw must be hidden behind
+the death sequence or a blank screen.
 
 **When not to use it.**
 
