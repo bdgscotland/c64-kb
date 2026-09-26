@@ -551,17 +551,16 @@ modules own the difference. What they must keep:
 
 - A logic frame ends before line 250 of its frame, or the frame is lost.
   Room left: about 16,600 cycles on PAL and 14,000 on NTSC.
-- The logic frame before a redraw ends before line 224 of the next
-  display frame (286 lines after 250 on PAL, 237 on NTSC), or the redraw
-  starts late and its lead shrinks one line for each line late.
-- Every cycle an IRQ spends while the redraw runs comes off its lead:
-  27 lines on NTSC is about 1,750 cycles. Enemy zones above row 20 are
-  that budget. The music no longer is: it is held off the redraw frame
-  ("Audio" below; the lead is still 27 lines on NTSC). An earlier version
-  of this line gave the music a share of it. Measure the lead again (row
-  6 of the verdict) after adding zones.
-- The frame after a redraw runs no logic; it ends on NTSC line 205, 45
-  lines before its deadline.
+- The redraw frame ends its work before line 250, or the redraw is late.
+  An earlier version of this rule said before line 224, when the redraw
+  waited for the band's tick; it now starts at line 64 ("Combined budget").
+- Every cycle an IRQ or sprite DMA spends while the redraw runs comes off
+  its lead. The music is held off the redraw frame ("Audio" below).
+  Measure the lead again (row 6 of the verdict, `make longplay`) after
+  adding zones or work to the redraw pair.
+- The frame after a redraw now runs the weapons, collisions and rules
+  ("Combined budget"); an earlier version of this line said it ran no
+  logic. It must end before line 250 (verdict row 8 `LF`).
 
 ## Audio
 
@@ -756,7 +755,7 @@ A module never writes the VIC's sprite registers: it writes its slots
 | Kernel | kernel.asm, mux.asm | `$D012` and the chain, the band, the redraw, the 16-slot multiplexer | `commit` bits (`COMMIT_YS`, `COMMIT_MUX`), `pend_ys`, `frame_flag`, `band_tick`, `redraw`, `mux_sort`, `mux_build`, the slot tables `slot_y/xl/xh/ptr/col/pri` |
 | Scroll | scroll.c/h | the view: `scroll_top`, `scroll_ys`, `scroll_wy` | `scroll_step`, `scroll_can_step`, `map_x`, `map_y`, `attr_at`, `code_at`, `scroll_init(top, ys)` |
 | Soldier | soldier.c/h | slot 0, the stick | `soldier_x`, `soldier_y`, `soldier_facing` (0-15), `soldier_behind`; `soldier_update(joy)`, `soldier_draw` |
-| Objects and enemies | objects.c/h, spawns.h | slots 5-15, the pool, the spawn list | `obj_alloc`, `obj_free`, `objects_rows(top)` (wave_director: spawns keyed to map rows, fired as the top row reaches them), `objects_update` (writes the slots), `objects_draw` (empty), `objects_scroll` (returns 1 when main.c must rebuild); for collide: `kind_box`, `kind_flags`, `obj_kill(slot)`; objects keep map coordinates and draw at Y = my - scroll_wy + 54 |
+| Objects and enemies | objects.c/h, spawns.h | slots 5-15, the pool, the spawn list | `obj_alloc`, `obj_free`, `objects_rows(top)` (wave_director: spawns keyed to map rows, fired as the top row reaches them), `objects_update` (writes the slots), `objects_draw` (empty), `objects_hold` (the redraw pair: no think, slots follow the ground); for collide: `kind_box`, `kind_flags`, `obj_kill(slot)`; objects keep map coordinates and draw at Y = my - scroll_wy + 54 |
 | Weapons | weapons.c/h | slots 1-3 (bullets), 4 (grenade), decrements `grenades` | `weapons_update(joy)` (fire joy bit 4, throw `JOY_THROW` bit 5), `weapons_reset`; for collisions: `Box`, `box_hit`, `box_has`, `box_blast`, `weapons_bullet_box(i, &b)`, `weapons_bullet_spent(i)`, `weapons_blast_box(&b)` ("Weapons", below) |
 | Collision (next) | collide.c/h | boxes | `collide()`, after objects and weapons moved; scenery is `attr_at` |
 | Flow | flow.c/h | `score` (BCD, 3 bytes), `lives`, `grenades`, how a game ends | `flow_new_game`, `flow_frame` (redraws the panel fields whose value changed: set `lives`/`grenades`, call `flow_add_score(bcd)`, and the panel follows), hooks `flow_player_died` (now: a life off, game over at none) and `flow_area_cleared` (now: the game ends); next: checkpoint_respawn restarts through `scroll_init(row, 0)`, `objects_reset`, `objects_rows`; area_end_gate_wave starts when `scroll_can_step()` is 0; the gate is `G_GATE`, map rows 1-2, columns 18-21 |
@@ -951,13 +950,11 @@ pre-spawn window) and `atan2_8bit` (its "Variations" for the aim).
   and moves two frames' worth; on the other frame only its slot's Y follows
   the ground. This halved the objects' cost against thinking every frame
   (below).
-- **The redraw frame.** `objects_scroll` moves every shown pool slot down
-  the line the soldier's repeated step scrolled, and main.c builds the table
-  without a new sort (`actors_rebuild`; Commando skips its sort on coarse
-  frames too). It runs only if the frame begins by line 192 (`LFX_LAST`).
-  With eight sprites up it ran after 13 of 13 redraws on PAL and 0 of 13 on
-  NTSC, whose redraw ends on line 195: forced, the NTSC run lost 6 frames.
-  So on NTSC the objects keep the slice's one-line lag for that frame.
+- **The redraw frame.** Replaced at the merge ("Combined budget"): no
+  object thinks on the redraw frame or the frame after it; `objects_hold`
+  moves every shown slot with the ground on both, and main.c sorts. An
+  earlier version moved them on the frame after only (`objects_scroll`,
+  `actors_rebuild`, `LFX_LAST`), which did not fit on NTSC.
 - **For the collision module.** `kind_box[kind]` (sprite pixels from the
   slot's own registers), `kind_flags` (`KF_SHOOTABLE`, `KF_HURTS`), and
   `obj_kill(slot)`: an enemy turns to dust, freed 24 frames later; it
@@ -981,7 +978,8 @@ Measured (VICE x64sc 3.10, `make shot check`; the same walk as before):
 | Lost frames | 0 | 0 | 0 | 0 |
 
 `make enemies` (the same walk, `-dENEMYTEST=1`), CIA1 timer A around the
-module's calls, wall time (an IRQ that lands inside is counted), the first
+module's calls (timer B since the merge: the audio stopwatch in the frame
+IRQ uses timer A), wall time (an IRQ that lands inside is counted), the first
 200 logic frames:
 
 | | PAL | NTSC |
@@ -1165,6 +1163,91 @@ reads). Its path rests on the emitted order in build/run-and-gun.asm
 (`LDA #$7F`, `STA $DC00`, `LDA $DC01`, `AND #$10`, then `LDA #$FF`,
 `STA $DC00`).
 
+## Combined budget
+
+Measured at the merge of enemies, weapons, audio and the front end (VICE
+x64sc 3.10). "Before" is the merge as it came together (5cdb017): the
+redraw waited for the band's tick on line 224 and copied at 14 cycles a
+byte, and the whole game's logic ran on the redraw frame. `make weapons`
+is the heaviest run here: enemies spawning, shots and grenades, the music
+and effects, and 15 redraws while firing.
+
+| | PAL before | PAL now | NTSC before | NTSC now | Instrument |
+|---|---|---|---|---|---|
+| Logic frame, worst / typical, `make shot` | 9,598 / 6,354 | 9,401 / 6,323 | 9,739 / 6,636 | 9,816 / 6,662 | harness meter, first 200 logic frames (verdict row 9) |
+| Logic frame, worst / typical, `make weapons` | 9,675 / 6,396 | 9,714 / 6,434 | 10,236 / 6,772 | 10,280 / 6,796 | the same |
+| Redraw, most cycles, `make weapons` | 16,016 | 16,106 | 17,533 | 16,063 | CIA1 timer B, IRQs inside included (row 6) |
+| Redraw's smallest lead, `make weapons` | 42 lines | 195 lines | 0 lines | 159 lines | row 6 `LD`: 208 minus the end line, per frame |
+| Redraw's smallest lead, `make shot` | 65 lines | 221 lines | 13 lines | 180 lines | the same |
+| The frame after a redraw ends, latest, `make weapons` | 246 | 135 | 245 | 197 | row 8 `LF`, limit 250 |
+| Lost frames, `make weapons` (whole script) | 2 | 0 | 6 | 0 | row 17 `ALL` |
+| `make longplay`: lead / lost frames | 58 / 0 | 211 / 0 | 4 / 0 | 168 / 0 | the normal build driven 2,700 frames, 607 lines, 75 redraws, 20 shots; RAM counters |
+
+The meter covers the first 200 logic frames only: `make shot`'s include
+13 redraws and no fire, `make weapons`' every shot and throw and no
+scroll. The redraw pair itself is measured by rows 6 and 8 and by
+`make longplay`. Before the change the NTSC lead in the longplay was 4
+lines, under the verdict's floor of 8; `make weapons` lost frames on both
+models.
+
+Where the redraw frame's time went, before (NTSC, a raster-line trace of
+each call on the redraw frames of `make weapons`, a scratch build, most
+lines): soldier 13, spawns 9, `objects_update` 73, weapons 27, collisions
+and rules 8, draws 9, sort and build 65. That logic ended on line 202 at
+worst; the copy (17,533 cycles, 270 lines) then ran past line 208 of the
+next frame. The CPU had idled from the logic's end to line 224.
+
+What changed, each step measured on `make weapons` before the next:
+
+1. **The redraw starts at line 64** (main.c `RD_FIRST`), not at the band's
+   tick. A row may be rewritten once the beam has fetched it this frame;
+   row 0's badline is line 55 at YSCROLL 7. The copy is slower than the
+   beam (below), so it stays behind it. Alone this gave PAL 83 lines of
+   lead and NTSC 0 with 11 lost frames: the logic still ended as late, and
+   a copy longer than a frame met the band IRQ twice.
+2. **The redraw pair splits the logic.** The redraw frame runs the
+   soldier, the spawns and, when they end before line 64 (`HOLD_LINES`),
+   the sprites' move with the ground and the sort; then the redraw. The
+   frame after runs the repeat step, the move, the weapons, collisions,
+   rules and the sort. No object thinks on either frame (`objects_hold`),
+   so an object misses one think in eight frames while the map scrolls.
+   After this: NTSC lead 79, 4 frames lost, the frame after ending on
+   line 246.
+3. **The copy moves two bytes a pass** (kernel.asm: bytes Y and Y + 20 of
+   a row, 11.5 cycles a byte against the recipe's 14, 531 cycles a row
+   with the patching). The redraw fell from 17,558 to 16,044 cycles in
+   `make weapons` on NTSC, 16,132 to 14,802 in `make shot`.
+4. **The sprites' move on the redraw frame only when it fits.** On NTSC
+   the soldier's step ends about line 20, and the move and sort (up to 65
+   lines) pushed the redraw and the frame after it as late. There the
+   pool's slots keep last frame's lines for one frame and the frame after
+   moves them two. After this the table above.
+
+The trail over the beam: a scratch build stored each row's first raster
+line (`$D011`, `$D012`) in the copy loop, and C took the least
+`line - (55 + 8 x row)` over every row copied before line 250: 11 lines,
+at row 0, on PAL and NTSC, in `make shot` and `make weapons` (220 to 242
+rows traced a run). The copy never overtook the beam. By arithmetic the
+rows fall further behind: 531 cycles a row is 8.2 NTSC lines against the
+beam's 8, before badlines and sprite DMA.
+
+The lead formula: an end on lines 250 to 311 (262), after the frame IRQ
+that applied YSCROLL 0, still has that frame's line 208 ahead. main.c
+took it as a frame late until this merge; a PAL copy started at line 64
+ends there. Only the new start reaches it.
+
+Not measured here: a 6569 (the PAL runs are the C64C model), and a full
+pool of 11 with three shots and a blast on one redraw pair (no run here
+arranges it).
+
+Proof after the merge: `node scripts/verify-templates.ts --only run-and-gun
+--selftest` in c64-kb made the starter a fresh project and passed `make
+all`, `make shot check` (47 of 47), `make disk`, `make selftest`, and every
+`VERIFY_TARGETS` target: `mapend` (10 of 10), `enemies` (24 of 24),
+`weapons` (36 of 36), `weaponsfault`, `audio`, `audiotest`, `frontend` (13,
+17, 21 and 37 of each), `fedrive` and `longplay`; "verify-templates: 1 of 1
+starters passed".
+
 ## Decisions and open questions
 
 - Oscar64 with a KickAssembler blob, the shmup-vertical layout: the band,
@@ -1176,16 +1259,13 @@ reads). Its path rests on the emitted order in build/run-and-gun.asm
   sprite table, so the soldier and the ground move in the same frame.
   Waking at the band's tick (224) instead, as the redraw recipe's loop
   does, gives a frame 26 lines to commit before line 250.
-- The redraw pair: the logic frame in which YSCROLL wraps commits YSCROLL
-  0 with its sprites, waits for the band's tick on line 224 (row 20 was
-  fetched by line 215 at YSCROLL 7), and calls `redraw`. The frame IRQ
-  applies YSCROLL 0 during the copy. The next frame wakes late (the copy
-  ends on line 135 or 181) and runs no logic: it repeats the scroll step
-  if the soldier's up probe is still free and commits YSCROLL only. So the
-  scroll keeps 1 line a frame, and objects on the ground lag one line for
-  that one frame (Commando skips its sort on coarse frames too; the
-  archetype page). `objects_scroll` is where the enemies module may fix
-  that if it fits. It does on PAL and not on NTSC (section "Enemies").
+- The redraw pair ("Combined budget"): the frame in which YSCROLL wraps
+  runs the soldier and the spawns, moves and sorts the sprites if that
+  ends before line 64, commits YSCROLL 0, and calls `redraw` at line 64.
+  The frame after runs the soldier's repeat step, the weapons, collisions
+  and rules. An earlier version waited for the band's tick on line 224,
+  ran the whole game's logic before the redraw and none after it; with
+  the four modules merged its NTSC lead fell to 0 lines.
 - Sprites stop at Y 187 (last line 208), three lines above the band IRQ.
   The band's windows were measured in its recipe with one sprite across
   them, not eight; `make phases` checks one sprite at 187.
@@ -1201,7 +1281,8 @@ reads). Its path rests on the emitted order in build/run-and-gun.asm
   music does not ("Audio"); an earlier version of this item said it did.
   The frame IRQ after a redraw can run its audio to about line 20 of the
   next NTSC frame ("The worst frame IRQ"): no zone may be due above that.
-  The combined figures are in "Combined budget". A `DEADLINE_LINE`
+  After the merge the redraw starts at line 64 and the NTSC lead is 159
+  lines or more ("Combined budget"). A `DEADLINE_LINE`
   (harness `make watch`) of 224 would check the pre-redraw rule on every
   frame; it needs an `OVERRUN` build and is not wired yet.
 - Open: the README gallery and the archetype page's `**Starter:**` line

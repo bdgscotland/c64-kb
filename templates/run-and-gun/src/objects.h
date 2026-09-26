@@ -71,9 +71,9 @@ void objects_update(void);              // one frame: half the pool thinks (move
                                         // ground; cull what left the view
 void objects_draw(void);                // empty: objects_update, obj_kill and obj_free write the
                                         // slots (kept so main.c's order stays as documented)
-char objects_scroll(void);              // the frame after a redraw (no logic runs): move every
-                                        // shown slot by the scroll step taken since the last
-                                        // draw; 1 when it moved any (main.c re-sorts, commits)
+void objects_hold(void);                // the redraw frame and the frame after it, instead of
+                                        // objects_update: nothing thinks, every shown slot
+                                        // follows the ground (main.c sorts and commits)
 
 #if AUTOPILOT
 // Test counters (the verdict of make enemies prints them).

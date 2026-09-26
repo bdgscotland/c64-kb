@@ -475,14 +475,19 @@ void objects_draw(void)
 // row_map_redraw's next frame runs no logic, but the soldier's repeated step
 // moves the ground a line: move every shown pool slot with it, so objects stay
 // on their cells (the slice left them a line behind for that frame).
-char objects_scroll(void)
+// The redraw pair (main.c play_frame and light_frame): no object thinks,
+// every shown slot follows the scroll step taken since the last draw, and a
+// slot pushed below the cut is parked (objects_update frees its object on
+// its next tick). The combined build lost frames on NTSC when objects_update
+// ran on the redraw frame (PLAN.md, "Combined budget").
+void objects_hold(void)
 {
 #if ENEMY_FAULT
-    return 0;
+    return;                                    // make enemies' fault: the slots keep last frame's lines
 #endif
     char d = (char)(drawn_wy - scroll_wy);
     if (!d)
-        return 0;
+        return;
     drawn_wy = scroll_wy;
     char moved = 0;
     for (char s = SLOT_POOL; s < SLOT_POOL + N_POOL; s++) {
@@ -499,7 +504,6 @@ char objects_scroll(void)
 #if AUTOPILOT
     ost_fixes += moved;
 #endif
-    return moved;
 }
 
 #if AUTOPILOT
@@ -507,7 +511,7 @@ void objects_audit(void)
 {
     char vis = 0;
     int top_my = scroll_wy - 54;
-    char lagging = drawn_wy != scroll_wy;      // the redraw frame's move was left out (main.c LFX_LAST)
+    char lagging = drawn_wy != scroll_wy;      // the ground moved and the slots did not follow
     ost_lag_skip += lagging;
     for (char s = 0; s < N_SLOTS; s++) {
         char y = SLOT_Y[s];

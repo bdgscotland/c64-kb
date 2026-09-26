@@ -306,16 +306,31 @@ static void meter_close(void)
 // (recipe row-map-redraw), so the last row's is the smallest. rd_lead is that
 // lead in lines, the smallest of the run; rd_cyc the most CIA1 timer B cycles
 // one redraw took, interrupts that landed inside included.
+//
+// When it starts. The recipe starts the copy after the last playfield row's
+// badline (line 224 here, the band's tick). With the enemies, weapons and
+// music up that left the NTSC lead at 0 lines (make weapons: 17,533 cycles,
+// ended on line 241 of the next frame) while the CPU idled from the end of
+// the logic to line 224. A row may be rewritten as soon as the beam has
+// fetched it this frame: the frame still shows YSCROLL 7, and the new rows
+// are for the frame after the line-250 IRQ. The copy takes at least 531
+// cycles a row (kernel.asm), 8.2 NTSC or 8.4 PAL lines, against the beam's 8
+// lines a row, so once it starts behind the beam it stays behind it
+// (arithmetic from the loop). It starts at RD_FIRST: row 0's badline is line
+// 55 at YSCROLL 7, row 1's 63. A trace of each row's first line measured the
+// trail (PLAN.md, "Combined budget").
+#define RD_FIRST 64
 static unsigned rd_count, rd_cyc, rd_end_line;
 static int rd_lead;
-static unsigned rd_late;
+static unsigned rd_late, rd_start_min;
 static char light;                      // 1: the frame after a redraw
 
 // Where the work ended, in raster lines (9 bits). pre_end: the latest end of
 // a frame's logic before a redraw, counted in lines after line 250; the
-// redraw waits for the band's tick on line 224, so past 312 - 250 + 224 = 286
-// (PAL) or 263 - 250 + 224 = 237 (NTSC) it starts late. light_end: the latest
-// line the frame after a redraw ended on; past 250 it is lost.
+// redraw starts at once (or at RD_FIRST), so past 312 (PAL) or 263 (NTSC)
+// the frame IRQ has already applied YSCROLL 0 and the redraw is late.
+// light_end: the latest line the frame after a redraw ended on; past 250 it
+// is lost.
 static unsigned pre_end, light_end;
 
 static unsigned raster_line(void)
@@ -328,10 +343,17 @@ static unsigned raster_line(void)
 static void do_redraw(void)
 {
     sound_hold();                       // the frame IRQ inside the copy only counts its audio step
-    while (!K_BAND_TICK) ;              // line 224: row 20 was fetched on line 215 at the latest
     char f = K_FRAME_CNT;
     if (f != wake_fc)
         rd_late++;                      // the frame's logic ran past line 250: YSCROLL 0 already shows
+    unsigned start;
+    for (;;) {                          // lines RD_FIRST-249: row 0 fetched, the frame IRQ not yet
+        start = raster_line();
+        if ((start >= RD_FIRST && start < 250) || K_FRAME_CNT != f)
+            break;
+    }
+    if (counting && (rd_count == 0 || start < rd_start_min))
+        rd_start_min = start;
     cia1.crb = 0x00;
     cia1.tb = 0xffff;
     cia1.crb = 0x11;                    // force load, start, count phi2
@@ -345,12 +367,14 @@ static void do_redraw(void)
         return;
     unsigned end = K_REDRAW_END;
     unsigned lines = ntsc ? 263 : 312;
-    int lead = 208 - (int)end;
-    char frames = K_REDRAW_FC - f;      // 1: it ended in the next frame, as planned
-    if (frames == 0)
+    // The deadline is line 208 of the first frame the frame IRQ numbered
+    // f + 1 (YSCROLL 0) starts. frames: frame IRQs taken during the copy.
+    // An end on lines 250-311 (262) after that IRQ still has that frame's
+    // line 208 ahead of it; an earlier version of this sum took it as late.
+    char frames = K_REDRAW_FC - f;
+    int lead = 208 - (int)end - ((int)frames - 1) * (int)lines;
+    if (frames && end >= 250)
         lead += lines;
-    else if (frames > 1)
-        lead -= lines;
     rd_count++;
     if (c > rd_cyc)
         rd_cyc = c;
@@ -412,33 +436,49 @@ static void actors_commit(char what)
     K_COMMIT = what;                    // one store: the frame IRQ applies both halves at once
 }
 
-// The frame after a redraw: the pool's slots moved one line with the ground
-// and nothing else moved, so the last sort stands (Commando skips its sort on
-// coarse frames too, archetype vertical_run_and_gun); only the table is built.
-static void actors_rebuild(void)
-{
-    __asm {
-        jsr ASM_MUX_BUILD
-    }
-    K_COMMIT = COMMIT_YS | COMMIT_MUX;
-}
-
 // One frame of play. The order: the soldier (who may scroll the map), the
 // objects on the new view, the weapons, the collisions, the rules; then every
 // slot and the commit, which the frame IRQ applies at line 250 with YSCROLL.
+//
+// The redraw pair (PLAN.md, "Combined budget"). When the soldier's step wraps
+// YSCROLL (scroll_redraw_due), this frame runs only the soldier, the spawns,
+// the objects' move with the ground and the sort, and commits; main.c then
+// starts the redraw at line RD_FIRST. The frame after it (light_frame) runs
+// the soldier's repeat step, the move with the ground again, the weapons,
+// the collisions and the rules. No object thinks on either frame. With the
+// objects' think, the weapons and the sort all ahead of the redraw, the NTSC
+// build lost frames and the redraw's lead fell to 0 lines.
 #ifdef ENEMYTEST
-// make enemies: the objects' work each frame, timed by CIA1 timer A (wall
+// make enemies: the objects' work each frame, timed by CIA1 timer B (wall
 // time: an IRQ that lands inside is counted), and obj_kill tried once.
-static unsigned obj_cyc_max, lfx_cyc_max, mux_cyc_max, obj_cyc_now;
+// Timer B, as the redraw's stopwatch, which never runs at the same time:
+// timer A is the audio stopwatch in the frame IRQ (sound.asm), and the
+// enemies branch's timer A readings could be cut short by it.
+static unsigned obj_cyc_max, mux_cyc_max, obj_cyc_now;
 static unsigned long obj_cyc_sum, mux_cyc_sum;
 static unsigned obj_cyc_n;
 static char kill_kind, kill_slot, kill_gone;
-#define OBJ_T0 do { cia1.cra = 0x00; cia1.ta = 0xffff; cia1.cra = 0x11; } while (0)
-#define OBJ_T1(m) do { cia1.cra = 0x00; unsigned c_ = 0xffff - cia1.ta; obj_cyc_now += c_; if (counting && meter_frames < METER_HOLD && c_ > (m)) (m) = c_; } while (0)
+#define OBJ_T0 do { cia1.crb = 0x00; cia1.tb = 0xffff; cia1.crb = 0x11; } while (0)
+#define OBJ_T1(m) do { cia1.crb = 0x00; unsigned c_ = 0xffff - cia1.tb; obj_cyc_now += c_; if (counting && meter_frames < METER_HOLD && c_ > (m)) (m) = c_; } while (0)
 #else
 #define OBJ_T0
 #define OBJ_T1(m)
 #endif
+
+// The redraw frame moves the sprites with the ground only when the move, the
+// draws and the sort (HOLD_LINES, about 54 PAL lines measured) end before the
+// redraw's first line; otherwise they would push the redraw, and the frame
+// after it, later by as much. On PAL they fit; on NTSC the soldier's step
+// ends about line 20, 44 lines before RD_FIRST, so the pool's slots lag the
+// ground by one line for that one frame and light_frame moves them two.
+#define HOLD_LINES 64
+static unsigned lines_to_redraw(void)
+{
+    unsigned l = raster_line();
+    if (l >= 250)
+        return (ntsc ? 263 : 312) - l + RD_FIRST;
+    return l < RD_FIRST ? RD_FIRST - l : 0;
+}
 
 static void play_frame(char joy)
 {
@@ -453,6 +493,16 @@ static void play_frame(char joy)
     OBJ_T0;
     if (scroll_top != top)
         objects_rows(scroll_top);
+    if (scroll_redraw_due) {
+        if (lines_to_redraw() >= HOLD_LINES) {
+            objects_hold();
+            soldier_draw();
+            objects_draw();
+            actors_commit(COMMIT_YS | COMMIT_MUX);
+        } else
+            K_COMMIT = COMMIT_YS;       // no time: the sprites keep last frame's lines one frame
+        return;
+    }
     objects_update();
     OBJ_T1(obj_cyc_max);
     weapons_update(joy);
@@ -478,23 +528,21 @@ static void play_frame(char joy)
 #endif
 }
 
-// The frame after a redraw starts late (the redraw ran over the top of the
-// screen). It runs no game logic (row_map_redraw, "How" step 6): the scroll
-// keeps its pace, and the sprite table stays as committed.
-// The pool's move and the table's build take about 39 lines with nine
-// sprites up (make enemies, LFX), and the band IRQ holds lines 211-224: begun
-// after LFX_LAST they could end past line 250 and lose the frame, so the
-// objects then keep last frame's lines for this one frame (the slice's lag).
-#define LFX_LAST 192
-static void light_frame(void)
+// The frame after a redraw starts where the redraw ended (about line 30 on
+// PAL, 110 on NTSC, make shot). It takes no new input for the soldier
+// (row_map_redraw, "How" step 6: the scroll keeps its pace) and no object
+// thinks; the weapons, the collisions and the rules that the redraw frame
+// left out run here, on this frame's stick.
+static void light_frame(char joy)
 {
     soldier_repeat_step();
-    OBJ_T0;
-    if (raster_line() <= LFX_LAST && objects_scroll())  // the ground moved: objects move with it
-        actors_rebuild();
-    else
-        K_COMMIT = COMMIT_YS;
-    OBJ_T1(lfx_cyc_max);
+    objects_hold();
+    weapons_update(joy);
+    collide();
+    flow_frame();
+    soldier_draw();
+    objects_draw();
+    actors_commit(COMMIT_YS | COMMIT_MUX);
     light = 0;
 }
 
@@ -651,8 +699,8 @@ static char first_fail_enemies(void)
     CHECK(ost_shots > 0 && ost_nades > 0)                   // 5 riflemen fired, grenadiers threw
     CHECK(ost_wall > 0)                                     // 6 a shot ended on a blocking cell
     CHECK(ost_park_bad == 0 && ost_shown_bad == 0)          // 7 free slots parked, shown = above the cut, every frame
-    CHECK(ost_lag_bad == 0 && ost_fixes + ost_lag_skip > 0) // 8 shown slots on their cells, redraw frames too
-    CHECK(kill_kind == K_RUNNER && kill_gone == 24)         // 9 obj_kill: dust for 24 frames, then free
+    CHECK(ost_lag_bad == 0 && ost_fixes > 0)                // 8 shown slots on their cells; the redraw pairs moved them
+    CHECK(kill_kind == K_RUNNER && kill_gone == 23)         // 9 obj_kill: dust for 12 ticks (23 frames with a redraw pair inside), then free
     return 0;
 }
 #endif
@@ -699,9 +747,10 @@ static void verdict(void)
     put_text(s, 11, 1, "MUX 00000 00000");
     put_dec(s + 11 * 40 + 5, mux_cyc_max, 5);
     put_dec(s + 11 * 40 + 11, (unsigned)(mux_cyc_sum / obj_cyc_n), 5);
-    put_text(s, 12, 1, "LFX 00000 LF 000");
-    put_dec(s + 12 * 40 + 5, lfx_cyc_max, 5);
-    put_dec(s + 12 * 40 + 14, light_end, 3);
+    put_text(s, 12, 1, "LF 000 RS 000 RDC 00000");
+    put_dec(s + 12 * 40 + 4, light_end, 3);
+    put_dec(s + 12 * 40 + 11, rd_start_min, 3);
+    put_dec(s + 12 * 40 + 19, rd_cyc, 5);
     put_text(s, 13, 1, "PEAK 00 LOST 00 LD 000");
     put_dec(s + 13 * 40 + 6, ost_peak, 2);
     put_dec(s + 13 * 40 + 14, overruns, 2);
@@ -732,7 +781,9 @@ static void verdict(void)
     put_dec(s + 8 * 40 + 7, K_MUX_SHOWN, 2);
     put_dec(s + 8 * 40 + 14, pre_end, 3);
     put_dec(s + 8 * 40 + 21, light_end, 3);
-    sound_print(s, 3, 19);
+#ifndef WEAPONS
+    sound_print(s, 3, 19);                // make weapons: cols 19-38 of row 3 are the blast's lines
+#endif
     text_colour(3, 1, 17, TEXT_CRAM);
     text_colour(4, 1, 25, TEXT_CRAM);
     text_colour(5, 1, 22, TEXT_CRAM);
@@ -810,7 +861,7 @@ int main(void)
 #endif
             if (light) {
                 meter_flush();          // the frame before the redraw is recorded; this one is not
-                light_frame();
+                light_frame(joy);
                 unsigned l = raster_line();
                 if (counting && l < 250 && l > light_end)
                     light_end = l;

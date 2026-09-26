@@ -28,7 +28,9 @@
 // first owed step is never played).
 //
 // Nothing here may use zero page (Oscar64 owns it). CIA1 timer A is the
-// stopwatch: nothing else in FIREBASE uses it (KERNAL out, CIA1 IRQs off).
+// stopwatch: nothing else in FIREBASE uses it (KERNAL out, CIA1 IRQs off;
+// main.c's stopwatches use CIA1 timer B). An earlier version of main.c's
+// make enemies build timed with timer A too.
 
 #import "gen/tune.asm"
 

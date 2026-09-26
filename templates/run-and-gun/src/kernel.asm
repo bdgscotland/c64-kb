@@ -23,9 +23,9 @@
 // what runs before it does not move the stores).
 //
 // The redraw (row_map_redraw, recipe kickassembler/row-map-redraw) copies 21
-// rows of the raw map to the screen, top row first, 14 cycles a byte. C calls
-// it on the frame YSCROLL wraps, after band_tick, and commits YSCROLL 0 in the
-// same frame (scroll.c).
+// rows of the raw map to the screen, top row first, 11.5 cycles a byte. C
+// calls it on the frame YSCROLL wraps, from line 64 (main.c RD_FIRST), and
+// commits YSCROLL 0 in the same frame (scroll.c).
 //
 // Nothing here uses zero page: Oscar64 owns $02-$5x. KERNAL and BASIC are
 // banked out ($01 = $35), so the vectors are $FFFE and $FFFA.
@@ -330,9 +330,15 @@ delay213:                       // line 213 is a badline at YSCROLL 5
         .fill 8, i == 5 ? D213B : D213
 
 // ---- the redraw: rows 0-20 from map row redraw_top, top row first ----------
-// LDA map,Y / STA screen,Y with both operands patched per row (the recipe's
-// loop). The loop sits in one page: a taken BPL across a page costs one more
-// cycle a byte, 819 a redraw (the recipe measured it).
+// The recipe's loop (LDA map,Y / STA screen,Y, operands patched per row) with
+// each row copied as two halves in one pass: Y 19 to 0 moves bytes Y and
+// Y + 20, so a byte costs 11.5 cycles instead of 14 (4 + 5 twice, then DEY
+// and BPL for the pair), about 531 a row with the patching. The recipe's
+// 14-cycle loop left the NTSC lead at 79 lines in make weapons; this one
+// leaves PLAN.md "Combined budget"'s figure. A row still takes longer than
+// the beam's 8 lines (8.2 NTSC lines at 531 cycles, more with the badline),
+// so a copy started behind the beam stays behind it (main.c RD_FIRST). The
+// loop sits in one page: a taken BPL across a page costs one more cycle.
 .align $100
 redraw:
         ldx redraw_top
@@ -345,9 +351,27 @@ redraw:
         lda #>SCREEN
         sta rd_dst+2
         ldx #PF_ROWS
-rd_row: ldy #39
+rd_row: lda rd_src+1            // the second half: both operands + 20
+        clc
+        adc #20
+        sta rd_src2+1
+        lda rd_src+2
+        adc #0
+        sta rd_src2+2
+        lda rd_dst+1
+        clc
+        adc #20
+        sta rd_dst2+1
+        lda rd_dst+2
+        adc #0
+        sta rd_dst2+2
+        ldy #19
 rd_src: lda $ffff,y
 rd_dst: sta $ffff,y
+rd_src2:
+        lda $ffff,y
+rd_dst2:
+        sta $ffff,y
         dey
         bpl rd_src
 .assert "redraw copy loop in one page", >rd_src, >*

@@ -1,6 +1,6 @@
 # run-and-gun (FIREBASE): a vertical run-and-gun starter. Every target but
-# assets, assetcheck, mapend, phases, enemies, weapons, weaponsfault, audio and
-# audiotest comes from the harness:
+# assets, assetcheck, mapend, phases, enemies, weapons, weaponsfault, audio,
+# audiotest, frontend, fedrive and longplay comes from the harness:
 #   make            build build/run-and-gun.prg (after the PLAN.md gate)
 #   make run        windowed VICE, joystick in port 2
 #   make shot       headless PAL and NTSC exit screenshots of the autopilot build
@@ -8,6 +8,7 @@
 #   make selftest   prove check fails on the FORCE_FAULT=1 build
 #   make drive      the normal game played headless (harness/drive.py), stick on $DC00
 #   make gallery    shots/gallery.png: the normal game in play, for a README
+#   make title      shots/title.png: the title screen, for a README
 #   make enemies    the enemies' own proof (expect-enemies.json) and its ENEMY_FAULT build
 #   make assets     re-run tools/mkassets.py, tools/mkweapons.py and tools/mktune.py (src/gen/ is committed)
 #   make assetcheck the committed src/gen/ is what the tool writes now
@@ -15,6 +16,7 @@
 #   make weaponsfault  its WEAPONS_FAULT build (autofire) must fail those checks
 #   make audio      the SID store trace: effects on voices 1-2, the tune on voice 3 in time
 #   make audiotest  its AUDIO_FAULT and AUDIO_DROP builds must fail the trace
+#   make longplay   the normal build driven 2,700 frames on PAL and NTSC: no lost frame, redraw lead
 #   make disk       build/run-and-gun.d64
 #   make clean
 NAME     := run-and-gun
@@ -40,9 +42,13 @@ SID_FRAMES := 300
 # make drive, make gallery: the text lives on the one screen at $8000.
 DRIVE_SCREEN := 8000:0-23
 
-# make gallery: the normal build in play for the README: fire on the title,
-# the autopilot's walk, stopped with the soldier just below the canopy.
-GALLERY_SCRIPT := "until:PUSH FIRE" wait:10 tap:fire wait:2 hold:up wait:75 hold:right wait:70 hold:up wait:66
+# make gallery: the normal build in play for the README, driven by
+# tools/gallery.py (drive.py with a port-1 "throw" step): fire on the title,
+# the autopilot's walk into the enemies, a grenade thrown, three shots up.
+# make title: the title screen, for the README.
+GALLERY_DRIVER := tools/gallery.py
+GALLERY_SCRIPT := "until:PUSH FIRE" wait:10 tap:fire wait:2 hold:up wait:75 hold:right wait:70 hold:up wait:36 \
+	throw hold:up wait:4 hold:up+fire wait:3 hold:up wait:3 hold:up+fire wait:3 hold:up wait:3 hold:up+fire wait:3 hold:up wait:2 print
 
 HARNESS ?= $(firstword $(wildcard harness) ../_harness)
 $(if $(wildcard $(HARNESS)/harness.mk),,$(error No harness at '$(HARNESS)'. Copy c64-kb's templates/_harness to ./harness, or make the project with npm run new-project in c64-kb))
@@ -67,7 +73,7 @@ assetcheck:
 # MAPEND): the view stops at map y 0 after 7 lines (YSCROLL 0 to 7), and he
 # walks on through the fort's gate to sprite Y 52. expect-mapend.json reads
 # its verdict at YSCROLL 7 ("dy": 4).
-VERIFY_TARGETS := mapend enemies weapons weaponsfault audio audiotest frontend fedrive
+VERIFY_TARGETS := mapend enemies weapons weaponsfault audio audiotest frontend fedrive longplay
 PRG_MAPEND := build/$(NAME)-mapend.prg
 $(PRG_MAPEND): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
@@ -280,3 +286,29 @@ FEDRIVE_STEPS := "until:PUSH FIRE TO START" "until:HIGH SCORES" "until:DEMO" "un
 fedrive: $(PRG_FEDRIVE)
 	$(DRIVE) $(PRG_FEDRIVE) $(FEDRIVE_STEPS)
 	@echo "fedrive: PASS"
+
+# ---- longplay: the combined budget on the normal build ---------------------------------
+# tools/longplay.py drives the normal build (no autopilot) through harness/drive.py
+# for 2,700 frames: up (scrolling to the map's top), taps and bursts of fire, the
+# diagonals, left, right and down, with the enemies, weapons and music all up.
+# It reads the game's own counters from RAM (addresses from build/$(NAME).map)
+# and fails on a lost frame ($02FD), a late redraw, a redraw lead under 8 lines,
+# or a frame after a redraw that ended past line 250. PLAN.md, "Combined budget".
+LONGPLAY = HARNESS_DIR='$(HARNESS_DIR)' X64SC='$(X64SC)' $(TIMEOUT) $(VICE_TIMEOUT) $(PYTHON) tools/longplay.py
+.PHONY: longplay
+longplay: $(PRG)
+	@mkdir -p shots
+	@$(LONGPLAY) --model pal $(PRG) build/$(NAME).map > shots/longplay-pal.txt 2>&1; echo $$? > shots/longplay-pal.st & \
+	 $(LONGPLAY) --model ntsc $(PRG) build/$(NAME).map > shots/longplay-ntsc.txt 2>&1; echo $$? > shots/longplay-ntsc.st & \
+	 wait; cat shots/longplay-pal.txt shots/longplay-ntsc.txt; \
+	 [ "$$(cat shots/longplay-pal.st)" = 0 ] && [ "$$(cat shots/longplay-ntsc.st)" = 0 ] || { echo "longplay: FAIL"; exit 1; }
+	@echo "longplay: PASS"
+
+# ---- title: the title screen for the README ---------------------------------------------
+.PHONY: title
+title: $(PRG)
+	@mkdir -p shots
+	@rm -f shots/title.png
+	HARNESS_DIR='$(HARNESS_DIR)' DRIVE_EXITSHOT=shots/title.png DRIVE_SCREEN='$(DRIVE_SCREEN)' X64SC='$(X64SC)' $(TIMEOUT) $(VICE_TIMEOUT) $(PYTHON) $(HARNESS_DIR)/drive.py $(PRG) "until:PUSH FIRE TO START" wait:20 print
+	@test -s shots/title.png || { echo "title: FAIL, VICE wrote no shots/title.png"; exit 1; }
+	@echo "title: shots/title.png"
