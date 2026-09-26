@@ -187,9 +187,14 @@ export class MonitorScript {
     return this.lines.map((l) => l + "\n").join("");
   }
 
+  /** Is this hit one a tool asked for (not one only the session itself owns, an injection or the in-play trace)? A hit with no checkpoint number counts too. */
+  isToolHit(h: Hit): boolean {
+    return h.checkpoint === undefined || this.toolOwned.has(h.checkpoint);
+  }
+
   /** The hits of checkpoints a tool asked for; a hit with no checkpoint number is kept. */
   toolHits(hits: Hit[]): Hit[] {
-    return hits.filter((h) => h.checkpoint === undefined || this.toolOwned.has(h.checkpoint));
+    return hits.filter((h) => this.isToolHit(h));
   }
 }
 

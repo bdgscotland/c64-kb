@@ -4,6 +4,7 @@ import { type Command, InvalidArgumentError, Option } from "commander";
 import { claimsWatchReply } from "../server/tools-claims.ts";
 import { claimsWatch } from "../tools/claims-watch.ts";
 import { reFrameProfile, reIrqChain, reSnapshot } from "../tools/re.ts";
+import { reLoadMap } from "../tools/re-load-map.ts";
 import { reSession } from "../tools/re-session.ts";
 
 /** --cycles for the RE commands: an integer from 100,000, the MCP tools' own floor. */
@@ -88,6 +89,14 @@ function registerReplayCommands(program: Command): void {
   reOptions(program.command("re-irq-chain <prg>").description('A .prg, or "session:<file>"')).action(
     async (prg: string, o: ReOpts, cmd: Command) => {
       const r = await reIrqChain(reInput(prg, o, cmd));
+      process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
+      if (!r.ok) process.exitCode = 1;
+    },
+  );
+
+  reOptions(program.command("re-load-map <prg>").description('A .prg, or "session:<file>"')).action(
+    async (prg: string, o: ReOpts, cmd: Command) => {
+      const r = await reLoadMap(reInput(prg, o, cmd));
       process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
       if (!r.ok) process.exitCode = 1;
     },

@@ -58,7 +58,7 @@ import {
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-interface RunInfo {
+export interface RunInfo {
   prg: string;
   model: Model;
   cycles: number;
@@ -137,6 +137,15 @@ export const FrameProfileInput = {
     .describe('Start marker: "store:$DC0F=$11" (a store of that value) or "pc:$2000" (an executed PC)'),
   stop: z.string().describe('Stop marker, same forms: "store:$DC0F=$00"'),
 };
+export const LoadMapInput = {
+  ...sourced,
+  session: z
+    .string()
+    .optional()
+    .describe(
+      `A session file (a repo path under ${SESSIONS_DIR}/): the image by sha1. Unlike the other RE tools, the analysis always starts from power-on (clock 0), not the in-play clock: a load map wants what was written long before play, often long before the session's own in_play. model and cycles must still match the file when given (the session is the authority); the full-memory trace itself commonly stops well short of the file's own limitcycles, at the first program dispatch plus one frame`,
+    ),
+};
 
 export function allowedPrg(p: string): string | null {
   if (!p.toLowerCase().endsWith(".prg") || !existsSync(p)) return null;
@@ -152,7 +161,7 @@ export function parseMarker(s: string): Marker | null {
   return pc ? { pc: parseInt(pc[1] ?? "", 16) } : null;
 }
 
-async function collect(log: string): Promise<Hit[]> {
+export async function collect(log: string): Promise<Hit[]> {
   const out: Hit[] = [];
   for await (const h of readHits(log)) out.push(h);
   return out;
@@ -243,7 +252,7 @@ function info(
   };
 }
 
-function refusal(e: unknown): Refusal {
+export function refusal(e: unknown): Refusal {
   if (e instanceof ViceBatchError) return { ok: false, error: e.message, reason: e.reason };
   if (e instanceof NoEntry) return { ok: false, error: e.message, reason: "no-entry" };
   if (e instanceof NotInPlay) return e.refusal;
@@ -265,7 +274,7 @@ interface Source {
   timing: RegionTiming;
 }
 
-interface SourceArgs {
+export interface SourceArgs {
   prg_path?: string | undefined;
   /** A session path, or (tests) an already-parsed session. */
   session?: string | Session | undefined;
@@ -311,7 +320,7 @@ function sessionSource(staged: Staged, l: SessionRef, shotDir: string | undefine
  * session; a session resolves its image first and disposes of it after.
  */
 /** A value the caller gave that the session file contradicts; the file is the authority. */
-function conflict(args: SourceArgs, s: Session): string | null {
+export function conflict(args: SourceArgs, s: Session): string | null {
   const out: string[] = [];
   if (args.model !== undefined && args.model !== s.machine.model)
     out.push(`model ${args.model}, but the session file says ${s.machine.model}`);

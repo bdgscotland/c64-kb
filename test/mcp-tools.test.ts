@@ -7,6 +7,8 @@ import {
   frameProfileReply,
   IrqChainOutput,
   irqChainReply,
+  LoadMapOutput,
+  loadMapReply,
   SessionOutput,
   sessionReply,
   SnapshotOutput,
@@ -44,11 +46,12 @@ import {
 // Not called, because they have side effects outside the test stores:
 // c64_run_game kills the x64sc on monitor port 6502 and starts one;
 // c64_ingest_doc writes a file under docs/ (and c64_memorization_check is
-// listed only where the Python analyzer is installed). c64_re_irq_chain and
-// c64_re_frame_profile run VICE for seconds (c64_re_session and
-// c64_re_snapshot too: their runs are in test/re-session.test.ts and
-// test/re-snapshot.test.ts); their runs are covered by test/re-tools.test.ts
-// and test/re-calibration.test.ts, and their reply builders by the stub
+// listed only where the Python analyzer is installed). c64_re_irq_chain,
+// c64_re_frame_profile and c64_re_load_map run VICE for seconds (c64_re_session
+// and c64_re_snapshot too: their runs are in test/re-session.test.ts and
+// test/re-snapshot.test.ts, c64_re_load_map's in test/re-load-map.test.ts);
+// their runs are covered by test/re-tools.test.ts and
+// test/re-calibration.test.ts, and their reply builders by the stub
 // results at the end of this file. c64_claims_watch runs VICE too:
 // test/claims-watch-tool.test.ts covers its run and reply.
 const SKIP = new Set([
@@ -59,6 +62,7 @@ const SKIP = new Set([
   "c64_re_frame_profile",
   "c64_re_session",
   "c64_re_snapshot",
+  "c64_re_load_map",
   "c64_claims_watch",
 ]);
 
@@ -168,7 +172,13 @@ describe("RE tool replies carry the whole result", () => {
   const o = { basis: "measured-vice" as const, rung: 1 as const };
 
   it("declares an outputSchema for both", () => {
-    for (const name of ["c64_re_irq_chain", "c64_re_frame_profile", "c64_re_session", "c64_re_snapshot"])
+    for (const name of [
+      "c64_re_irq_chain",
+      "c64_re_frame_profile",
+      "c64_re_session",
+      "c64_re_snapshot",
+      "c64_re_load_map",
+    ])
       expect(tools.find((t) => t.name === name)?.outputSchema, name).toBeDefined();
   });
 
@@ -319,6 +329,80 @@ describe("RE tool replies carry the whole result", () => {
       text: "refused (no-dump): in_play reached at clock 100, but $0876 did not run 100001 times",
       isError: true,
     });
+  });
+
+  it("c64_re_load_map: stubs, writers and the first dispatch clock are in the structured content", () => {
+    const result = {
+      load: 0x0801,
+      end: 0xaffc,
+      stubs: [
+        { addr: 0x0801, sys: 2217, text: "COMPUTERBRAINS", line: 2049 },
+        { addr: 0x08e5, sys: 2066, text: "C.C.S.", line: 65535 },
+      ],
+      writers: [
+        {
+          pc_range: { start: 0x0104, end: 0x019e },
+          dest_ranges: [
+            { start: 0x0800, end: 0xcfff },
+            { start: 0xe000, end: 0xffff },
+          ],
+          stores: 528_765,
+          first_clock: 8_992_780,
+          last_clock: 15_190_653,
+          in_stack_page: true,
+          ram_under_io: [],
+        },
+        {
+          pc_range: { start: 0xa35a, end: 0xa370 },
+          dest_ranges: [{ start: 0xd000, end: 0xdfff }],
+          stores: 4160,
+          first_clock: 8_922_451,
+          last_clock: 8_988_518,
+          in_stack_page: false,
+          ram_under_io: [{ start: 0xd000, end: 0xdfff }],
+        },
+      ],
+      transient_vectors: [{ vector: "irq_fffe" as const, value: 0, writes: 7 }],
+      first_program_dispatch_clock: 15_243_156,
+      unknowns: [],
+    };
+    const r = loadMapReply({ ok: true, run, result });
+    expect(r.text).toMatch(/load \$0801-\$AFFC/);
+    expect(r.text).toMatch(
+      /stubs: \$0801 line 2049 SYS 2217 COMPUTERBRAINS; \$08E5 line 65535 SYS 2066 C\.C\.S\./,
+    );
+    expect(r.text).toMatch(
+      /\$0104-\$019E \(stack page\): 528765 stores, clock 8992780-15190653 -> \$0800-\$CFFF, \$E000-\$FFFF\n/,
+    );
+    expect(r.text).toMatch(
+      /\$A35A-\$A370: 4160 stores, .* -> \$D000-\$DFFF \(RAM under I\/O: \$D000-\$DFFF\)/,
+    );
+    expect(r.text).toMatch(/first program dispatch at clock 15243156/);
+    const parsed = z.object(LoadMapOutput).safeParse(r.structured);
+    expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
+    expect(r.structured).toEqual({ run, ...result });
+  });
+
+  it("c64_re_load_map: no entries at all says no dispatch, and a refusal is text and isError", () => {
+    const r = loadMapReply({
+      ok: true,
+      run,
+      result: {
+        load: 0x0801,
+        end: 0x0900,
+        stubs: [],
+        writers: [],
+        transient_vectors: [],
+        first_program_dispatch_clock: null,
+        unknowns: [
+          "no interrupt entered a handler below $E000 within 4000000 cycles; writers cover the whole run",
+        ],
+      },
+    });
+    expect(r.text).toMatch(/no program-installed handler dispatched/);
+    expect(r.text).toMatch(/unknown: no interrupt entered a handler below \$E000/);
+    const bad = loadMapReply({ ok: false, reason: "no-entry", error: "entry $080D not reached" });
+    expect(bad).toEqual({ text: "refused (no-entry): entry $080D not reached", isError: true });
   });
 
   it("a refusal is text and isError, with no structured content", () => {

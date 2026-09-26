@@ -139,6 +139,14 @@ describe("MonitorScript: one numbering for every session-driven run", () => {
     const h = (checkpoint: number, addr: number) => ({ ...hit("exec", addr, 1), checkpoint });
     expect(m.toolHits([h(1, 0x0fb5), h(2, 0x4134), h(3, 0x0314)]).map((x) => x.checkpoint)).toEqual([2, 3]);
   });
+  it("isToolHit answers the same question per hit, so a streaming caller need not build the array toolHits does", () => {
+    const m = sessionScript(session());
+    m.checkpoint("trace exec 4134 4134");
+    const h = (checkpoint: number, addr: number) => ({ ...hit("exec", addr, 1), checkpoint });
+    expect(m.isToolHit(h(1, 0x0fb5))).toBe(false);
+    expect(m.isToolHit(h(2, 0x4134))).toBe(true);
+    expect(m.isToolHit(hit("exec", 0x1000, 1))).toBe(true);
+  });
   it("never shares a checkpoint whose lines name its number, with the session's or any other", () => {
     const s = session({ in_play: { check: "exec", pc: "$0FEB", after_clock: 0 } });
     const m = sessionScript(s);
@@ -380,15 +388,17 @@ describe("batch run and screenshot names", () => {
   const image = { sha1: "0".repeat(40), kind: "d64" as const, file: "prog", fileSha1: "1".repeat(40) };
   it("attaches a D64's working copy as drive 8, and no disk for a PRG", () => {
     const m = sessionScript(s);
-    expect(batchOf({ prg: "/w/p.prg", disk: "/w/image.d64", image }, s, m, "/s.png")).toMatchObject({
+    expect(
+      batchOf({ prg: "/w/p.prg", disk: "/w/image.d64", image }, s, m, { screenshot: "/s.png" }),
+    ).toMatchObject({
       prg: "/w/p.prg",
       disk: "/w/image.d64",
       cycles: 4_000_000,
       args: ["-exitscreenshot", "/s.png"],
     });
-    expect(batchOf({ prg: "/w/p.prg", image: { ...image, kind: "prg" } }, s, m, "/s.png")).not.toHaveProperty(
-      "disk",
-    );
+    expect(
+      batchOf({ prg: "/w/p.prg", image: { ...image, kind: "prg" } }, s, m, { screenshot: "/s.png" }),
+    ).not.toHaveProperty("disk");
   });
   it("gives every run's exit screenshot its own name under data/re/", () => {
     const a = screenshotPath("session-t");
@@ -396,6 +406,18 @@ describe("batch run and screenshot names", () => {
     expect(a).not.toBe(b);
     expect(a).toMatch(/[/\\]data[/\\]re[/\\]session-t-.+\.png$/);
     expect(screenshotPath("session-t", shots).startsWith(shots)).toBe(true);
+  });
+  it("a cyclesOverride replaces the session's own limitcycles for one pass; with none, limitcycles stands", () => {
+    const script = sessionScript(s);
+    expect(
+      batchOf({ prg: "/w/p.prg", image: { ...image, kind: "prg" } }, s, script, {
+        screenshot: "/s.png",
+        cyclesOverride: 123,
+      }),
+    ).toMatchObject({ cycles: 123 });
+    expect(
+      batchOf({ prg: "/w/p.prg", image: { ...image, kind: "prg" } }, s, script, { screenshot: "/s.png" }),
+    ).toMatchObject({ cycles: 4_000_000 });
   });
 });
 

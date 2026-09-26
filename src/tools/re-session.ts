@@ -96,15 +96,26 @@ export interface Staged {
   image: SessionResult["image"];
 }
 
-/** The batch run of one session pass: a D64's copy is attached so a game that loads more files finds them. */
-export function batchOf(staged: Staged, s: Session, script: MonitorScript, screenshot: string): BatchRun {
+/**
+ * The batch run of one session pass: a D64's copy is attached so a game
+ * that loads more files finds them. cyclesOverride runs shorter (or, in
+ * principle, longer) than the session's own limitcycles for one pass: load
+ * map's full-memory store trace is capped at the first program dispatch
+ * plus one frame, far short of a session's own play-reaching length.
+ */
+export function batchOf(
+  staged: Staged,
+  s: Session,
+  script: MonitorScript,
+  opts: { screenshot: string; cyclesOverride?: number },
+): BatchRun {
   return {
     prg: staged.prg,
     monCommands: script.text(),
-    cycles: s.limitcycles,
+    cycles: opts.cyclesOverride ?? s.limitcycles,
     model: s.machine.model,
     ...(staged.disk !== undefined ? { disk: staged.disk } : {}),
-    args: ["-exitscreenshot", screenshot],
+    args: ["-exitscreenshot", opts.screenshot],
   };
 }
 
@@ -141,7 +152,7 @@ export async function sessionPass(
   script: MonitorScript,
   screenshot: string,
 ): Promise<SessionPass> {
-  const run = await runBatch(batchOf(staged, s, script, screenshot));
+  const run = await runBatch(batchOf(staged, s, script, { screenshot }));
   try {
     const all: Hit[] = [];
     for await (const h of readHits(run.log)) all.push(h);
