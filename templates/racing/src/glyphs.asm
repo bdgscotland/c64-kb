@@ -279,15 +279,22 @@ glyph_init:
         jmp !id-
 !:
     }
-        // the two dynamic sets: grass everywhere, road at 1 and $81
-        // (clearing $F800's last bytes clears $FFFA-$FFFF: main sets the
-        // vectors after this)
+        // the two dynamic sets: grass everywhere, road at 1 and $81 (set
+        // B's id 255 lies under the vectors and is never used: not cleared)
     .for (var s = 0; s < 2; s++) {
         .var base = s == 0 ? DYN_A : DYN_B
         lda #0
         tax
 !:
-      .for (var pg = 0; pg < 8; pg++) { sta base + pg * 256, x }
+      .for (var pg = 0; pg < 7; pg++) { sta base + pg * 256, x }
+      .if (s == 0) {
+        sta base + 7 * 256, x
+      } else {
+        cpx #$f8                // set B's last page ends at the vectors: $FFF8 up is left
+        bcs !+
+        sta base + 7 * 256, x
+!:
+      }
         inx
         bne !-
         lda #$55

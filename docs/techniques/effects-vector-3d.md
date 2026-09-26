@@ -1669,7 +1669,142 @@ time of writing (measured, #110).
 
 ### Recipes
 
-No recipe yet: the racing starter (`templates/racing/`) implements it.
+No recipe yet. The racing starter (`templates/racing/`) implemented it on
+a work-in-progress branch of #110 until 2026-09-26; the starter on `main`
+draws its road with `slanted_glyph_road` instead (a picture every 3.0 PAL
+frames against 9.2 here, measured). The figures above are from the
+starter as it was then. An earlier version of this line said the starter
+implements it.
+
+### Sources
+
+- Measured in VICE x64sc 3.10 on the racing starter (#110).
+
+---
+
+## slanted_glyph_road — Per-line road edges from static slanted glyphs, the bend by XSCROLL and whole-column shear, bands from registers per line
+
+**Complexity:** scene-tier
+**Region:** both
+**Uses registers:** D012, D016, D018, D019, D021, D022, D023
+**Requires:** mcm_text, raster_split_modes, stable_raster_irq
+**Cost:** cycles_per_line=63, lines_active=96
+**Cost basis:** measured-vice
+**Claims:** vic_raster_irq (owns), vic_matrix_base (owns), vic_char_base (owns), vic_xscroll (owns)
+**Claims basis:** derived-listing
+
+Read off `templates/racing/src/engine.asm`: the IRQ chain owns the raster
+compare; every road line's block stores `$D016`, every badline's block
+its row's `$D018`, and the panel split at line 251 the panel's. The Cost
+line is the kernel: it holds every cycle of lines 107-202 on PAL and NTSC,
+the screen on and sprites 0-2 over the road (measured in VICE x64sc 3.10
+with the starter's PROBE build; no recipe yet).
+
+### Why
+
+A character road's width steps once per character row unless every row's
+edge characters follow the edge line by line. `char_row_road` draws those
+characters per picture and pays about 60,000 cycles a picture for it.
+This technique draws none at run time: with the road's centre held on a
+4-pixel boundary, a row's characters depend only on the road's width on
+its eight lines, and the width depends only on the line and the horizon,
+so every glyph a row can need is known when the program is assembled.
+
+### How
+
+**Glyphs.** KickAssembler computes, for every horizon offset the game
+uses (even offsets: the horizon moves two lines at a time), every row and
+both phases (the centre on a character boundary, or in its middle), the
+eight bytes of each character left of the centre from the projection's
+own half-width, w = W0 · d / D, with a kerb of max(2, w/7) pixels and a
+centre line of w/17. The right half is the mirror: glyph id + $80 is the
+mirror of id, so one set of left glyphs serves both sides. The distinct
+glyphs are packed into character sets by row, each set under 123 left
+glyphs; the starter's road needs 321 glyphs in three sets (rows 0-3, 4-6,
+7-11) and 1,860 bytes of row templates (the assembler's own count).
+
+**The bend.** A row is drawn around a content centre, the lesser of its
+bottom and top centres made a multiple of 4. Each line's shift from it is
+its own centre less that: its low three bits go to `$D016` (XSCROLL), the
+rest is a whole-column move. Rows whose shift stays under 8 on every
+line, straights and gentle bends, are the static glyphs shifted by
+XSCROLL alone. A sheared row (shift 8 or more on some line, a tight bend
+near the horizon) gets glyphs built at run time: for each column, line l
+is line l of the static glyph m(l) columns to its left, read from the
+row's set with one indexed load per line, into the copy's own dynamic
+set (twenty slots a row). Two dynamic sets, one per road copy, at `$F000`
+and `$F800`; the badline's block stores the row's set in `$D018`.
+
+**The bands.** Grass on %00 (`$D021`), the road on %01 (`$D022`), the
+kerb's stripes on %10 (`$D023`), the centre line on %11 (colour RAM).
+Every line's block loads its colours from the copy's table of z × 8 per
+line plus the camera's position (a zero-page byte the game writes every
+frame) through three colour tables, so the bands move at the frame rate
+whatever the picture rate. A line stores its grass and one of the other
+two, road band on even lines and kerb on odd; the badline and the row's
+second line keep the bands of the lines above (the badline's block has
+room for two stores only: `$D018` and `$D016`).
+
+**The builder.** Per picture, bottom row up, as pieces the game's loop
+calls between frames (none over 4,300 cycles, measured with the PIECETIME
+build): the row's centre and slope in closed form from the curvature,
+its shifts into the copy's `$D016` table, its set into the block above,
+pads for lines whose sprite set changed; then, unless this copy already
+shows the row from the same template, column and shear, the template
+decoded straight into a row buffer (left half and mirrored right half)
+and copied to the screen, or for a sheared row the dynamic glyphs (four
+a piece) and the copy. Two copies of screen, character-set choice and
+kernel tables, swapped by the main loop as soon as the beam is clear of
+the road, or by the IRQ chain at lines 204 and 251.
+
+### Why it works
+
+Every block is entered on cycle 2 of its line and stores `$D016` on cycle
+5, `$D021` on 9 and `$D022` or `$D023` on 13 (Bauer's numbering; the
+badline's block stores `$D018` on 5 and `$D016` on 9): all inside the
+left border, before the first character fetch on cycle 15. The character
+base is read on every glyph fetch (`raster_split_modes`), so the row's
+set stored on its badline draws the row. Measured with the starter's
+PROBE build (a fourth store on cycle 19 of every normal line, shown from
+screenshot x 49): every visible normal line at eight cycle counts on PAL
+and six on NTSC, sprites moving over the road. `tools/roadcheck.py`
+redraws all 96 lines of the still from the machine's own tables, sets,
+screen and registers and matches the shots pixel for pixel on both
+models; the left edge moves at most 3 pixels between neighbouring lines
+in that still.
+
+### Cycle budget
+
+The kernel holds each road line, 63 cycles on PAL and 65 on NTSC, plus
+the IRQ chain's entry. The builder's pieces sum to about 50,000 cycles of
+wall time a picture with the chain inside them; the autopilot race of
+3,615 steps built 1,158 pictures on PAL (one every 3.04 frames) and 699
+on NTSC (5.03), with no lost game step, the game's step and IRQs at
+10,430 cycles worst and 8,969 typical on PAL (the harness meter).
+
+### Pitfalls
+
+- A block that ends in a write is one cycle off when sprite 2 fetches on
+  its line: the sprite DMA ends a cycle before the next block and only a
+  read is stalled to the exact cycle. A block must end in a read (the
+  slide's `CMP`); `$D018` moved from the end of the line above to the
+  badline's block for this (PROBE build, VICE x64sc).
+- `ADC` sets V: a branch into the slide on `BVC` fell through into the
+  whole slide whenever the colour lookup's add overflowed as a signed
+  byte. The blocks branch on Z (`BNE` after a non-zero load).
+- The first IRQ of the double IRQ must reach `CLI` before the second's
+  line with a margin larger than any interrupt-off window in the main
+  loop: at 107 cycles to `CLI` from line 103 the margin to line 105 was
+  19 cycles, and a 29-cycle `SEI` poll made the sync a line late about 50
+  times a race. The starter's first IRQ is on line 101.
+- Colour tables indexed by Y must be page-aligned, or the kernel's loads
+  take a cycle more on some lines.
+
+### Recipes
+
+No recipe yet: the racing starter (`templates/racing/`, `src/glyphs.asm`,
+`src/builder.asm`, `src/engine.asm`) implements it, and its README carries
+the measurements.
 
 ### Sources
 

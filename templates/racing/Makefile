@@ -29,13 +29,15 @@ SHOT_CYCLES_NTSC := 90000000
 # - Oscar64's registers from $02, its temporaries from $43 up (make zp).
 # - engine.asm's builder owns $D0-$D3 and $E0-$FF (the KERNAL is out and
 #   never called).
-# - The road's blocks write $D016 (XSCROLL, the bend) on every road line and
-#   the panel split writes $D018 (matrix and character base) twice a frame.
+# - The road's blocks write $D016 (XSCROLL, the bend) on every road line,
+#   $D018 (the row's character set) on every badline, and the panel split
+#   writes $D018 twice a frame. Road character sets 0 and 1 are RAM under
+#   I/O ($D000-$D7FF, $DC00-$DFFF; set-up only, with $01 = $34): ranges.
 # - The IRQ chain is the only interrupt; the KERNAL's runs until main's SEI.
 # - $DC0D (all CIA1 interrupts off) counts against the three CIA1 units.
 # - CIA2 timer A is the harness meter's; timer B times the IRQs for the
 #   meter; the $DD0D stores count against all three CIA2 units.
-CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, vic_raster_irq, vic_xscroll, vic_matrix_base, vic_char_base, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$6F+$$D0-$$D3+$$E0-$$FF' --range 'colour=$$D800-$$DBFF,result=$$02FF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 100000000
+CLAIMS_ARGS := --claim 'sprite_0, sprite_1, sprite_2, vic_raster_irq, vic_xscroll, vic_matrix_base, vic_char_base, irq_vector_fffe, nmi_vector_fffa, cia2_vic_bank, cia1_port_a, cia1_timer_a, cia1_timer_b, cia1_tod, sid_voice_1, sid_voice_2, sid_voice_3, sid_filter_volume, zero_page $$02-$$6F+$$D0-$$D3+$$E0-$$FF' --range 'colour=$$D800-$$DBFF,result=$$02FF,roadset0=$$D000-$$D7FF,roadset1=$$DC00-$$DFFF' --harness 'cia2_timer_a, cia2_timer_b, cia2_tod' --kernal IRQ --cycles 100000000
 
 # This starter's own proofs, which npm run verify:templates runs too.
 VERIFY_TARGETS := roadcheck mutants drivetest

@@ -69,41 +69,42 @@ vic_bank_visibility_collision.
 
 The staircase in the old road came from its width stepping once per
 character row; its bend was already per line (`$D016`). The new road keeps
-the per-line bend and draws the width with static slanted-edge glyphs.
+the per-line bend and draws the width with static slanted-edge glyphs
+(c64-kb `slanted_glyph_road`, written from this starter).
 
 - The row's characters are drawn around a content centre on a 4-pixel
   boundary (phase 0 or 4 within a character); each line's XSCROLL adds
-  its centre's offset from that, 0-7. So a row's glyphs depend only on the
-  road's width on its eight lines, and the width depends only on the line
-  and the horizon offset (24 of them): w = W0 * ZN / (8 z).
-- KickAssembler computes every glyph at assembly: 666 distinct over all 24
-  horizon offsets, both phases and all 12 rows (a Python model before any
-  code, /tmp/dt/sim3.py; arithmetic, to be confirmed by the build). They
-  fit five character sets by row: rows 0-2, 3-4, 5-6, 7-9, 10-11 (152 to
-  245 glyphs each). Each row's badline block stores its set in $D018
-  before cycle 16: the character base is read on every glyph fetch
-  (c64-kb raster_split_modes, measured in VICE).
-- The builder copies a precomputed row template (by horizon offset, row
-  and phase) into the back screen, shifted by whole columns: no glyph is
-  drawn at run time. Estimate 5,000-6,000 cycles a picture (arithmetic),
-  against about 60,000 for char_row_road.
-- Colours per line: grass on %00 ($D021), road on %01 ($D022), kerb on %10
-  ($D023), centre line on %11 (colour RAM). The previous line's block loads
-  A, X and Y; a normal block stores $D016 (A), $D021 (X) and $D022 or $D023
-  (Y, the builder patches the address byte) by cycle 13. A line that needs
-  both a road-band and a kerb change takes one of them a line later. A
-  badline's block stores $D016 and $D018 only and keeps the colours above.
+  its centre's offset from that, 0-7, and a line that needs 8 or more is a
+  whole-column move: the row is "sheared" and gets glyphs built at run
+  time from its static ones, in a dynamic set per copy.
+- KickAssembler computes every glyph at assembly from the projection's
+  own width, for the 12 even horizon offsets, 12 rows and both phases:
+  321 left glyphs in three character sets (100, 115, 106; rows 0-3, 4-6,
+  7-11), their mirrors at id + $80, and 1,860 bytes of row templates
+  (the assembler's count). A Python model before any code (four sets for
+  a 1-line horizon step, 666 glyphs over all 24 offsets) chose the 2-line
+  step. Each row's badline block stores its set in `$D018` on cycle 5.
+- The builder copies a decoded row template into the back screen shifted
+  by whole columns; no static glyph is drawn at run time. Measured: no
+  piece over 4,300 cycles; 1,158 pictures in the autopilot's 3,615-step
+  race on PAL (3.04 frames a picture), 699 on NTSC (5.03).
+- Colours per line: grass %00 (`$D021`), road band %01 (`$D022`), kerb
+  stripes %10 (`$D023`), centre line %11 (colour RAM). Each block loads
+  them from the copy's z table plus the camera's position through colour
+  tables, so the bands move every frame. Stores on cycles 5, 9 and 13,
+  inside the left border (PROBE build, both models).
 
-Where the KB had no answer, and what this step must measure:
+Questions the KB had no answer for, and what was measured:
 
-- The per-line road edge: no technique or recipe for static slanted-edge
-  glyphs. When measured it becomes a technique page (and a recipe).
-- The cycles of a line on which a colour store is hidden in the 40-column
-  left border on PAL and NTSC: the starter's PROBE puts cycle 19 at
-  screenshot x 49; the block's stores at 5, 9 and 13 are chosen to be
-  inside the border by that arithmetic, and the PROBE build checks it.
-- Near the horizon a bend that moves more than 7 pixels within a row is
-  clamped, as before.
+- The per-line road edge: no technique or recipe existed for static
+  slanted-edge glyphs. Measured here and written up as
+  `slanted_glyph_road` (docs/techniques/effects-vector-3d.md).
+- Which cycles of a line hide a colour store in 40-column mode: the
+  PROBE build puts a store on cycle 19 at screenshot x 49, so stores on
+  cycles 5-13 are in the border, on both models.
+- A block ending in a write is a cycle off with sprite 2 on the line; the
+  double IRQ's first handler needs a margin over the main loop's longest
+  interrupt-off window (measured, pitfalls on the technique page).
 
 ## Techniques
 
@@ -804,7 +805,15 @@ second, PAL and NTSC.
   every 3.5 PAL frames). The #110 work-in-progress branch
   (worktree-agent-a93621e446c442cbf) drew glyphs per picture and measured
   a picture every 9.2 PAL frames; its original tune and asm opponent field
-  are candidates for steps 3 and 4.
+  are candidates for steps 3 and 4. Step 1 landed at a picture every 3.04
+  PAL frames with per-line edges.
+- The horizon moves in 2-line steps. A 1-line step needs five character
+  sets (the model's count) and about 4 KB more; the 2-line step was not
+  visible in play and is recorded here for step 2 to revisit if memory
+  allows.
+- The road leans half as far as a camera fixed on the centre line would
+  make it: full lean sheared every row by up to 10 pixels with the car
+  off-centre.
 - The tune is original. The maintainer asked to "port the music too"; a
   commercial game's music cannot ship, so step 4 writes a new tune in the
   same spirit.

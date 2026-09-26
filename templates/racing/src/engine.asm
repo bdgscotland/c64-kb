@@ -647,7 +647,8 @@ ly:     ldy #scr | SET_BITS.get(rowSet.get(0))  // row 7's set: line 107's B blo
         .errorif ly + 1 - pb != PRE_LY || * - pb != PRE_SIZE, "PreBlock layout"
 }
 hud_d016:   .byte D016_HUD
-.label rc_off_ly = OFF_LY        // for roadcheck
+.label rc_off_ly = OFF_LY        // for roadcheck: each row's $D018 operand in the L block above
+.label rc_pre_ly = PRE_LY        // and row 7's in the copy's entry block
 pre_a:  PreBlock($00, road_a, zlc_a, d016_a)
 pre_b:  PreBlock($10, road_b, zlc_b, d016_b)
 
