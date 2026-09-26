@@ -61,5 +61,20 @@ void panel_update(void)
 {
     put_dec(SCREEN + PANEL_ROW * 40 + 8, score, 6);
     put_dec(SCREEN + (PANEL_ROW + 2) * 40 + 8, lives, 1);
-    put_dec(SCREEN + (PANEL_ROW + 2) * 40 + 33, grenades, 2);
+    panel_grenades();
+}
+
+// The grenade count alone: two digits with byte arithmetic. panel_update's
+// score is an unsigned long, and put_dec's divisions cost 12,694 cycles a
+// call (CIA1 timer B, IRQs off, VICE x64sc PAL), too much for a play frame.
+void panel_grenades(void)
+{
+    char *p = SCREEN + (PANEL_ROW + 2) * 40 + 33;
+    char g = grenades, t = '0';
+    while (g >= 10) {
+        g -= 10;
+        t++;
+    }
+    p[0] = t;
+    p[1] = '0' + g;
 }

@@ -1,0 +1,21 @@
+{
+  "checks": [
+    { "name": "own verdict (border)", "type": "verdict" },
+    { "name": "verdict line", "type": "text", "row": 3, "col": 1, "text": "RESULT 01 PASS", "dy": 4 },
+    { "name": "soldier X, Y; map y on line 55; scroll steps", "type": "text", "row": 4, "col": 1, "text": "X 236 Y 110 WY 480 ST 127", "dy": 4 },
+    { "name": "redraws with shots and grenades flying", "type": "text", "row": 5, "col": 18, "text": "RD 15", "dy": 4 },
+    { "name": "lost frames, late redraws", "type": "text", "row": 7, "col": 1, "text": "LOST 00 AT 000 LATE 00", "dy": 4 },
+    { "name": "sprites shown at the freeze: soldier, one shot, the blast", "type": "text", "row": 8, "col": 1, "text": "SHOWN 3", "dy": 4 },
+    { "name": "frame meter, the first 200 frames that ran the game's logic (every shot and throw of the first part)", "type": "meter", "row": 9, "col": 1, "frames": 200, "dy": 4 },
+    { "name": "shots fired 22, one press lost with three flying; throws 5, one press with none left, one while one flew", "type": "text", "row": 10, "col": 1, "text": "SH 22 LO 1 T 5 E 1 B 1", "dy": 4 },
+    { "name": "the first six shots along facings 0 4 6 12 12 12; ends: block, range, off, range x3; shot 0 blocked at frame 10", "type": "text", "row": 11, "col": 1, "text": "F 046CCC E 213111 A10", "dy": 4 },
+    { "name": "grenade 1: thrown on play frame 62, lands on 92, blast over on 108; 60 pixels up; 16 blast frames", "type": "text", "row": 12, "col": 1, "text": "G 062 092 108 60 16", "dy": 4 },
+    { "name": "the 16 hit tests pass (edges, across x 256, corner below 0)", "type": "text", "row": 13, "col": 1, "text": "BOX 16", "dy": 4 },
+    { "name": "... each test's result", "type": "text", "row": 14, "col": 1, "text": "MHHMMHHMHHHMMHHM", "dy": 4 },
+    { "name": "slot 1 (the shot) at X 236 Y 060; slot 4 (the blast) at X 236 Y 066, white phase", "type": "text", "row": 16, "col": 1, "text": "S1 236 060 S4 236 066 01", "dy": 4 },
+    { "name": "the shot's yellow dot: VIC x 246-249, lines 69-72", "type": "sprite", "colour": 7, "vic_x": 246, "line": 69, "width": 4, "height": 4, "search": { "vic_x": 232, "line": 55, "width": 60, "height": 45 } },
+    { "name": "the blast's white: VIC x 236-257, lines 70-85 (its top pixel, line 69, is under the shot)", "type": "sprite", "colour": 1, "vic_x": 236, "line": 70, "width": 22, "height": 16, "search": { "vic_x": 232, "line": 55, "width": 60, "height": 45 } },
+    { "name": "panel: no grenades left", "type": "text", "row": 23, "col": 24, "text": "GRENADES 00", "dy": 4 },
+    { "name": "the invalid-mode band still black, lines 214-222", "type": "rect", "colour": 0, "vic_x": 24, "line": 214, "width": 320, "height": 9 }
+  ]
+}

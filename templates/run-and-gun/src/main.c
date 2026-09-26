@@ -41,7 +41,9 @@
 #pragma section( gfxattr, 0 )
 #pragma region( gfxattrreg, 0x9f00, 0xa000, , , { gfxattr } )
 #pragma section( gfxspr, 0 )
-#pragma region( gfxsprreg, 0xa000, 0xc000, , , { gfxspr } )
+#pragma region( gfxsprreg, 0xa000, 0xbe00, , , { gfxspr } )
+#pragma section( gfxwspr, 0 )
+#pragma region( gfxwsprreg, 0xbe00, 0xc000, , , { gfxwspr } )
 
 #pragma data( asmcode )
 __export const char asm_blob[] = {
@@ -62,6 +64,10 @@ __export const char attr_bin[] = {
 #pragma data( gfxspr )
 __export const char sprites_bin[] = {
 #embed "gen/sprites.bin"
+};
+#pragma data( gfxwspr )
+__export const char weapon_sprites_bin[] = {
+#embed "gen/weapon_sprites.bin"
 };
 #pragma data( data )
 
@@ -98,6 +104,9 @@ static const char script[][2] = {
 };
 #define PLAY_FRAMES 100
 #define FREEZE_YS   7
+#elif defined(WEAPONS)
+#define WT_PART 1                       // make weapons: the script (weapons_test.h)
+#include "weapons_test.h"
 #else
 static const char script[][2] = {
     {   2, 0xff }, {   2, 0xef },       // title: fire starts the game
@@ -126,9 +135,17 @@ static char port_read(void)
 }
 #else
 #define METER_HOLD 1
+// Port 2, with JOY_THROW (bit 5) low while SPACE or port-1 fire is down:
+// column 7 selected, $DC01 bit 4 is SPACE's row, and port 1's fire line
+// pulls the same bit low whatever the column (hardware/cia-reference.md).
 static char port_read(void)
 {
-    return cia1.pra;
+    char j = cia1.pra;
+    cia1.pra = 0x7f;
+    if (!(cia1.prb & 0x10))
+        j &= ~JOY_THROW;
+    cia1.pra = 0xff;                    // no column selected: port 2 reads clean
+    return j;
 }
 #endif
 
@@ -370,7 +387,11 @@ static bool screen_is_map(void)
 
 static char hw_d011;
 
-#ifdef MAPEND
+#ifdef WEAPONS
+#undef WT_PART
+#define WT_PART 2                       // make weapons: its verdict (weapons_test.h)
+#include "weapons_test.h"
+#elif defined(MAPEND)
 static char first_fail(void)
 {
     char n = 1;
@@ -441,6 +462,9 @@ static void verdict(void)
     text_colour(7, 1, 22, TEXT_CRAM);
     text_colour(8, 1, 22, TEXT_CRAM);
     text_colour(9, 1, 20, TEXT_CRAM);
+#ifdef WEAPONS
+    weapons_print();
+#endif
 }
 #endif
 
