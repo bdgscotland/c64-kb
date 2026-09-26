@@ -548,19 +548,133 @@ modules own the difference. What they must keep:
   display frame (286 lines after 250 on PAL, 237 on NTSC), or the redraw
   starts late and its lead shrinks one line for each line late.
 - Every cycle an IRQ spends while the redraw runs comes off its lead:
-  27 lines on NTSC is about 1,750 cycles. The music (sound.asm
-  `audio_play`, in the line-250 IRQ) and enemy zones above row 20 are
-  that budget. Measure the lead again (row 6 of the verdict) after adding
-  either.
+  27 lines on NTSC is about 1,750 cycles. Enemy zones above row 20 are
+  that budget. The music no longer is: it is held off the redraw frame
+  ("Audio" below; the lead is still 27 lines on NTSC). An earlier version
+  of this line gave the music a share of it. Measure the lead again (row
+  6 of the verdict) after adding zones.
 - The frame after a redraw runs no logic; it ends on NTSC line 205, 45
   lines before its deadline.
+
+## Audio
+
+`sfx_voice_takeover`, from the recipe kickassembler-sfx-voice-takeover
+(its driver, in `src/sound.asm`). One driver step a frame plays an
+original three-voice tune and five effects. An effect takes voices 1 and
+2; the music keeps stepping them without writing the SID and plays on
+voice 3. The last request wins. Not `sfx_in_player`: its 351-cycle shadow
+copy every frame (its technique page) buys priority and a hand-back this
+game does not need; its effects are short and its tune's notes are two to
+sixteen ticks.
+
+The tune, "Firebase March", is data from `tools/mktune.py` (`make assets`
+writes `src/gen/tune.asm`): A minor, eight bars that loop, 768 frames
+(15.4 s on PAL). Voice 1 bass in eighths, voice 2 noise drums, voice 3
+the melody, so a fire-fight keeps the melody. On NTSC the driver copies an
+NTSC frequency table over the PAL one and skips the tick count one frame
+in six (pitfall `pal_ntsc_tempo_mismatch`), so pitch and tempo match PAL.
+Nobody has listened to it: `+sound` is off in every run here.
+
+| Effect | `sfx(n)` | Frames | Voices 1 and 2 |
+|---|---|---|---|
+| `SFX_SHOT` | 1 | 8 | noise falling C7-E6, a low pulse under it |
+| `SFX_THROW` | 2 | 16 | triangle rising G4-B5, noise an octave down |
+| `SFX_BLAST` | 3 | 48 | noise falling D4-D2, a stuttering pulse two octaves down |
+| `SFX_KILL` | 4 | 18 | stuttering pulse falling E6-A#4, saw a fourth down |
+| `SFX_DEATH` | 5 | 72 | triangle falling G5-G2, a stuttering pulse a fifth down |
+
+The numbers are `src/sound.h`. Weapons, objects and flow call `sfx()`;
+until they exist, the AUTOPILOT build's script (`src/sound.c`) requests
+SHOT, THROW, BLAST, KILL, SHOT, DEATH, SHOT, SHOT on play frames 10, 30,
+52, 110, 120, 140, 222 and 224: KILL and the first of the last two SHOTs
+are cut, so 8 effects start and 6 run to their end (verdict row 3, `SND
+08 06`, and check 11).
+
+**Where the step runs.** The frame IRQ (line 250) calls `audio_play`
+after the sprites, as the Kernel's interface said. On the redraw frame
+that IRQ lands inside the copy, where every cycle comes off the redraw's
+lead over the beam. So main.c sets `aud_hold` before the redraw and clears
+it after; under the hold the frame IRQ counts the step in `aud_owed` (15
+cycles, tested in kernel.asm) and the next frame IRQ plays the owed step
+before its own. A first version played the owed step at the end of the
+redraw, in the light frame: that frame then ended on NTSC line 232, 18
+lines before its deadline, and the step ran among badlines (868 cycles
+instead of 782). The step is one frame late on 13 of 839 frames; the
+tune's ticks are counted in steps, so its timing does not move (`make
+audio`, the tempo check).
+
+Measured (VICE x64sc 3.10, `make shot check` and `make audio`; step
+cycles by CIA1 timer A around each step, in the frame IRQ, less the
+stopwatch's 5):
+
+| | PAL | NTSC | Instrument |
+|---|---|---|---|
+| One step, worst of the autopilot run | 769 | 777 | stopwatch (verdict row 3 `W`) |
+| One step, typical (median) | 343 | 350 | the same (row 3 `T`) |
+| One step, least | 235 | 242 | `make audio` log |
+| An effect's start, the engine alone | 395-418 | 382-418 | `make audio`: the same step of the `NO_SFX` build subtracted |
+| Worst step possible: a start on a three-note-on step | about 1,190 | about 1,195 | arithmetic from the two rows above; the MAPEND run met 1,000 on PAL |
+| Frame IRQ under the hold (inside the redraw) | 15 | 15 | arithmetic from kernel.asm (the stub's `jsr`/`rts` was 12) |
+| Redraw's smallest lead over the beam | 72 lines | 27 lines | verdict row 6 (before audio: 73, 27) |
+| Logic frame, worst (IRQs in) | 4,068 | 4,108 | harness meter (before audio: 3,049, 3,071); the worst holds two steps |
+| Logic frame, typical | 3,451 | 3,474 | the same (before: 2,971, 2,994) |
+| Logic before a redraw ends, lines after line 250 | 59 | 57 | row 8 `PRE` (before: 50, 48; limits 286, 237) |
+| The frame after a redraw ends on line | 161 | 205 | row 8 `LF` (before: 159, 205; limit 250) |
+| Lost frames | 0 | 0 | row 7 |
+
+The PAL lead reads 72 or 73 lines from build to build with the same
+interrupt path: the redraw's end line moves with where C's `band_tick`
+poll leaves it (an earlier build of this module read 73; arithmetic says
+the hold path costs 3 cycles more than the stub). The worst step
+possible, about 1,190 cycles, is 18 NTSC lines: from line 250, after the
+sprites, it runs past line 262 into the next frame (arithmetic); a
+multiplexer zone due before it ends runs late, through the late guard.
+
+`make audio` (run by `make check`): a store trace of `$D400-$D418`
+proves the takeover. Both builds, 20,000,000 cycles (one whole loop of
+the tune after the start-up), PAL then NTSC:
+
+```text
+PASS PAL   owned: 172 steps start with an effect running; music stores to voices 1-2 in them: 0
+PASS PAL   voice3: effect stores 681, to $D40E-$D418 0; in the NOFX build 0
+PASS PAL   same3: voice 3 music stores in 845 steps: 2106 and 2106, identical in step, register and value
+PASS PAL   same12: voices 1-2 music stores in the 673 steps no effect owns: 769 and 769, identical
+PASS PAL   tempo: voice 3 note-ons on 52 steps; the tune data gives 52; the same steps
+PASS PAL   frames: from play's start (step 7), 839 steps in 839 frames; each step in its own frame or the next (frame minus step spans 8..9, 13 steps a frame late); gaps outside 0-2 frames: 0
+PASS NTSC  owned: 172 steps start with an effect running; music stores to voices 1-2 in them: 0
+PASS NTSC  voice3: effect stores 681, to $D40E-$D418 0; in the NOFX build 0
+PASS NTSC  same3: voice 3 music stores in 966 steps: 2332 and 2332, identical in step, register and value
+PASS NTSC  same12: voices 1-2 music stores in the 794 steps no effect owns: 805 and 805, identical
+PASS NTSC  tempo: voice 3 note-ons on 50 steps; the tune data gives 50; the same steps
+PASS NTSC  frames: from play's start (step 7), 960 steps in 960 frames; each step in its own frame or the next (frame minus step spans 8..9, 13 steps a frame late); gaps outside 0-2 frames: 0
+```
+
+`make audiotest` (run by `make selftest`): the `AUDIO_FAULT` build, whose
+music writes every voice during an effect, fails `owned` on both models
+(221 stores on PAL, 137 on NTSC). `make watch` (`SID_FRAMES` 300): the
+SID is written in 324 frames on PAL and 371 on NTSC; the `NO_PLAYER`
+build in 2.
+
+Two things the trace showed that no page said. Oscar64's start-up copies
+the blob into place, so a trace of the blob's addresses sees three
+"steps" before `audio_init`; the script counts only stores from sound.asm's
+code. And the meter's calibration in `play_enter` (harness `meter_init`,
+four waits for line 0 with interrupts off) drops two frame IRQs, so the
+AUTOPILOT build loses two music steps at the start of play; the normal
+build does not call `meter_init`.
+
+Memory: `src/sound.asm` and `src/gen/tune.asm` take `$11DE-$1A23` of the
+blob: 830 bytes of data (two frequency tables of 190, three patterns of
+321, five effects of 105), 778 of code and state, and the 510-byte step
+log the stopwatch fills. CIA1 timer A is the stopwatch; nothing else here
+uses it.
 
 ## Memory and screen
 
 | Range | What |
 |---|---|
 | `$0801-$087F` | Oscar64 start-up |
-| `$0880-$11EA` | the KickAssembler blob: kernel.asm, mux.asm, sound.asm (build/asm.h `ASM_END`) |
+| `$0880-$1A23` | the KickAssembler blob: kernel.asm, mux.asm, sound.asm with src/gen/tune.asm (build/asm.h `ASM_END`; `$11EA` before the audio module) |
 | `$2000-$7FFF` | C code, data, stack |
 | `$8000-$83E7` | the one screen: playfield rows 0-20, panel rows 21-23 (VIC bank 2) |
 | `$83F8-$83FF` | sprite pointers |
@@ -600,7 +714,7 @@ A module never writes the VIC's sprite registers: it writes its slots
 | Weapons (next) | weapons.c/h | slots 1-3 (bullets), 4 (grenade), `grenades` | `weapons_update(joy)`: bullets along `soldier_facing` from a 16-entry velocity table, stopped by `attr_at(...) & A_BLOCK`; grenade_lob's flight and box blast |
 | Collision (next) | collide.c/h | boxes | `collide()`, after objects and weapons moved; scenery is `attr_at` |
 | Flow (next) | flow.c/h, main.c's states | score, lives, grenades, title, game over, high score | `flow_new_game`, `flow_frame`; checkpoint_respawn restarts through `scroll_init(row, 0)`, `objects_reset`, `objects_rows`; area_end_gate_wave starts when `scroll_can_step()` is 0; the gate is `G_GATE`, map rows 1-2, columns 18-21; `panel_update` after a change |
-| Audio (next) | sound.asm, main.c `sfx` | the SID | `audio_init`, `audio_play` (line-250 IRQ, costs the redraw's lead), `sfx_request` (A = effect); sfx_voice_takeover: effects on voices 1 and 2 |
+| Audio | sound.asm, sound.c/h, tools/mktune.py, main.c `sfx` | the SID, CIA1 timer A (stopwatch) | `audio_init`, `audio_play` (line-250 IRQ; held off the redraw frame by `sound_hold`/`sound_release` in `do_redraw`), `sfx_request` (A = effect); C calls `sfx(SFX_...)` from sound.h; sfx_voice_takeover: effects on voices 1 and 2, the tune on 3 ("Audio") |
 
 Rules for every module:
 
@@ -688,8 +802,9 @@ passed".
 - The facing turns one step a frame toward the stick (a tie turns
   clockwise); the body frame is the facing rounded to eight. The walk
   cycle steps every 6 moved frames.
-- Open: the enemies' zones and the music both come out of the redraw's
-  NTSC lead (27 lines); measure it after each. A `DEADLINE_LINE`
+- Open: the enemies' zones come out of the redraw's NTSC lead (27
+  lines); measure it after adding them. The music does not ("Audio"); an
+  earlier version of this item said it did. A `DEADLINE_LINE`
   (harness `make watch`) of 224 would check the pre-redraw rule on every
   frame; it needs an `OVERRUN` build and is not wired yet.
 - Open: the README gallery and the archetype page's `**Starter:**` line

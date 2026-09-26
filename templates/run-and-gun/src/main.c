@@ -27,6 +27,7 @@
 #include "weapons.h"
 #include "collide.h"
 #include "flow.h"
+#include "sound.h"
 #include "frame_meter.h"        // templates/_harness/meter
 #include <string.h>
 
@@ -242,6 +243,7 @@ static unsigned raster_line(void)
 
 static void do_redraw(void)
 {
+    sound_hold();                       // the frame IRQ inside the copy only counts its audio step
     while (!K_BAND_TICK) ;              // line 224: row 20 was fetched on line 215 at the latest
     char f = K_FRAME_CNT;
     if (f != wake_fc)
@@ -252,6 +254,7 @@ static void do_redraw(void)
     scroll_redraw();
     cia1.crb = 0x00;
     unsigned c = 0xffff - cia1.tb;
+    sound_release();                    // ... and the next frame IRQ plays it before its own
     scroll_redraw_due = 0;
     light = 1;
     if (!counting)
@@ -304,6 +307,9 @@ static void play_enter(void)
     play_frames = 0;
     light = 0;
     state = ST_PLAY;
+#if AUTOPILOT
+    sound_start();
+#endif
 #if FRAME_METER
     meter_init((unsigned)SCRATCH, 9, 1, PF_CRAM, METER_HOLD);
     have_main = 0;
@@ -325,6 +331,9 @@ static void actors_commit(char what)
 static void play_frame(char joy)
 {
     char top = scroll_top;
+#if AUTOPILOT
+    sound_script(play_frames);          // scripted effect requests (sound.c)
+#endif
     soldier_update(joy);
     if (scroll_top != top)
         objects_rows(scroll_top);
@@ -398,6 +407,7 @@ static char first_fail(void)
     CHECK(screen_is_map())                                  // 8 the screen holds the map from scroll_top
     CHECK((hw_d011 & 0x7f) == 0x13 && K_CUR_YS == 3)        // 9 the frame IRQ applied YSCROLL 3
     CHECK(K_MUX_SHOWN == 1)                                 // 10 one sprite: every other slot parked
+    CHECK(sound_ok())                                       // 11 audio: a step a frame, the effects' log, the cost
     return 0;
 }
 #endif
@@ -434,6 +444,7 @@ static void verdict(void)
     put_dec(s + 8 * 40 + 7, K_MUX_SHOWN, 1);
     put_dec(s + 8 * 40 + 13, pre_end, 3);
     put_dec(s + 8 * 40 + 20, light_end, 3);
+    sound_print(s, 3, 19);
     text_colour(3, 1, 17, TEXT_CRAM);
     text_colour(4, 1, 25, TEXT_CRAM);
     text_colour(5, 1, 22, TEXT_CRAM);
@@ -475,6 +486,7 @@ int main(void)
 #else
     K_MTR_OPEN = 1;                     // no meter: IRQs never touch timer B
 #endif
+    sound_setup();                      // before kernel_init: it calls audio_init
     __asm {
         jsr ASM_KERNEL_INIT
         cli
@@ -504,6 +516,7 @@ int main(void)
                 ((scroll_ys == FREEZE_YS && K_CUR_YS == FREEZE_YS) || play_frames >= PLAY_FRAMES + 40)) {
                 state = ST_FROZEN;
                 meter_flush();
+                sound_stop();
                 break;
             }
 #endif

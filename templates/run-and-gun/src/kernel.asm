@@ -7,7 +7,8 @@
 //
 //   line 250  frame IRQ  applies what C committed (YSCROLL, the sprite table),
 //                        the playfield's $D011/$D016/$D021, the first eight
-//                        sprites, the player (sound.asm), frame_flag = 1
+//                        sprites, the player (sound.asm; held off the redraw
+//                        frame, PLAN.md "Audio"), frame_flag = 1
 //   zones     zone IRQs  reuse the eight sprites further down (mux.asm)
 //   line 211  band IRQ   invalid_mode_band: ECM+BMM on in line 213's right
 //                        border, YSCROLL 7 on line 215, text mode back in line
@@ -215,7 +216,12 @@ bb_apply:
         sta $d021
         jsr mux_frame
 #if !NO_PLAYER
-        jsr audio_play
+        lda aud_hold            // under the redraw's hold (sound.asm): count the
+        beq !+                  // step, 15 cycles; the next frame IRQ plays it
+        inc aud_owed
+        jmp !++
+!:      jsr audio_play
+!:
 #endif
         lda #1
         sta frame_flag
