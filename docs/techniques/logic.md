@@ -676,6 +676,129 @@ the step is scaled (arithmetic from 59.826 / 50.125 Hz).
 - https://github.com/C64CD/Death-Weapon-C64 `includes/levels.asm` (not
   read here).
 
+## area_end_gate_wave — The area end: the scroll stops, a counted wave comes out, and when it is cleared a script walks the player into the exit
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** (none)
+**Requires:** object_pool
+**Cost:** cycles_per_frame=599, cycles_per_frame_typical=290
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-area-end-gate-wave (worst tick of 435 frames, a frame with spawns into a six-slot pool; typical is the most common wave frame; run from line 251, in the lower border, no badline inside; sprite register writes not included)
+**Cost includes:** object_pool, lfsr_random
+**Claims:** none
+**Claims basis:** derived-listing
+
+**Why.** A scrolling level needs an end that the player earns and that
+the code can detect in one place. Ending on the last map row alone gives
+nothing to do at the end; ending on a timer ignores the player. This
+pattern stops the scroll at the map's end, releases a fixed number of
+enemies, and ends the area only when all of them have come out and none
+is alive. It then takes the controls and walks the player into the exit,
+so the end is a visible event with one trigger: the player reaching a
+fixed spot.
+
+**How.**
+
+1. **The stop.** The scroll routine stops when the map row reaches the
+   end (`threshold_scroll_v` stops there by itself). From that frame the
+   gate phase runs; before it, no wave object spawns.
+2. **Two counters.** `tospawn` starts at N at the area start, and again
+   at every respawn if a death restarts the wave. `alive` is recounted
+   from the pool slots every frame, not incremented and decremented.
+3. **The spawner.** Each frame, each free pool slot rolls a random
+   number while `tospawn` is above 0 and spawns when the roll passes a
+   mask (1 in 32 in the recipe). A spawn decrements `tospawn`. The rate
+   therefore grows with the free slots: a full pool stalls the wave.
+4. **The cleared check.** Map ended, `tospawn` = 0 and `alive` = 0, all
+   three. Then set a walk flag and stop reading the stick.
+5. **The walk.** While the flag is set, move the player one step a frame
+   along to the exit's column, then up to its row. Skip the hit test.
+6. **The end.** On arrival: the bonus, the area counter, the area-end
+   tune, then the level transition (`level_transition_sequence` in
+   `game-design/game-structure.md`).
+
+**Why it works.** The end has one trigger, the player's position, and
+the code that reaches it runs only after the cleared check. Recounting
+`alive` from the slots is right however a slot was freed: shot, left the
+screen, or overwritten by another spawn. A signed counter adjusted in
+each of those paths drifts when one path forgets. The walk is data (a
+target X, then a target Y), so a new exit is two bytes.
+
+**The recipe's measurement.** In
+`recipes/kickassembler/area-end-gate-wave.md`, identical on PAL and NTSC
+in VICE x64sc 3.10: the scroll stops on frame 63, the 12th and last
+object spawns on frame 226, the wave is cleared on frame 266 (the last
+spawn plus its 40-frame life), the walk reaches the gate's column on
+frame 315 (48 frames at 1 pixel a frame) and the area ends on frame 435
+(120 more). A Python model of the same LFSR and rules gives every frame
+and the spawn order. The slowest tick, a frame with spawns, costs 599
+cycles; the most common wave frame costs 290, a walk frame 243 to 294
+(the arrival frame, with the BCD bonus) and a scroll frame 69 to 92
+(per-frame figures from a logging build of the same code, which moved
+the worst frame by 5 cycles).
+
+**When not to use it.** An area that ends on a boss: one object's death
+is the trigger, and a counted wave adds nothing. A game with no map end
+(a looping or endless scroll). A game where enemies can be left alive off
+screen: `alive` then never reaches 0; free those slots when they leave.
+
+**Pitfalls.**
+
+- **The check without `tospawn`.** Before the first spawn `alive` is
+  already 0. With `tospawn` left out of the check, the recipe cleared on
+  frame 63, the frame the scroll stopped, and the area ended on frame
+  232 with 2 of the 12 objects still alive (measured in VICE).
+- **An unreserved pool.** Other objects in the pool slow the wave:
+  Commando's gate gap was 30 frames between spawns with 3.3 free slots on
+  average and 84 with 1.4 (below). Reserve slots for the wave, or accept
+  a longer end.
+- **A walk target never met.** A walk of 2 pixels a frame from an odd
+  start never equals an even target; compare with a clamp, or step by 1
+  (arithmetic).
+- **Input or collision left on.** A bullet still in flight kills the
+  player during the walk, and a held stick fights the script. Commando
+  skips its hit test for the whole walk.
+- **A death during the wave.** Decide whether the wave restarts. Commando
+  resets it to 20 at every respawn, and a death at the gate restarts the
+  player 19 rows back (measured).
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (PAL C64C). When
+the map row counter reaches 0 the scroll stops. The game keeps two
+counters, soldiers still to come out (20 at each area start and each
+respawn) and soldiers alive (recounted every frame by the enemy update).
+Each free-slot visit has about a 1-in-128 chance to spawn a soldier: the
+mean gap was 30 frames with 3.3 free slots and 84 with 1.4, against 38
+and 94 predicted from 1 in 128 (rung 3); at most 5 and 7 were alive at
+once. In the first area the soldiers appear at Y 60, X 140-202; in the
+second, half come from four fixed side positions instead (read from the
+code). When both counters are 0 the game stops reading the stick, skips
+the hit test and walks the player to X $AF, then up to Y $5A; the walk
+took 44 frames in the first area. Reaching Y $5A
+ends the area: the area-end jingle (song 2; the in-game tune restarted
+356 frames later with the end forced), a bonus of 1,400 points (score
+010000 to 011400 on the walk; an earlier teardown note said 2,000, which
+the kill-verified run refuted), then a message screen and the next area.
+The areas cycle 0, 1, 3; the last adds a fortress scene of 255 frames
+before the message. Difficulty per area is only the enemy fire mask: an
+enemy fires when its timer AND the mask is 0, with masks $3F, $1F and $0F
+for the three areas, so at most once every 64, 32 or 16 ticks
+(arithmetic from the masks). Facts only; no code, graphics or map data are taken.
+
+**Related.** `wave_director` above keys waves to the scroll and tracks
+each wave's kills; this pattern is the one wave that has no scroll left.
+`object_pool` holds the objects, `lfsr_random` makes a seeded spawn
+order, `threshold_scroll_v` (`techniques/scroll.md`) supplies the stop,
+and `level_transition_sequence` (`game-design/game-structure.md`) is what
+follows the arrival.
+
+### Recipes
+
+- `recipes/kickassembler/area-end-gate-wave.md` — a map-row counter that stops, 12 objects from a seeded LFSR into six slots, the two-counter cleared check, a walk to X then Y into a gap in a wall, and each phase's frame printed, PAL and NTSC
+
 ## slope_collision — Slopes, ground snap and drop-through platforms from a per-cell attribute byte
 
 **Complexity:** medium

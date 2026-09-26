@@ -2758,5 +2758,17 @@
     "shots": {
       "pal": "screenshots/invalid-mode-band-noband.png"
     }
+  },
+  "kickassembler/area-end-gate-wave": {
+    "cycles": 12000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/area-end-gate-wave.png",
+      "ntsc": "screenshots/area-end-gate-wave-ntsc.png"
+    }
   }
 }
