@@ -34,7 +34,7 @@
 .const ROAD_TOP   = 107         // first road line: row 7, a badline (YSCROLL 3)
 .const ROAD_LINES = 96          // lines 107-202, rows 7-18
 .const HUD_LINE   = ROAD_TOP + ROAD_LINES   // 203: row 19, a badline
-.const IRQ_TOP    = 103         // the double IRQ: 103, then 105
+.const IRQ_TOP    = 101         // the double IRQ: 101, then 105 (103 before: see irq_top)
 .const SYNC_LINE  = 105         // lines 100-106: no badline, no sprite fetch
 .const BLANK_LINE = 251         // below the last display line on PAL and NTSC
 .const H_MIN      = 108         // the horizon's highest line (hoff 0)
@@ -209,8 +209,7 @@ spr_en:     .byte 0, 0
 // centre (signed pixels from the window's left) and the half-width. A line's
 // shown centre is its row's content centre + its XSCROLL (the $D016 byte in
 // its block).
-row_cref:   .fill 12 * 2, 0
-row_w:      .fill 12, 0
+row_cref:   .fill 2 * 12 * 2, 0         // per copy, per row: the content centre (signed)
 line_s:     .fill 2 * ROAD_LINES, 0     // per copy: each road line's shift from its row's cref
 d016_a:     .fill ROAD_LINES, D016_ROAD // per copy: each road line's $D016 (builder)
 d016_b:     .fill ROAD_LINES, D016_ROAD
@@ -353,6 +352,30 @@ take_picture:
         ldx rb_front
         rts
 
+// rb_take: the main loop's take of a finished picture, when the beam is
+// clear of the road and of irq_top (lines 204-311 and 0-93), so the builder
+// need not wait for line 203 or 251 (C: road_work, while rb_ready). The
+// poll runs with interrupts on: an earlier version held them off for its
+// 29 cycles, and when the IRQ at 103 landed in that window irq_top's CLI
+// slipped past line 105 and the chain synced on 106 (about 50 times a race
+// with the builder idle; road_late, VICE x64sc). Only the swap itself,
+// about 150 cycles, runs with them off: in the lower window it can delay
+// irq_blank by two lines, which changes nothing it does.
+rb_take:
+        lda rb_ready
+        beq !done+
+        lda $d011
+        bmi !safe+              // lines 256 up
+        lda $d012
+        cmp #204
+        bcs !safe+
+        cmp #94
+        bcs !done+
+!safe:  sei
+        jsr take_picture
+        cli
+!done:  rts
+
 road_lo:    .byte <road_a, <road_b
 road_hi:    .byte >road_a, >road_b
 pre_lo:     .byte <pre_a, <pre_b
@@ -361,7 +384,13 @@ d018_sky:   .byte SET_BITS.get(SKY_SET), $10 | SET_BITS.get(SKY_SET)
 zlc_off:    .byte 0, zlc_b - zlc_a
 set3:       .byte 0, 3
 
-// ---- line 103: the double IRQ (c64-kb double_irq, stable_raster_irq) --------------------
+// ---- line 101: the double IRQ (c64-kb double_irq, stable_raster_irq) --------------------
+// From entry to CLI is about 107 cycles (arithmetic from the listing): with
+// the IRQ on line 103 the CLI came on cycle 44 of line 104, 19 cycles before
+// line 105's interrupt, and any 20-cycle delay of the 103 interrupt (a SEI in
+// the main loop) put the sync a line late. On 101 the margin is about 80
+// cycles; the NOPs then cover to past 105 (84 of them: 168 cycles from
+// cycle 44 of line 102 reach cycle 23 of line 105).
 irq_top:
         pha
         txa
@@ -392,7 +421,7 @@ irq_top:
         tsx
         stx sp_save
         cli
-    .for (var i = 0; i < 40; i++) { nop }
+    .for (var i = 0; i < 84; i++) { nop }
         jmp *                   // reached only when line 105 was armed late (road_late)
 
 // Line 105: entered from a NOP, so 0 or 1 cycle late. The two $D012 reads

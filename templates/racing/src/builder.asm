@@ -26,6 +26,10 @@
 .const zp_R     = $ea           // row index 0-11
 .const zp_zl    = $d0           // 2: this frame's z * 8 low bytes (per horizon offset)
 .const zp_zlrow = $d2           // 2: the same from the row's top line
+.const DG_LINE = 29             // dyn_glyph: a line's code, and its operands' offsets
+.const DG_SRC  = 4
+.const DG_T1   = 10
+.const DG_T2   = 19
 
 pad_nb:     .fill 8, 0          // BNE operand by sprite set: N blocks (rb_init)
 pad_fb:     .fill 8, 0          // F blocks
@@ -37,10 +41,18 @@ back_code:  .word 0             // the back copy's first block
 back_scr:   .word 0             // the back screen's row 7, less one (Y = column + 1)
 buf12:      .byte 0             // the back screen's index into rs_*: 0 or 12
 spr_first:  .fill 3, $c0        // each sprite's first fetch line (index), back set; $C0 off
-row_spr:    .fill 12, 0         // the same per row (any line of it)
+lmask:      .fill ROAD_LINES + 21, 0    // each road line's sprites (rb_begin)
+lmc:        .fill 2 * ROAD_LINES, $ff   // per copy: the set each line's pad was written for
 back_idx:   .byte 0             // the back copy: 0 A, 1 B
 back_pre:   .byte 0             // back_idx * PRE_SIZE: its entry block (PreBlock) from pre_a
 row_mmax:   .byte 0             // the row's largest whole-column move (0: not sheared)
+row_same:   .byte 0             // 1: the row's geometry is as this copy last had it
+rk_cxl:     .fill 24, $ff       // per copy and row: the geometry it was built from
+rk_cxh:     .fill 24, $ff
+rk_dxl:     .fill 24, $ff
+rk_dxh:     .fill 24, $ff
+rk_k:       .fill 24, $ff
+rk_h:       .fill 24, $ff
 row_skey:   .byte 0             // (d + 33) * 4 + b when sheared, else 0: part of the row cache
 kbuf:       .fill 24, 0         // a template decoded, from the centre outward
 rowbuf:     .fill 128, 0        // a row, column x at 64 + x - c (grass either side)
@@ -60,7 +72,6 @@ rs_sk:      .fill 24, 0         // row_skey it was drawn with
 rs_gtlo:    .fill 24, 0         // the template and shear its dynamic glyphs were built for
 rs_gthi:    .fill 24, 0         // (0: none)
 rs_gsk:     .fill 24, 0
-rs_spr:     .fill 24, $ff       // sprites the row's pads were last written for ($FF: never)
 
 // Slide cycles = remaining bytes R + 1 (R >= 1). For each kind of block,
 // slide = LINE - its cycles - lost (a badline also - BADLOSS), and the
@@ -179,12 +190,18 @@ zlcp:   lda $ffff, y
         sta zp_dx
         lda rb_dx0 + 1
         sta zp_dx + 1
-        // the sprites' first lines (index 0-95; $C0 when off) and their rows
+        // each road line's set of sprites 0-2 (lmask, bit s): last picture's
+        // lines cleared, this one's set (a sprite fetches on lines Y to Y + 20;
+        // C keeps Y in 107-182, so first + 20 is at most 95)
+        ldy #2
+!clr:   ldx spr_first, y
+        cpx #$c0
+        bcs !nc+
         lda #0
-        ldy #11
-!:      sta row_spr, y
-        dey
-        bpl !-
+    .for (var n = 0; n < 21; n++) { sta lmask + n, x }
+!nc:    dey
+        bpl !clr-
+        ldx back_idx
         lda set3, x
         sta zp_t2               // set * 3
         lda spr_en, x
@@ -192,45 +209,34 @@ zlcp:   lda $ffff, y
         lda #0
 #endif
         sta zp_t3               // enable bits
-        ldx #0                  // sprite s
+        ldy #0                  // sprite s
 !spr:   lda #$c0
-        sta spr_first, x
+        sta spr_first, y
         lsr zp_t3
-        bcc !next+
-        txa
+        bcs !on+
+        jmp !next+
+!on:    tya
         clc
         adc zp_t2
-        tay
-        lda spr_y, y            // fetches on lines Y to Y + 20; C keeps Y in 107-182
+        tax
+        lda spr_y, x
         sec
         sbc #ROAD_TOP
-        sta spr_first, x
-        tay
-        lda bit_of, x
+        sta spr_first, y
+        tax
+        lda bit_of, y
         sta zp_t1
-        tya                     // rows (Y >> 3) to ((Y + 20) >> 3)
-        lsr
-        lsr
-        lsr
-        sta zp_c
-        tya
-        clc
-        adc #20
-        lsr
-        lsr
-        lsr
-        sta zp_p
-        ldy zp_c
-!:      lda row_spr, y
-        ora zp_t1
-        sta row_spr, y
-        iny
-        cpy zp_p
-        bcc !-
-        beq !-
-!next:  inx
-        cpx #3
-        bne !spr-
+        lda zp_t1
+    .for (var n = 0; n < 21; n++) {
+        ora lmask + n, x
+        sta lmask + n, x
+        lda zp_t1
+    }
+!next:  iny
+        cpy #3
+        beq !+
+        jmp !spr-
+!:
         lda #18
         sta zp_row
         rts
@@ -378,6 +384,49 @@ row_start:
         adc #8
         tax                     // k + 8
 
+        // ---- the row as this copy last had it? (its centre and slope at the
+        // bottom, the curvature under it and the horizon: all its geometry;
+        // the bands are the kernel's) Then only its pads can have changed.
+        lda zp_R
+        clc
+        adc buf12
+        tay
+        lda #0
+        sta row_same
+        lda zp_cx
+        cmp rk_cxl, y
+        bne !new+
+        lda zp_cx + 1
+        cmp rk_cxh, y
+        bne !new+
+        lda zp_dx
+        cmp rk_dxl, y
+        bne !new+
+        lda zp_dx + 1
+        cmp rk_dxh, y
+        bne !new+
+        txa
+        cmp rk_k, y
+        bne !new+
+        lda rb_hoff
+        cmp rk_h, y
+        bne !new+
+        inc row_same
+        bne !keys+
+!new:   lda zp_cx
+        sta rk_cxl, y
+        lda zp_cx + 1
+        sta rk_cxh, y
+        lda zp_dx
+        sta rk_dxl, y
+        lda zp_dx + 1
+        sta rk_dxh, y
+        txa
+        sta rk_k, y
+        lda rb_hoff
+        sta rk_h, y
+!keys:
+
         // ---- the row's bottom and top centres; the next row's cx, dx ----
         lda zp_dx               // t0:t1 = 8 dx
         asl
@@ -440,6 +489,10 @@ row_start:
         adc k8hi, x
         sta zp_dx + 1
 
+        lda row_same            // nothing else changed: the pads, then done
+        beq !+
+        jmp row_pads
+!:
         // ---- content centre, phase, column; the row's eight $D016 bytes ----
         // The content centre is the lesser of the bottom and top centres on a
         // 4-pixel boundary; each line's XSCROLL is its centre less that.
@@ -528,7 +581,9 @@ row_start:
         asl
         ora zp_t2
 !:      sta row_skey            // 0 when not sheared
-        lda zp_R                // the row's content centre, for C and the checks
+        lda zp_R                // the row's content centre, for C and the checks (per copy)
+        clc
+        adc buf12
         asl
         tax
         lda zp_cref
@@ -596,24 +651,23 @@ tpl_ldhi: lda tpl_hi, y
         sta d016_a + j, x
     }
 
-        // ---- the pads, when this row's sprites or this copy's last ones ask ----
+        // ---- the pads: a line whose sprite set changed since this copy last had it ----
+row_pads:
         lda zp_R
-        tax
-        clc
-        adc buf12
-        tay
-        lda row_spr, x
-        ora rs_spr, y
-        beq !nopad+
-        lda row_spr, x
-        sta rs_spr, y
-        txa
         asl
         asl
         asl
         tax                     // the row's top line index
+        ldy back_idx
+        clc
+        adc b96, y
+        sta zp_t4               // the same in this copy's lmc
     .for (var j = 0; j < 8; j++) {
-        jsr line_mask
+        lda lmask + j, x
+        ldy zp_t4
+        cmp lmc + j, y
+        beq !same+
+        sta lmc + j, y
         tay
       .if (j == 0) {
         lda pad_bb, y
@@ -629,9 +683,13 @@ tpl_ldhi: lda tpl_hi, y
         ldy #(j & 3) * 64 + NB_OPER
       }
       .if (j < 4) { sta (zp_code), y } else { sta (zp_code2), y }
-        inx
+!same:
     }
 !nopad:
+        lda row_same
+        beq !+
+        jmp row_done
+!:
         // the row's character set: its static set, or the back copy's dynamic
         // set when sheared; into the L block above (row 0: the copy's entry)
         lda row_mmax
@@ -655,34 +713,6 @@ tpl_ldhi: lda tpl_hi, y
         inc zp_code + 1
 !done:
         jmp draw_row
-
-// line_mask: which of sprites 0-2 fetch on road line X (index 0-95), in A.
-// X is kept.
-line_mask:
-        ldy #0
-        txa
-        sec
-        sbc spr_first
-        cmp #21
-        bcs !+
-        iny                     // bit 0
-!:      txa
-        sec
-        sbc spr_first + 1
-        cmp #21
-        bcs !+
-        iny                     // bit 1
-        iny
-!:      txa
-        sec
-        sbc spr_first + 2
-        cmp #21
-        bcs !+
-        tya
-        ora #4
-        tay
-!:      tya
-        rts
 
 // ---- the row's characters ----------------------------------------------------------------
 // From the row's template (zp_src), phase (zp_p) and centre column (zp_c):
@@ -825,28 +855,15 @@ st_copy:
 // The slots depend only on the template and the shear, so a row whose two
 // are as this copy last built them keeps its glyphs (rs_gtlo/gthi/gsk).
 st_slots:
-        // m(l), and the lines of each move k: dlo[k] to dhi[k]
-        ldx #4
-        lda #$ff
-!:      sta dlo, x
-        dex
-        bpl !-
-        ldy #0
+        // m(l): each line's whole-column move
+        ldy #7
 !:      lda (zp_ramp), y
         lsr
         lsr
         lsr
         sta mtab, y
-        tax
-        lda dlo, x
-        bpl !+
-        tya
-        sta dlo, x
-!:      tya
-        sta dhi, x
-        iny
-        cpy #8
-        bne !--
+        dey
+        bpl !-
         // the dynamic u's and their slots, into rcode (and dynlist)
         ldx zp_R
         lda dslot, x
@@ -909,14 +926,26 @@ st_slots:
         clc
         adc dyn_hi, y
         sta zp_code + 1
-        ldy glyph_rowset, x     // the row's static set: its glyph data less 5 * 8
-        lda glyph_lo, y
+        lda glyph_rowset, x     // the row's set: its line tables into dyn_glyph
+        asl
+        asl
+        asl
+        tax
+    .for (var l = 0; l < 8; l++) {
+        lda #<rowbuf            // line l's source: rowbuf - m(l)
         sec
-        sbc #GBASE * 8
-        sta gb_lo
-        lda glyph_hi, y
+        sbc mtab + l
+        sta dyn_glyph + l * DG_LINE + DG_SRC
+        lda #>rowbuf
         sbc #0
-        sta gb_hi
+        sta dyn_glyph + l * DG_LINE + DG_SRC + 1
+        lda gt_lo + l, x
+        sta dyn_glyph + l * DG_LINE + DG_T1
+        sta dyn_glyph + l * DG_LINE + DG_T2
+        lda gt_hi + l, x
+        sta dyn_glyph + l * DG_LINE + DG_T1 + 1
+        sta dyn_glyph + l * DG_LINE + DG_T2 + 1
+    }
         lda #0
         sta dyn_i
         lda #ST_GLYPHS
@@ -975,85 +1004,38 @@ st_shcopy:
     }
         jmp row_done
 
-// dyn_glyph: the glyph for rowbuf index zp_u into (zp_code): for each move
-// k, its lines dlo[k]-dhi[k] from the glyph of rowbuf[zp_u - k].
-dyn_glyph:
-        ldx #0
-!k:     lda dlo, x
-        bmi !skip+
-        stx zp_k
-        lda zp_u
-        sec
-        sbc zp_k
-        tay
-        lda rowbuf, y           // the source code
-        tay
-        lda gcls, y
-        beq !grass+
-        cmp #1
-        beq !road+
-        cmp #2
-        beq !left+
-        tya                     // a mirror: the left glyph's bytes, mirrored
-        and #$7f
-        tay
-        jsr gptr
-        ldx zp_k
-        ldy dlo, x
-!:      lda (zp_g), y
+// dyn_glyph: the glyph for rowbuf index zp_u into (zp_code): line l is
+// line l of the glyph at rowbuf[u - m(l)], from the row's set's line table
+// (a mirror id, $80 up, through mirror_tab). The source and table operands
+// are patched per row (st_slots); each line's code is DG_LINE bytes.
+.macro DynLine(l) {
+        ldx zp_u
+src:    lda rowbuf, x
+        bmi mir
+        tax
+t1:     lda glyph_t, x
+        jmp st
+mir:    and #$7f
+        tax
+t2:     lda glyph_t, x
         tax
         lda mirror_tab, x
+st:     ldy #l
         sta (zp_code), y
-        iny
-        ldx zp_k
-        tya
-        cmp dhi, x
-        beq !-
-        bcc !-
-        jmp !skipk+
-!left:  jsr gptr
-        ldx zp_k
-        ldy dlo, x
-!:      lda (zp_g), y
-        sta (zp_code), y
-        iny
-        tya
-        cmp dhi, x
-        beq !-
-        bcc !-
-        jmp !skipk+
-!grass: lda #0
-        .byte $2c
-!road:  lda #$55
-        sta zp_t4
-        ldx zp_k
-        ldy dlo, x
-!:      lda zp_t4
-        sta (zp_code), y
-        iny
-        tya
-        cmp dhi, x
-        beq !-
-        bcc !-
-!skipk: ldx zp_k
-!skip:  inx
-        cpx #5
-        bne !k-
+}
+dyn_glyph:
+dg0:    DynLine(0)
+dg1:    DynLine(1)
+dg2:    DynLine(2)
+dg3:    DynLine(3)
+dg4:    DynLine(4)
+dg5:    DynLine(5)
+dg6:    DynLine(6)
+dg7:    DynLine(7)
         rts
-
-// gptr: zp_g = the row's glyph data for left id Y (5-127).
-gptr:   lda gb_lo
-        clc
-        adc lo8, y
-        sta zp_g
-        lda gb_hi
-        adc hi8, y
-        sta zp_g + 1
-        rts
+        .errorif dg1 - dg0 != DG_LINE || dg0.src + 1 - dg0 != DG_SRC || dg0.t1 + 1 - dg0 != DG_T1 || dg0.t2 + 1 - dg0 != DG_T2, "dyn_glyph layout"
 
 gcls:       .fill 256, (i == 0 || i == $80) ? 0 : ((i == 1 || i == $81) ? 1 : (i < $80 ? 2 : 3))
-lo8:        .fill 128, <(i * 8)
-hi8:        .fill 128, >(i * 8)
 // Row R's 20 slots: ids 2-121 for rows 0-5, 130-249 for rows 6-11 (0, 1,
 // $80 and $81 are grass and road in both halves; 255 is under the vectors).
 .function dslotOf(r) { .return r < 6 ? 2 + 20 * r : 130 + 20 * (r - 6) }
@@ -1071,16 +1053,11 @@ dyn_n:      .byte 0
 dyn_i:      .byte 0
 dynlist:    .fill 20, 0         // the row's dynamic u's, in slot order
 rcode:      .fill 128, 0        // a sheared row's codes by u (grass either side)
-dlo:        .fill 5, 0
-dhi:        .fill 5, 0
 zp_id:      .byte 0             // (absolute, not zero page: the builder's zero page is full)
 zp_left:    .byte 0
 zp_u:       .byte 0
 zp_u2:      .byte 0
 zp_x:       .byte 0
-zp_k:       .byte 0
-gb_lo:      .byte 0
-gb_hi:      .byte 0
 
 row40_lo:   .fill 12, <(i * 40)
 row40_hi:   .fill 12, >(i * 40)

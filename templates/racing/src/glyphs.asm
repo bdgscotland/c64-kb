@@ -170,33 +170,12 @@
 .eval keyBytes.lock()
 .print "road templates: " + tplLen + " bytes; glyph data " + gl + " bytes"
 
-// Each set's left glyphs (8 bytes each, ids 5 up), then the templates, then
-// the tables that point into them (after the data, so every label is known).
-glyph_data:
-.for (var s = 0; s < GSETS; s++) {
-    .for (var i = 0; i < setKeys.get(s).size(); i++) {
-        .var bytes = keyBytes.get(setKeys.get(s).get(i))
-        .for (var l = 0; l < 8; l++) .byte bytes.get(l)
-    }
-}
-tpl_data:   .byte 0, 0, 0
-.for (var t = 0; t < HN * 24; t++) {
-    .for (var i = 0; i < tplBytes.get(t).size(); i++) .byte tplBytes.get(t).get(i)
-}
-glyph_rowset: .fill 12, rowSet.get(i)
-glyph_count:  .fill GSETS, setKeys.get(i).size()
-glyph_lo:     .fill GSETS, <(glyph_data + glyphOff.get(i))
-glyph_hi:     .fill GSETS, >(glyph_data + glyphOff.get(i))
-// Templates: tpl_lo/hi[(hh * 12 + r) * 2 + p].
-tpl_lo:     .fill HN * 24, <(tpl_data + tplOff.get(i))
-tpl_hi:     .fill HN * 24, >(tpl_data + tplOff.get(i))
-
-// ---- glyph_init: the four sets, once, with interrupts off ----------------------------
-// Each set: grass (ids 0, $80) everywhere, road at 1 and $81, the hills at
-// 2-4, the set's left glyphs from 5, and every id's mirror at id + $80.
-// $D000-$DFFF is under I/O: written with $01 = $34 (all RAM), and no
-// interrupt may come while it is (c64-kb irq_during_charen_window). Leaves
-// $01 = $35.
+// Each set's glyphs, stored by line: eight tables per set, table l holding
+// byte l of every id from 0 (0 grass, 1 road, 2-4 the hills, 5 up the set's
+// left glyphs). The builder's sheared rows read a glyph's line with one
+// indexed load (builder.asm dyn_glyph); glyph_init fills the sets from them.
+// Then the templates, then the tables that point into both (after the data,
+// so every label is known).
 .function hillByte(g, r) {
     .var n = (r >> 1) + 1       // pairs filled on this row, 1-4
     .var rise = 0
@@ -207,12 +186,47 @@ tpl_hi:     .fill HN * 24, >(tpl_data + tplOff.get(i))
     }
     .return g == 0 ? $ff : (g == 1 ? rise : fall)
 }
+.function idByte(s, id, l) {
+    .if (id == 0) .return 0
+    .if (id == 1) .return $55
+    .if (id < GBASE) .return hillByte(id - 2, l)
+    .return keyBytes.get(setKeys.get(s).get(id - GBASE)).get(l)
+}
+.var gtOff = List()             // gtOff[s * 8 + l]: table (s, l) from glyph_t
+.var gto = 0
+.for (var s = 0; s < GSETS; s++) {
+    .for (var l = 0; l < 8; l++) {
+        .eval gtOff.add(gto)
+        .eval gto = gto + GBASE + setKeys.get(s).size()
+    }
+}
+.eval gtOff.lock()
+glyph_t:
+.for (var s = 0; s < GSETS; s++) {
+    .for (var l = 0; l < 8; l++) {
+        .fill GBASE + setKeys.get(s).size(), idByte(s, i, l)
+    }
+}
+tpl_data:   .byte 0, 0, 0
+.for (var t = 0; t < HN * 24; t++) {
+    .for (var i = 0; i < tplBytes.get(t).size(); i++) .byte tplBytes.get(t).get(i)
+}
+glyph_rowset: .fill 12, rowSet.get(i)
+glyph_n:      .fill GSETS, GBASE + setKeys.get(i).size()   // ids per set
+gt_lo:        .fill GSETS * 8, <(glyph_t + gtOff.get(i))     // table (set, line)
+gt_hi:        .fill GSETS * 8, >(glyph_t + gtOff.get(i))
+// Templates: tpl_lo/hi[(hh * 12 + r) * 2 + p].
+tpl_lo:     .fill HN * 24, <(tpl_data + tplOff.get(i))
+tpl_hi:     .fill HN * 24, >(tpl_data + tplOff.get(i))
+
+// ---- glyph_init: the sets, once, with interrupts off ----------------------------------
+// Each set: every id from glyph_t, and its mirror at id + $80; the ids past
+// the set's own are grass. $D000-$DFFF is under I/O: written with $01 = $34
+// (all RAM), and no interrupt may come while it is (c64-kb
+// irq_during_charen_window). Leaves $01 = $35.
 .function mirrorByte(b) {
     .return ((b & 3) << 6) | ((b & 12) << 2) | ((b & 48) >> 2) | ((b & 192) >> 6)
 }
-glyph_fixed: .byte 0, 0, 0, 0, 0, 0, 0, 0
-             .fill 8, $55
-    .for (var g = 0; g < 3; g++) { .fill 8, hillByte(g, i) }
 .align $100
 mirror_tab: .fill 256, mirrorByte(i)
 
@@ -221,52 +235,33 @@ glyph_init:
         sta $01
     .for (var s = 0; s < GSETS; s++) {
         .var base = SET_ADDR.get(s)
-        // clear, then ids 0-4 and their mirrors from glyph_fixed
         lda #0
         tax
 !:
       .for (var pg = 0; pg < 8; pg++) { sta base + pg * 256, x }
         inx
         bne !-
-        ldx #39
-!:      lda glyph_fixed, x
-        sta base, x
-        tay
-        lda mirror_tab, y
-        sta base + $400, x
-        dex
-        bpl !-
-        // the set's glyphs: count * 8 bytes from glyph_data
-        lda glyph_lo + s
-        sta zp_src
-        lda glyph_hi + s
-        sta zp_src + 1
-        lda #<(base + GBASE * 8)
+        lda #<base
         sta zp_scr
-        lda #>(base + GBASE * 8)
+        lda #>base
         sta zp_scr + 1
-        lda #<(base + $400 + GBASE * 8)
+        lda #<(base + $400)
         sta zp_code
-        lda #>(base + $400 + GBASE * 8)
+        lda #>(base + $400)
         sta zp_code + 1
-        ldx glyph_count + s
-!glyph: ldy #7
-!:      lda (zp_src), y
+        ldx #0                  // the id
+!id:
+      .for (var l = 0; l < 8; l++) {
+        ldy #l
+        lda glyph_t + gtOff.get(s * 8 + l), x
         sta (zp_scr), y
-        sty zp_t4
-        tay
-        lda mirror_tab, y
-        ldy zp_t4
+        stx zp_t4
+        tax
+        lda mirror_tab, x
+        ldx zp_t4
         sta (zp_code), y
-        dey
-        bpl !-
-        lda zp_src
-        clc
-        adc #8
-        sta zp_src
-        bcc !+
-        inc zp_src + 1
-!:      lda zp_scr
+      }
+        lda zp_scr
         clc
         adc #8
         sta zp_scr
@@ -278,8 +273,11 @@ glyph_init:
         sta zp_code
         bcc !+
         inc zp_code + 1
-!:      dex
-        bne !glyph-
+!:      inx
+        cpx glyph_n + s
+        beq !+
+        jmp !id-
+!:
     }
         // the two dynamic sets: grass everywhere, road at 1 and $81
         // (clearing $F800's last bytes clears $FFFA-$FFFF: main sets the

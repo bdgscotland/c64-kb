@@ -21,6 +21,12 @@
 #include "frame_meter.h"
 
 // ---- memory: the KickAssembler blob at its own address, C above it -----------
+// No malloc: no heap (c64-kb oscar64-reference, Memory layout). The stack
+// keeps Oscar64's 4 KB.
+#pragma heapsize(0)
+#if PIECETIME
+#pragma stacksize(3072)                 // (debug build only: its tables need the room)
+#endif
 // The C region starts on the page after the blob's end (build/asm.h).
 #define C_ORG ((ASM_END + 0xff) & 0xff00)
 #pragma section( asmcode, 0 )
@@ -38,9 +44,10 @@ __export const char asm_blob[] = {
 char state;
 unsigned frame;
 #if PIECETIME
-__export unsigned piece_max[8];         // (debug) by kind: rb_state 0-5, begin, end
-__export unsigned long piece_sum[8];
-__export unsigned piece_n[8];
+__export unsigned piece_max[9];         // (debug) by kind: rb_state 0-5, begin, end, rb_begin
+__export unsigned piece_own[9];         // the same, pieces with no IRQ inside
+__export unsigned long piece_sum[9];
+__export unsigned piece_n[9];
 #endif
 char model;
 static char timer;
@@ -233,19 +240,26 @@ int main(void)
             {
 #if PIECETIME
                 // (debug) wall time by piece: 0-5 rb_state, 6 begin, 7 end
-                char kind = !phase_of_road() ? 6 : B(ASM_RB_STATE) ? B(ASM_RB_STATE) : B(ASM_RB_ROW_ZP) >= 7 ? 0 : 7;
+                char ph = phase_of_road();
+                char kind = ph == 0 ? 6 : ph == 1 ? 8 : B(ASM_RB_STATE) ? B(ASM_RB_STATE) : B(ASM_RB_ROW_ZP) >= 7 ? 0 : 7;
+                // p0, p1: the beam's place, 0 at line 204; a piece with no
+                // IRQ inside it starts and ends below 209 (line 101) in order
+                unsigned p0 = ((vic.raster | ((vic.ctrl1 & 0x80) << 1)) + 108) % 312;
                 cia1.crb = 0x00;
                 cia1.tb = 0xffff;
                 cia1.crb = 0x11;
                 road_work();
                 cia1.crb = 0x00;
                 unsigned t = 0xffff - cia1.tb;
+                unsigned p1 = ((vic.raster | ((vic.ctrl1 & 0x80) << 1)) + 108) % 312;
                 if (state == ST_RACE)
                 {
                     piece_sum[kind] += t;
                     piece_n[kind]++;
                     if (t > piece_max[kind])
                         piece_max[kind] = t;
+                    if (p1 >= p0 && p1 < 209 && t > piece_own[kind])
+                        piece_own[kind] = t;
                 }
 #else
                 road_work();
