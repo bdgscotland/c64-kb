@@ -810,6 +810,11 @@ no sprites.
 | `PLAY FX MAX` | 864 | 31 | a tick, then effect A's start: two gates closed and the 14-byte image |
 | `PLAY MIN` | 215 | 92 | effect B waiting for its first step; voices 1 and 2 skip their writes |
 
+A VICE store trace of `cost` (`trace store`, the net figure written after
+each call, frames cut at `$02FF`) gives every frame's call: median 294
+cycles over frames 1 to 160, and 228 on 63 of them, the frames with no
+tick and no effect. PAL and NTSC give the same 160 figures.
+
 Per-frame costs read with a monitor checkpoint after each call, in this
 build and the build with no requests, give the effect engine's own work
 by difference: +342 cycles on a start frame (31 and 91), +321 when a
@@ -818,8 +823,20 @@ of B. A note start on a stolen voice saves up to 90 cycles (557 against
 647). The build with no requests peaks at 669 cycles, on frame 97.
 
 The frequency table is computed for the PAL clock. On NTSC the same
-register values play about 3.8 % sharp (1,022,727 / 985,248, arithmetic);
-the mechanism and the trace do not depend on it.
+register values play about 3.8 % sharp (1,022,727 / 985,248, arithmetic),
+and the tick, one in three frames on both, makes the tune 19.4 % fast
+(59.826 / 50.125, arithmetic; an earlier version of this paragraph named
+only the pitch). The mechanism and the trace do not depend on either. A
+game that ships on both needs an NTSC frequency table and one tick count
+skipped in six (`pal_ntsc_tempo_mismatch`, `pitfalls/region-timing.md`).
+
+**Pattern space.** `voice` reads every pattern through `patdata,y`, so
+the three patterns share the 256 bytes from `patdata`; this tune uses 79.
+KickAssembler 5.25 assembles a `pstart` entry past 255 silently as its low
+byte (measured: 230 bytes of padding before `v2pat` put its start at 259,
+and `pstart` held `$03`). A longer tune needs a base per voice: a
+zero-page pointer read with `(zp),y`, or the table address patched per
+voice.
 
 ## Why this works
 

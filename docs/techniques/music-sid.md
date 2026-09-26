@@ -1602,9 +1602,11 @@ runs. 1,200 cycles is 6.1 % of a PAL frame of 19,656 and
 **Uses registers:** D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D418
 **Requires:** sid_play_routine_pattern, sid_voice_setup
 **Alternative to:** sfx_in_player (no priority, no hand-back and no shadow copy, so an effect costs less; an effect takes two voices and leaves the tune one, and a stolen voice gets no music until its next note)
-**Cost:** cycles_per_frame=342, cycles_per_frame_typical=66
-**Cost basis:** arithmetic
-**Cost measured on:** kickassembler-sfx-voice-takeover (an effect's start frame and a step frame, each against the same frame of a build with no requests)
+**Cost:** cycles_per_frame=864, cycles_per_frame_typical=294, bytes_code=493, bytes_data=366
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+**Cost measured on:** kickassembler-sfx-voice-takeover (the whole driver, tune and effects, one call a frame; worst is effect A's start on a tick frame, typical the median of the recipe's 160 frames; below the display, no badlines; PAL and NTSC identical)
+**Cost includes:** sid_play_routine_pattern
 **Claims:** sid_voice_1-3 (owns), sid_filter_volume (owns)
 **Claims basis:** measured-vice
 
@@ -1709,9 +1711,15 @@ prints the same figures):
 
 Measured in VICE x64sc 3.10 with CIA1 timer A around each play call in
 the recipe (rung 1); identical on PAL and NTSC, because the call runs from
-raster line 251 with no sprites. The Cost line gives the effect engine's
-own work, each figure the difference between two measured runs
-(arithmetic):
+raster line 251 with no sprites. The Cost line is the whole driver's
+call, the tune's player included, so its Cost includes line names
+`sid_play_routine_pattern`: this driver is the game's music player, and a
+plan that lists both counts it once. Over the recipe's 160 frames the call
+takes 215 to 864 cycles, median 294; 63 frames take 228 (a music-only
+frame with no tick). An earlier version of the Cost line gave 342 and 66,
+the effect engine's increments over a music-only frame, so a plan summed
+the effects and counted no tune. The table's last column is those
+increments, each the difference between two measured runs (arithmetic):
 
 | Frame | Cycles | Against the build with no requests |
 |---|---|---|
@@ -1782,6 +1790,22 @@ needs two voices through an effect.
   1's pulse sweep advancing and skips only its write, so the pulse width
   is in phase when the voice returns. Skipping the work entirely, as
   Commando does, is cheaper; the width then resumes where it stopped.
+- **Region both is the mechanism, not the tune.** The recipe's
+  frequency table is computed for the PAL clock and its tick counts
+  frames, so on NTSC the tune plays about 3.8 % sharp (1,022,727 /
+  985,248) and 19.4 % fast (59.826 / 50.125 frames a second), both
+  arithmetic. An effect's sweep steps once per frame or two and speeds up
+  the same way. The fix is `pal_ntsc_tempo_mismatch`'s
+  (`pitfalls/region-timing.md`): an NTSC frequency table and one tick
+  count skipped in six.
+- **All three patterns share 256 bytes.** The recipe reads every voice's
+  pattern through `patdata,y` with an 8-bit Y, so each pattern must start
+  and end within 256 bytes of `patdata`; its tune uses 79. KickAssembler
+  5.25 assembles a `pstart` entry past 255 without a warning and keeps the
+  low byte (measured: with 230 bytes of padding before voice 2's pattern,
+  its start of 259 assembled as `$03`, inside voice 1's pattern). A longer
+  tune needs a pattern base per voice, a zero-page pointer read with
+  `(zp),y` or a patched table address.
 
 ### In Commando (1985)
 
