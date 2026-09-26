@@ -1,0 +1,14 @@
+{
+  "mid_run": true,
+  "checks": [
+    { "name": "entry: heading", "type": "text", "row": 3, "col": 13, "text": "NEW HIGH SCORE" },
+    { "name": "entry: the score and the rank it takes", "type": "text", "row": 6, "col": 10, "text": "SCORE 025500  RANK 4" },
+    { "name": "entry: the prompt", "type": "text", "row": 9, "col": 10, "text": "ENTER YOUR INITIALS" },
+    { "name": "entry: the wheel starts at A, the rest untyped", "type": "text", "row": 12, "col": 17, "text": "A . ." },
+    { "name": "entry: the cursor under the first letter", "type": "text", "row": 13, "col": 17, "text": "-    " },
+    { "name": "entry: the letter under the cursor is yellow", "type": "ink", "vic_x": 160, "line": 147, "width": 8, "height": 8, "background": 9, "colours": [7], "min": 10 },
+    { "name": "entry: the controls", "type": "text", "row": 16, "col": 3, "text": "UP/DOWN LETTER  FIRE OK  LEFT BACK" },
+    { "name": "panel: no digits", "type": "text", "row": 23, "col": 0, "text": "                                        ", "dy": 4 },
+    { "name": "the screen identical on both models", "type": "same", "cells": [0, 0, 19, 39] }
+  ]
+}

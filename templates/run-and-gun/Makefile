@@ -49,7 +49,7 @@ assetcheck:
 # MAPEND): the view stops at map y 0 after 7 lines (YSCROLL 0 to 7), and he
 # walks on through the fort's gate to sprite Y 52. expect-mapend.json reads
 # its verdict at YSCROLL 7 ("dy": 4).
-VERIFY_TARGETS := mapend
+VERIFY_TARGETS := mapend frontend fedrive
 PRG_MAPEND := build/$(NAME)-mapend.prg
 $(PRG_MAPEND): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
@@ -77,3 +77,74 @@ phases: $(PRG_PHASES)
 	$(PYTHON) tools/phases.py --x64sc $(X64SC) --pal $(SHOT_CYCLES_PAL) --ntsc $(SHOT_CYCLES_NTSC) $(PRG_PHASES)
 
 check: phases
+
+# ---- frontend: title, play, game over, name entry, table, title ------------------------
+# The -dFRONTEND=1 autopilot build (main.c's FRONTEND script; flow.c's forced
+# deaths, FORCE_OVER) plays the whole front end in one run and grades itself
+# on the title it returns to (main.c first_fail, FRONTEND). expect-frontend.json
+# grades that title on PAL and NTSC; the expect-fe-*.json pins grade the game
+# over, entry and table screens, each shot inside the same run at its own
+# cycle count (the run is the same every time: no random autostart delay).
+# The FORCE_FAULT build files every score into row 0 (the fault
+# high_score_table_insert names) and must fail the title's checks.
+PRG_FE := build/$(NAME)-frontend.prg
+PRG_FE_FAULT := build/$(NAME)-frontend-fault.prg
+FE_CYCLES_PAL  := 22000000
+FE_CYCLES_NTSC := 19000000
+# Pins, each in the middle of its screen's window on that model (measured by a
+# sweep of shots every 1,000,000 cycles; PLAN.md, "Front end"). The entry pin
+# is before the name is typed; the table and the verdict show it filed.
+FE_OVER_PAL  := 7000000
+FE_OVER_NTSC := 6800000
+FE_ENTRY_PAL  := 9400000
+FE_ENTRY_NTSC := 8600000
+FE_TABLE_PAL  := 13000000
+FE_TABLE_NTSC := 12000000
+$(PRG_FE): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dFRONTEND=1 -o=$@ $(C_MAIN)
+$(PRG_FE_FAULT): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dFRONTEND=1 -d$(FAULT_DEFINE)=1 -o=$@ $(C_MAIN)
+
+define fe_pin
+	$(call vice_shot,$(PRG_FE),$(2),,shots/fe-$(1)-pal.png)
+	$(call vice_shot,$(PRG_FE),$(3),-model ntsc,shots/fe-$(1)-ntsc.png)
+	$(PYTHON) $(HARNESS_DIR)/check.py expect-fe-$(1).json shots/fe-$(1)-pal.png shots/fe-$(1)-ntsc.png
+endef
+
+.PHONY: frontend
+frontend: $(PRG_FE) $(PRG_FE_FAULT)
+	$(call fe_pin,over,$(FE_OVER_PAL),$(FE_OVER_NTSC))
+	$(call fe_pin,entry,$(FE_ENTRY_PAL),$(FE_ENTRY_NTSC))
+	$(call fe_pin,table,$(FE_TABLE_PAL),$(FE_TABLE_NTSC))
+	$(call vice_shot,$(PRG_FE),$(FE_CYCLES_PAL),,shots/fe-pal.png)
+	$(call vice_shot,$(PRG_FE),$(FE_CYCLES_NTSC),-model ntsc,shots/fe-ntsc.png)
+	$(PYTHON) $(HARNESS_DIR)/check.py expect-frontend.json shots/fe-pal.png shots/fe-ntsc.png
+	$(call vice_shot,$(PRG_FE_FAULT),$(FE_CYCLES_PAL),,shots/fe-fault-pal.png)
+	$(call vice_shot,$(PRG_FE_FAULT),$(FE_CYCLES_NTSC),-model ntsc,shots/fe-fault-ntsc.png)
+	@$(PYTHON) $(HARNESS_DIR)/check.py expect-frontend.json shots/fe-fault-pal.png shots/fe-fault-ntsc.png > shots/fe-fault-check.txt; st=$$?; \
+	if [ $$st -eq 1 ]; then grep '^FAIL' shots/fe-fault-check.txt | head -6; echo "frontend: PASS, the FORCE_FAULT build (every score into row 0) failed"; \
+	else cat shots/fe-fault-check.txt; echo "frontend: FAIL, check.py exit $$st on the FORCE_FAULT build (want 1)"; exit 1; fi
+
+# ---- fedrive: the normal build's front end, played on the real $DC00 --------------------
+# The -dFORCE_OVER=1 build is the normal game (no autopilot) with flow.c's
+# forced deaths. harness/drive.py presses the stick: the title idles into the
+# table and the demo and back; fire; the game ends; DAB typed on the letter
+# wheel; the table shows it fourth; the title again. A second game ties DAB's
+# 25,500 and ranks fifth, below it (the tie rule); B is typed and the entry
+# is left alone until ENTRY_IDLE closes it as "B..". Each until: step fails
+# the run if its text never comes.
+PRG_FEDRIVE := build/$(NAME)-fedrive.prg
+$(PRG_FEDRIVE): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -dFORCE_OVER=1 -o=$@ $(C_MAIN)
+FEDRIVE_STEPS := "until:PUSH FIRE TO START" "until:HIGH SCORES" "until:DEMO" "until:PUSH FIRE TO START" \
+	tap:fire "until:LIVES 3" "until:GAME OVER" print "until:ENTER YOUR INITIALS" \
+	tap:up tap:up tap:up tap:fire tap:fire tap:up tap:fire "until:4  025500  DAB" print "until:PUSH FIRE TO START" print \
+	tap:fire "until:LIVES 3" "until:RANK 5" tap:up tap:fire "until:5  025500  B.." print
+
+.PHONY: fedrive
+fedrive: $(PRG_FEDRIVE)
+	$(DRIVE) $(PRG_FEDRIVE) $(FEDRIVE_STEPS)
+	@echo "fedrive: PASS"

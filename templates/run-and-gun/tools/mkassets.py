@@ -14,6 +14,7 @@ Outputs (all committed, so a build needs no Python):
     src/gen/map.bin      MAP_ROWS x 40 screen codes, row 0 at the top (row_map_redraw)
     src/gen/sprites.bin  64-byte sprite blocks: the soldier's 8 directions x 4 walk
                          frames, then a blank block (sprite_slot_parking)
+    src/gen/logo.bin     the title logo's cells (make_logo)
     src/gen/assets.h     the codes, sizes and positions C needs
 
 Colours (multicolour characters, one colour RAM value for every playfield cell):
@@ -49,6 +50,7 @@ G_BAG_L, G_BAG_M, G_BAG_R = 94, 95, 96     # sandbag wall, 1 row
 G_FORT = 100           # fort wall, 2 x 2 repeating, 100-103
 G_POST = 104           # gate posts, 1 x 2 each: 104-105 left, 106-107 right
 G_GATE = 108           # the gate's opening, 4 x 2 cells, 108-115 (no flags)
+G_SOLID = 255          # every pixel set: the title logo's block (front.c), hires cells
 
 # MC pixel characters: '.' 00, 'g' 01, 'k' 10, 'G' 11
 PIX = {".": 0, "g": 1, "k": 2, "G": 3}
@@ -124,6 +126,8 @@ def make_charset():
     glyphs[G_GRASS_B] = glyph_from_rows(["....", "....", "....", "....", "..g.", ".g.g", "....", "...."])
     glyphs[G_PEBBLES] = glyph_from_rows(["....", ".k..", "....", "....", "....", "...k", "....", "...."])
     glyphs[G_ROOTS] = glyph_from_rows(["....", "g...", ".g..", "....", "....", "..g.", "...g", "...."])
+
+    glyphs[G_SOLID] = [0xFF] * 8   # the logo's block: foreground in a hires cell
 
     # Tree canopy: 16 x 24 MC pixels, with light holes the soldier shows through.
     cv = canvas(16, 24)
@@ -417,10 +421,46 @@ def write_header(path, n_blocks):
         f"#define SPR_SOLDIER  0    // block offset: direction * 4 + walk frame",
         f"#define SPR_BLANK    32   // the parking block (all zero)",
         f"#define SPR_BLOCKS   {n_blocks}",
+        f"#define G_SOLID      {G_SOLID}  // every pixel set: the logo's block",
+        f"#define LOGO_W       {LOGO_W}   // logo.bin: LOGO_H rows of LOGO_W, 0 empty 1 letter 2 shadow",
+        f"#define LOGO_H       {LOGO_H}",
         "#endif",
         "",
     ]
     open(path, "w").write("\n".join(lines))
+
+
+# ---- the title logo ---------------------------------------------------------------
+# FIREBASE in a 3 x 5 block font of G_SOLID cells, one column between letters,
+# with a drop shadow one cell right and one down. logo.bin holds LOGO_H rows of
+# LOGO_W bytes: 0 empty, 1 letter, 2 shadow; front.c draws 1 in its row's colour
+# and 2 in black. Drawn here, not taken from any game.
+LOGO_FONT = {
+    "F": ["###", "#..", "##.", "#..", "#.."],
+    "I": ["###", ".#.", ".#.", ".#.", "###"],
+    "R": ["##.", "#.#", "##.", "#.#", "#.#"],
+    "E": ["###", "#..", "##.", "#..", "###"],
+    "B": ["##.", "#.#", "##.", "#.#", "##."],
+    "A": [".#.", "#.#", "###", "#.#", "#.#"],
+    "S": [".##", "#..", ".#.", "..#", "##."],
+}
+LOGO_TEXT = "FIREBASE"
+LOGO_W = 4 * len(LOGO_TEXT)        # 3 columns a letter, 1 between, and the shadow's column
+LOGO_H = 6                         # 5 rows and the shadow's row
+
+
+def make_logo():
+    grid = [[0] * LOGO_W for _ in range(LOGO_H)]
+    for i, ch in enumerate(LOGO_TEXT):
+        for y, row in enumerate(LOGO_FONT[ch]):
+            for x, px in enumerate(row):
+                if px == "#":
+                    grid[y][4 * i + x] = 1
+    for y in range(LOGO_H - 1, 0, -1):
+        for x in range(LOGO_W - 1, 0, -1):
+            if grid[y][x] == 0 and grid[y - 1][x - 1] == 1:
+                grid[y][x] = 2
+    return bytes(v for row in grid for v in row)
 
 
 def preview(outdir, charset, m, sprites):
@@ -461,6 +501,7 @@ def main():
     open(os.path.join(GEN, "attr.bin"), "wb").write(attr)
     open(os.path.join(GEN, "map.bin"), "wb").write(bytes(v for row in m for v in row))
     open(os.path.join(GEN, "sprites.bin"), "wb").write(sprites)
+    open(os.path.join(GEN, "logo.bin"), "wb").write(make_logo())
     write_header(os.path.join(GEN, "assets.h"), len(sprites) // 64)
     if "--preview" in sys.argv:
         preview(sys.argv[sys.argv.index("--preview") + 1], charset, m, sprites)

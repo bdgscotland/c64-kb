@@ -17,6 +17,9 @@
 #ifndef FORCE_FAULT
 #define FORCE_FAULT 0
 #endif
+#if defined(FRONTEND) && !defined(FORCE_OVER)
+#define FORCE_OVER 1                    // make frontend: the forced game over (flow.c)
+#endif
 
 // ---- memory map ----------------------------------------------------------------
 // $0801-$087F Oscar64 startup        $0880-$1FFF the kernel blob (asm)
@@ -99,12 +102,17 @@
 // coordinates and are drawn at Y = my - scroll_wy + 54 - dy.
 
 // ---- game state (main.c) -------------------------------------------------------------
-enum { ST_TITLE, ST_PLAY, ST_FROZEN };
-extern char state;
+// game_state_machine: one state byte. A module that wants another state writes
+// state_next; main.c runs that state's entry routine before the next frame
+// (play_enter for ST_PLAY, front_enter in front.c for the front end).
+enum { ST_TITLE, ST_PLAY, ST_FROZEN, ST_OVER, ST_ENTRY, ST_TABLE };
+extern char state, state_next;
+extern char demo;                        // 1: ST_PLAY is the attract demo (front.c)
 extern unsigned play_frames;
 extern char ntsc;                        // 1 on NTSC (263 lines), 0 on PAL (312)
-extern unsigned long score;              // flow.c owns the rules; display.c shows it
-extern char lives, grenades;
+extern char score[3];                    // BCD, score[0] most significant (6 digits); add
+                                         // with flow_add_score; flow.c owns it, display.c shows it
+extern char lives, grenades;             // binary; the panel follows a change (flow_frame)
 
 #define JOY_UP    0x01                  // $DC00 bits, active low
 #define JOY_DOWN  0x02

@@ -1,0 +1,12 @@
+{
+  "mid_run": true,
+  "checks": [
+    { "name": "game over", "type": "text", "row": 9, "col": 15, "text": "GAME OVER" },
+    { "name": "the final score: three forced deaths at 8,500", "type": "text", "row": 11, "col": 14, "text": "SCORE 025500" },
+    { "name": "the playfield cleared: rows 0-7 earth, no map and no sprite", "type": "rect", "colour": 9, "vic_x": 24, "line": 56, "width": 320, "height": 60 },
+    { "name": "the band: lines 214-222 black", "type": "rect", "colour": 0, "vic_x": 24, "line": 214, "width": 320, "height": 9 },
+    { "name": "panel: the name", "type": "text", "row": 21, "col": 28, "text": "FIREBASE", "dy": 4 },
+    { "name": "panel: no digits", "type": "text", "row": 23, "col": 0, "text": "                                        ", "dy": 4 },
+    { "name": "the screen identical on both models", "type": "same", "cells": [0, 0, 19, 39] }
+  ]
+}
