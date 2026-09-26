@@ -238,6 +238,7 @@ number with no stated basis is worse than no number.
 | `cycles_per_frame` | CPU cycles the technique takes per frame, a PAL frame of 19,656 cycles unless the technique's own page states otherwise. It is the worst frame, not an average: a soft scroller whose column carry runs once in eight frames states the carry frame, because that is the frame a plan has to fit. For a routine that is called on demand (a multiply, a random step), the cost of one call, on the assumption of one call per frame; the page's per-call figure is the number to state. A routine the page places outside the frame loop (a level-start map expand, a one-off table build) states no `cycles_per_frame` when the line already carries a per-frame figure; its cost stays in the prose. A technique that only ever runs outside play (a disk save, a file read) may state its one-call cost, so that a plan listing it in a transition phase names the figure: above one frame, a budget reports it as `multi_frame` and never sums it. An earlier version of this rule forbade that figure, which left every plan that saves a file with an unknown. The figure is the technique's own work, never a demonstration's stand-in payload. |
 | `cycles_per_item` | the worst CPU cycles one more item adds to a frame, for a technique whose work grows with a count: a bullet, a tested pair (#95). Measured on builds of the recipe with different counts, and stated beside `cycles_per_frame`, which stays the recipe's own count. The measured-on conditions say what an item is. A plan that names the technique with a count, `char_bullets ×12` or `×0-12`, is charged `cycles_item_base` + N × this, low with the first count and high with the second; without a count, `cycles_per_frame`. Before #95 a count multiplied the whole figure as calls, so `char_bullets ×12` charged twelve eight-bullet frames. |
 | `cycles_item_base` | the cycles of a frame with no items, beside `cycles_per_item`; absent is 0, and without `cycles_per_item` it is refused with a warning. |
+| `every_n_frames` | the frame `cycles_per_frame` (or a per-item charge) is spent on comes once in N frames, N at least 2, and the other frames spend nothing of it a plan must count. A coarse-scroll redraw on the frame YSCROLL wraps states 8 at one pixel a frame. `c64_plan_budget` does not add such a member to every frame: it budgets its own frame as its figure plus the every-frame charges (band, per-line) and the fixed losses, and assumes the other members skip that frame, which the page must say (`row_map_redraw`, How step 6); members with `irq_slots` are named, since their interrupt work lands on that frame uncounted. A technique whose other frames do work of their own states no `every_n_frames`. Below 2, or without a frame figure, it is refused with a warning. Before it existed the budget added `row_map_redraw`'s 13,304 cycles to every play frame (run-and-gun KB-GAPS 1). |
 | `lines_active` | raster lines per frame on which the technique runs code (the region of a side-border loop, the two lines of a double IRQ). |
 | `bytes_code` | bytes of code in the built recipe's segments, as `-showmem` or the Oscar64 map reports them. When the page states only a PRG size, that size less the two-byte load address, and the measured-on line says `whole PRG` so a budget does not sum a runtime once per technique. |
 | `bytes_data` | bytes of tables, buffers and other data in the built recipe's segments (a sine table, an image, a fade table). |
@@ -308,8 +309,17 @@ technique's work.
 - `**Cost includes:**` names techniques whose per-frame work is inside
   this figure, comma-separated. Authored, never inferred: write it only
   when the page says the figure covers that technique's work in the
-  recipe. A plan that lists both counts the included one once. It lands
+  recipe, or that the figure's worst case already covers a policy the
+  technique can run under, and why (`sprite_multiplex_game` holds
+  `sprite_slot_parking`: a parked slot is one more actor to a sort and
+  build the 24-actor worst case already counts). A plan that lists both
+  counts the included one once. `c64_check_compatibility` reads the line
+  too: the included technique runs inside the other, so the pair is not
+  set against each other as rival owners, and against a third technique
+  its claims on units the includer holds are the includer's. It lands
   as `cost_includes`; ingest warns about a name that is no Technique.
+  Before run-and-gun KB-GAPS 4 the check ignored the line and called
+  that pair a hard `unit_contention`.
 
 Both are dropped with the Cost line when that is refused, and a line
 without a Cost line is ignored with a warning. `c64_plan_budget` uses all
@@ -318,7 +328,9 @@ above one frame is a multi-frame operation and is not summed; a technique
 with `cycles_per_line=63` and a line band is charged band lines × line
 length, and its REQUIRES closure is not added again. It calls a plan
 over only when work that runs every frame (band and per-line charges)
-plus the badline loss no figure can already hold passes the frame.
+plus the badline loss no figure can already hold passes the frame, or
+when a member with `every_n_frames` cannot fit its own frame beside that
+work.
 
 An optional `**Claims:**` line names the pieces of hardware the technique
 holds while it runs, and how. It must be paired with a `**Claims basis:**`
@@ -339,7 +351,11 @@ Grammar:
   `shares` (writes it under the owner's protocol: after the owner's write
   in the frame, or as a handler in the owner's interrupt chain), `reads`
   (reads only; the owner's writes change what it sees), `init` (uses it
-  once before the frame loop, then leaves it).
+  once before the frame loop, then leaves it). Two techniques that both
+  claim `cia1_port_a` or `cia1_port_b` as `reads` get no `shared_register`
+  hit for `$DC00` or `$DC01`: readers write nothing (run-and-gun
+  KB-GAPS 30; before it, three joystick readers were told they write the
+  same registers).
 - a numbered run of units is one item: `sprite_0-7`, `sid_voice_1-3`.
 - zero page names its bytes: `zero_page $02-$0D+$24-$2F (owns)`. Add
   `relocatable` when a build option moves them:

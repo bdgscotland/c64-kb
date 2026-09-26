@@ -424,9 +424,9 @@ frame's active display period.
 **Uses kernal:** (none)
 **Requires:** soft_scroll_v
 **Alternative to:** char_scroll_buffer_v (redraws every row from the map instead of moving them; no colour RAM move and no seam row, but the level must sit in RAM as raw screen codes, 40 bytes a row, and the redraw frame has little time left for logic), eight_way_scroll_double_buffer (one screen and no `$D018` flip; vertical only, and the one-pass redraw must stay ahead of the beam)
-**Cost:** cycles_per_frame=13304
+**Cost:** cycles_per_frame=13304, every_n_frames=8
 **Cost basis:** measured-vice
-**Cost measured on:** kickassembler-row-map-redraw (the redraw frame, 21 rows, CIA1 timer B, screen on, PAL: 13,916 measured, less the 546 cycles of per-row harness reads and the 66-cycle line-250 IRQ that `invalid_mode_band` already counts, arithmetic; 14,175 measured on NTSC; an earlier version said 14,673, measured with the copy loop across a page boundary and the harness included)
+**Cost measured on:** kickassembler-row-map-redraw (one pixel a frame, so the redraw frame is every eighth; the redraw frame, 21 rows, CIA1 timer B, screen on, PAL: 13,916 measured, less the 546 cycles of per-row harness reads and the 66-cycle line-250 IRQ that `invalid_mode_band` already counts, arithmetic; 14,175 measured on NTSC; an earlier version said 14,673, measured with the copy loop across a page boundary and the harness included)
 **Claims:** vic_yscroll (shares)
 **Claims basis:** derived-listing
 
@@ -435,6 +435,15 @@ new value must reach `$D011` for the same frame as the new rows, so it
 shares the unit that technique owns, as `char_scroll_buffer_v` does. It
 writes screen RAM and reads the map, which are the program's memory. Its
 self-modified operands are the recipe's code, not a unit.
+
+The redraw's 13,304 cycles fall on one frame in eight at the recipe's one
+pixel a frame (its listing; one in four at two pixels a frame), and that
+frame runs no other logic (How, step 6). The Cost line says so with
+`every_n_frames=8`, and `c64_plan_budget` budgets that frame on its own. An
+earlier Cost line had no such key, so the budget added the redraw to every
+play frame: 36,916-47,124 cycles for the run-and-gun starter's plan, whose
+measured logic frames are at most 3,049 (PAL) and whose redraw frame is
+14,100 (templates/run-and-gun, KB-GAPS.md 1, VICE x64sc).
 
 ### Why
 

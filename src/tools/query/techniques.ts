@@ -40,6 +40,7 @@ const TechniqueRow = z.object({
   cost_cycles_per_frame_typical: OptNumber,
   cost_cycles_per_item: OptNumber,
   cost_cycles_item_base: OptNumber,
+  cost_every_n_frames: OptNumber,
   cost_basis: CostBasisSchema.nullable(),
   cost_bytes_basis: CostBasisSchema.nullable(),
   cost_recipe: z.string().nullable(),
@@ -63,6 +64,7 @@ const TECHNIQUE_QUERY = `MATCH (t:Technique {name: $name})
             t.cost_bytes_basis AS cost_bytes_basis,
             t.cost_cycles_per_frame_typical AS cost_cycles_per_frame_typical, t.cost_recipe AS cost_recipe,
             t.cost_cycles_per_item AS cost_cycles_per_item, t.cost_cycles_item_base AS cost_cycles_item_base,
+            t.cost_every_n_frames AS cost_every_n_frames,
             t.cost_conditions AS cost_conditions, t.cost_includes AS cost_includes,
             t.raster_band AS raster_band, t.claims_stated AS claims_stated, t.claims_basis AS claims_basis
      LIMIT 1`;
@@ -80,6 +82,7 @@ const COST_FIGURES = [
   ["cycles_per_frame_typical", "cost_cycles_per_frame_typical"],
   ["cycles_per_item", "cost_cycles_per_item"],
   ["cycles_item_base", "cost_cycles_item_base"],
+  ["every_n_frames", "cost_every_n_frames"],
 ] as const;
 
 /**

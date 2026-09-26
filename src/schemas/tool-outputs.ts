@@ -202,6 +202,8 @@ const TechniqueCostSchema = z.object({
   // "name ×N" on the technique charges base + N × item.
   cycles_per_item: z.number().int().optional(),
   cycles_item_base: z.number().int().optional(),
+  // Run-and-gun gap 1: cycles_per_frame is spent on one frame in N, not every frame.
+  every_n_frames: z.number().int().optional(),
   basis: CostBasisSchema,
   // **Cost bytes basis:** (#72): the basis of bytes_code, bytes_data and
   // zp_bytes when the page states one apart; `basis` then covers the rest.

@@ -93,6 +93,22 @@ function checkedItemBase(cost: TechniqueCost, where: string): TechniqueCost {
   return rest;
 }
 
+/** One frame in N (run-and-gun gap 1): N is 2 or more, and it qualifies a frame figure. */
+function checkedEveryN(cost: TechniqueCost, where: string): TechniqueCost {
+  const n = cost.every_n_frames;
+  if (n === undefined) return cost;
+  const frameFigure = cost.cycles_per_frame !== undefined || cost.cycles_per_item !== undefined;
+  if (n >= 2 && frameFigure) return cost;
+  warn(
+    frameFigure
+      ? `${where} has every_n_frames=${n}; it must be 2 or more — skipped (see CONVENTIONS-techniques.md)`
+      : `${where} has every_n_frames without cycles_per_frame — skipped (see CONVENTIONS-techniques.md)`,
+  );
+  const rest = { ...cost };
+  delete rest.every_n_frames;
+  return rest;
+}
+
 /**
  * The byte figures' own basis from a **Cost bytes basis:** line (#72). No
  * line: the Cost basis covers them, as it always has. A line with no byte
@@ -177,7 +193,7 @@ function settledCost({ head, meta, sourcePath }: Section): SettledCost | null {
     return null;
   }
   const { cost, cost_bytes_basis } = bytesBasis(
-    checkedItemBase(checkedTypical(meta.cost, where), where),
+    checkedEveryN(checkedItemBase(checkedTypical(meta.cost, where), where), where),
     meta.costBytesBasis,
     where,
   );
