@@ -39,7 +39,6 @@
 #define SCREEN_B  ((char *)0xc400)
 #define HUDPAGE   ((char *)0xc800)      // rows 19-24 are the panel
 #define SPRITES   ((char *)0xcc00)      // blocks 48-63
-#define CHARSET   ((char *)0xe000)      // road characters (multicolour)
 #define HUDFONT   ((char *)0xe800)      // the ROM's upper-case set, copied
 #define COLOUR    ((char *)0xd800)
 #define RESULT    B(0x02ff)             // $01 pass, $02 fail (c64-kb headless-verify)

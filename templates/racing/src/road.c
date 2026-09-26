@@ -42,11 +42,21 @@ static int row_cref(char R)
 }
 
 // The centre road line i shows in copy `set`: its row's content centre plus
-// the XSCROLL in its block's $D016 byte.
+// its XSCROLL. Line i's $D016 is an operand in the road's code (engine.asm,
+// block layout): line 0 of a row in the loads of the block above (row 7's in
+// the copy's entry, PreBlock), line 1 in its own block, lines 2-7 in the
+// loads of the block above.
 int line_centre(char set, char i)
 {
-    const char *blk = (const char *)(set ? ASM_ROAD_B : ASM_ROAD_A) + ((unsigned)i << 6);
-    return row_cref(i >> 3) + (blk[1] & 7);
+    const char *code = (const char *)(set ? ASM_ROAD_B : ASM_ROAD_A);
+    char k = i & 7, d016;
+    if (i == 0)
+        d016 = ((const char *)ASM_PRE_A)[set * 10 + 1];
+    else if (k == 1)
+        d016 = code[((unsigned)i << 6) + ASM_RC_OFF_FD];
+    else
+        d016 = code[((unsigned)(i - 1) << 6) + (k == 2 ? ASM_RC_OFF_FA : ASM_RC_OFF_NA)];
+    return row_cref(i >> 3) + (d016 & 7);
 }
 
 void road_init(void)
@@ -181,13 +191,15 @@ static void picture_begin(void)
 #if MUTANT == 3
     hoff = HOFF_LEVEL;
 #else
-    char want = HILL[road_segment(cam_pos + 512)];
+    // The road's glyphs exist for even offsets: the horizon moves two lines
+    // at a time (glyphs.asm).
+    char want = HILL[road_segment(cam_pos + 512)] & ~1;
     if (road_snap)
         hoff = want;                    // a still: no easing in
     else if (hoff < want)
-        hoff++;
+        hoff += 2;
     else if (hoff > want)
-        hoff--;
+        hoff -= 2;
 #endif
     if (state == ST_RACE)
     {
@@ -203,7 +215,7 @@ static void picture_begin(void)
 
     // ---- the sprites' lines: the player, then the two nearest opponents ----
     char set = B(ASM_RB_FRONT) ^ 1;
-    const char *zt = ZTAB + hoff * ROAD_LINES;
+    const char *zt = ZTAB + (hoff >> 1) * ROAD_LINES;     // even offsets only
     char en = 1;
     spr_line[0] = CAR_BOTTOM;
     spr_size[0] = NSIZES - 1;
@@ -320,7 +332,7 @@ static void picture_end(void)
         char D = L_NEAR - (H_MIN + hoff);
         int sb = 160 - px + (px * up) / D;
         int st = 160 - px + (px * (up + 7)) / D;
-        int bend = row_cref(R) - ((sb < st ? sb : st) & ~1);
+        int bend = row_cref(R) - ((sb < st ? sb : st) & ~3);
         if (bend < curve_min) curve_min = bend;
         if (bend > curve_max) curve_max = bend;
     }

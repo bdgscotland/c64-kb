@@ -22,16 +22,16 @@
 
 // ---- memory: the KickAssembler blob at its own address, C above it -----------
 #pragma section( asmcode, 0 )
-#pragma region( asmreg, ASM_ORG, 0x6400, , , { asmcode } )
-#pragma region( main, 0x6400, 0xc000, , , { code, data, bss, heap, stack } )
+#pragma region( asmreg, ASM_ORG, 0x7d00, , , { asmcode } )
+#pragma region( main, 0x7d00, 0xc000, , , { code, data, bss, heap, stack } )
 #pragma data( asmcode )
 __export const char asm_blob[] = {
 #embed "asm.bin"
 };
 #pragma data( data )
 
-#if ASM_END > 0x6400
-#error "the KickAssembler blob runs past $6400: move the C region up"
+#if ASM_END > 0x7d00
+#error "the KickAssembler blob runs past $7D00: move the C region up"
 #endif
 
 #define TICK B(ASM_TICK)
@@ -148,7 +148,7 @@ static void video_init(void)
     cia2.pra = cia2.pra & 0xfc;         // VIC bank 3: $C000-$FFFF
     vic.ctrl1 = 0x1b;                   // display on, 25 rows, YSCROLL 3
     vic.ctrl2 = 0x18;
-    vic.memptr = 0x08;
+    vic.memptr = 0x0c;                  // screen A, road set 3 (the sky rows)
     vic.color_border = VCOL_BLACK;
     vic.color_back = 14;
     vic.color_back1 = VCOL_DARK_GREY;   // the road
@@ -177,6 +177,7 @@ int main(void)
     cia1.pra = 0xff;                    // no keyboard column: $DC00 reads port 2
     vic.intr_enable = 0;
     art_init();                         // leaves $01 = $35: BASIC and KERNAL out
+    __asm { jsr ASM_GLYPH_INIT }        // the road's four character sets (interrupts off)
     video_init();
     __asm { jsr ASM_DETECT_MODEL }
     model = B(ASM_RB_MODEL);
