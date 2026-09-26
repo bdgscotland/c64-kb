@@ -541,6 +541,7 @@ to `char_scroll_buffer_v`, not to the split.
 **Cost:** cycles_per_frame=340
 **Cost basis:** measured-vice
 **Cost measured on:** kickassembler-threshold-scroll-v (worst tick of 132 frames: step applied, three objects moved, `$D011` and four sprite Y registers written, next step decided; in the lower border, no badline inside; the coarse redraw is not included)
+**Cost includes:** soft_scroll_v
 **Claims:** none
 **Claims basis:** derived-listing
 
@@ -607,11 +608,16 @@ The decision is a few compares; the object loop is one add per object.
 The recipe times one whole tick with CIA 2 timer A, less an empty call:
 at most 340 cycles on PAL and 334 on NTSC over 132 frames, including the
 `$D011` store and four sprite Y stores. The 6-cycle difference between
-the models was not traced.
+the models was not traced; sprite DMA for objects near the bottom of
+the display, still fetched around line 251, may fall inside the timed
+tick (not tested). The `**Cost includes:**` line stops a budget
+counting `soft_scroll_v`'s 46 cycles a second time.
 
 The coarse step is not this technique's cost, but it sets the frame. The
 recipe redraws all 25 rows from a raw 40-byte-per-row map (a copy loop
-unrolled two ways) after the tick. It starts on line 251 and ends on
+unrolled two ways) after the tick. It starts a few lines after the
+loop's line-251 poll (the timer calls, the tick and the dirty check run
+first; the start line was not recorded) and ends on
 line 180 of the next frame on PAL and line 226 on NTSC (measured by the
 program, `$D012` after the copy). Screen row 24 is first shown on line 240
 at YSCROLL 0 (48 + 8 × 24, arithmetic), so the copy finishes 60 lines
@@ -638,7 +644,7 @@ shot on the redraw frame).
   262, which wraps to 6 (arithmetic). The recipe frees it at Y 248, below
   its 24-row display (lines 55-246, measured).
 - **The coarse step races the beam.** The recipe's full redraw runs
-  from just after line 251 to line 180 of the next frame on PAL, about
+  from a few lines after line 251 to line 180 of the next frame on PAL, about
   15,000 cycles; start it just below the display and check where it
   ends (above).
   Double buffering the screen with a `$D018` switch removes the race.
@@ -654,8 +660,9 @@ shot on the redraw frame).
 Measured in VICE x64sc 3.10 on the maintainer's copy (PAL C64C). While up
 is held the player walks until his sprite Y is $A3; he moves while it is
 $A4 or more. From then on the map scrolls under him at 1 pixel a frame,
-with no speed variation. A step byte, $FF or 0, is recomputed every frame
-by the player routine from the stick. The object update subtracts it
+with no speed variation. A step byte, $FF or 0, is recomputed from the stick
+by the player routine on every frame that is not a redraw frame (on the
+redraw frame the routine is skipped and the byte keeps $FF). The object update subtracts it
 from the Y of the 15 other slots, not the player's, so enemies and
 pickups move 1 pixel a frame with the ground; scenery is characters in
 the map. A map row counter counts down to 0, the top of the area; the

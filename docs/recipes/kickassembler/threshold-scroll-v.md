@@ -200,9 +200,9 @@ objn:
     cpx #NOBJ
     bne objl
 nostep:
-    lda #$10
-    ora fine
-    sta $d011
+    lda #$10                // bit 7 (RST8) is 0: this clears raster-compare
+    ora fine                // bit 8 every frame; code with a raster IRQ past
+    sta $d011               // line 255 must keep that bit through a shadow
     jsr writespr
     // 2. decide this frame's step from the input
     lda #0
@@ -527,8 +527,9 @@ The coarse step redraws all 25 screen rows from the map at
 on line 56 at YSCROLL 0, measured), and the 24-row window is lines
 55-246. Row 0 shows at least its last line at every YSCROLL and row 24
 shows at YSCROLL 0-6, so all 25 are needed. The copy is unrolled two ways, 20 passes of two
-`lda abs,y`/`sta abs,y` pairs per row, and starts after the tick on line
-251. It ends on line 180 (PAL) and 226 (NTSC) of the next frame, before
+`lda abs,y`/`sta abs,y` pairs per row, and starts a few lines after the
+loop's line-251 poll, once the timer calls, the tick and the dirty check
+have run (the start line was not recorded). It ends on line 180 (PAL) and 226 (NTSC) of the next frame, before
 row 24's first line, 240. A one-byte loop ended on NTSC line 246 in an
 earlier draft, behind the beam for the last rows.
 
