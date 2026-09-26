@@ -5,9 +5,9 @@ output_format: PRG
 region: both
 techniques: [row_map_redraw, soft_scroll_v, invalid_mode_band, frame_sync_loop, self_modifying_code, ram_under_kernal]
 file_formats: [PRG]
-uses_registers: [D011, D012, D016, D018, D019, D01A, D020, D021, DC06, DC07, DC0D, DC0F, DD0D]
+uses_registers: [D000, D001, D010, D011, D012, D015, D016, D017, D018, D019, D01A, D020, D021, DC06, DC07, DC0D, DC0F, DD0D]
 uses_kernal: []
-claims: [cia1_timer_a (init), cia1_tod (init), cia2_timer_a (init), cia2_timer_b (init), cia2_tod (init)]
+claims: [cia1_timer_a (init), cia1_tod (init), cia2_timer_a (init), cia2_timer_b (init), cia2_tod (init), sprite_0-7 (owns)]
 harness: [cia1_timer_b]
 ram: [screen=$0400-$07FF, idle=$3FFF, colour=$D800-$DBFF]
 devices: []
@@ -30,7 +30,10 @@ start-up. This is the `row_map_redraw` technique. The panel shows the redraw's
 start and end lines, its cycle count and its smallest lead over the beam,
 printed on the frame after the redraw.
 `:wait=10` holds the redraw back to line 10 and shows the tear this layout
-avoids. The panel split is `invalid_mode_band` (`recipes/kickassembler/invalid-mode-band.md`),
+avoids. Three more builds measure what a game changes: `:early=64` starts
+the copy on line 64 of the frame before the wrap, behind the beam;
+`:pair=1` copies two bytes a pass; `:sprites=8` puts eight sprites on the
+lines the copy runs over. The panel split is `invalid_mode_band` (`recipes/kickassembler/invalid-mode-band.md`),
 and the KERNAL is banked out so the interrupts go through `$FFFE`
 (`ram_under_kernal`).
 
@@ -51,6 +54,9 @@ and the KERNAL is banked out so the interrupts go through `$FFFE`
 // smallest lead over the beam.
 // Build: java -jar KickAss.jar row-map-redraw.asm -o row-map-redraw.prg
 // Variant: :wait=10 holds the redraw until line 10, too late: it tears.
+// Variant: :early=64 starts it on line 64 of the frame before the wrap,
+// behind the beam; :pair=1 copies two bytes a pass; :sprites=8 puts eight
+// sprites on the lines the copy runs over.
 
 BasicUpstart2(start)
 
@@ -64,6 +70,18 @@ BasicUpstart2(start)
 // :wait=L holds the redraw back until raster line L of the next frame, to
 // show the tear this layout avoids (0, the default, starts at once).
 .var WAIT  = cv("wait", 0)
+// :early=L starts the redraw on line L of the frame that still shows
+// YSCROLL 7, once the beam has fetched row 0 (line 55) there: the copy runs
+// behind the beam through that frame and ahead of it in the next.
+.var EARLY = cv("early", 0)
+// :pair=1 moves bytes Y and Y + 20 of a row in one pass, Y 19 to 0.
+.var PAIR  = cv("pair", 0)
+// :sprites=N turns on N sprites, Y-expanded, over lines SPR_Y to SPR_Y + 41,
+// at X 0 under the left border: their DMA runs, nothing shows.
+.var SPRITES = cv("sprites", 0)
+.var SPR_Y = cv("spry", 92)
+.assert "one of :wait and :early", WAIT == 0 || EARLY == 0, true
+.assert ":early below the frame IRQ", EARLY < 250, true
 
 .const SCREEN     = $0400
 .const COLRAM     = $d800
@@ -120,6 +138,30 @@ panel:  lda panel_text,x
         sta COLRAM+21*40,x
         dex
         bpl panel
+.if (SPRITES != 0) {
+        ldx #62                 // :sprites: one solid shape at $2000 (pointer $80)
+        lda #$ff
+!:      sta $2000,x
+        dex
+        bpl !-
+        ldx #SPRITES-1
+!:      lda #$80
+        sta SCREEN+$3f8,x
+        txa
+        asl
+        tay
+        lda #0
+        sta $d000,y             // X 0: under the left border, no pixel shows
+        lda #SPR_Y
+        sta $d001,y
+        dex
+        bpl !-
+        lda #0
+        sta $d010
+        lda #(1 << SPRITES) - 1
+        sta $d017               // Y-expanded: 42 lines each
+        sta $d015
+}
 
         jsr detect_lines        // 312 on PAL, 263 on NTSC
         jsr calibrate           // the harness's own timer overhead
@@ -159,7 +201,22 @@ wait:   cmp frame
         txa
         and #7
         sta yscroll             // the line-250 IRQ writes it to $D011
+.if (EARLY != 0) {
+        cmp #7                  // :early: the next frame is the one that wraps
+        bne quiet
+!:      jsr readline            // wait for that frame's line EARLY: first
+        cpx #0                  // the top of the frame (below line EARLY) ...
+        bne !-
+        cmp #EARLY
+        bcs !-
+!:      jsr readline            // ... then line EARLY: row 0 fetched on 55
+        cmp #EARLY
+        bcc !-
+        lda #0                  // its step, done here: its tick, on line 224,
+        sta yscroll             // comes during the copy and is not waited for
+} else {
         bne quiet               // seven frames in eight: game logic goes here
+}
         ldx top                 // the eighth: one map row up, then redraw
         dex
         bpl settop
@@ -206,9 +263,32 @@ redraw:
         lda #>SCREEN
         sta dst+2
         ldx #0
-row:    ldy #39
+row:
+.if (PAIR != 0) {
+        lda src+1               // :pair: the row's second half, operands + 20
+        clc                     // (src+6 and src+9 are the second LDA and STA;
+        adc #20                 // a label inside .if { } is local to it)
+        sta src+7
+        lda src+2
+        adc #0
+        sta src+8
+        lda dst+1
+        clc
+        adc #20
+        sta src+10
+        lda dst+2
+        adc #0
+        sta src+11
+        ldy #19
+} else {
+        ldy #39
+}
 src:    lda $ffff,y
 dst:    sta $ffff,y
+.if (PAIR != 0) {
+        lda $ffff,y             // 4 + 5 twice, then 2 + 3: 11.5 cycles a byte
+        sta $ffff,y
+}
         dey
         bpl src
 .assert "copy loop in one page: a taken bpl across a page costs 819 more cycles", >src, >*
@@ -305,8 +385,11 @@ detect_lines:
 
 // Harness: lead of each row = the line the VIC fetches it on next frame
 // (48 + 8r at YSCROLL 0) minus the line it was finished on, where a line
-// above LATE is taken as line - lines, in frame N. Keeps the smallest,
-// signed, for this redraw and for the whole run; then prints.
+// above LATE is taken as line - lines, in frame N. Under :early a line at
+// or after the start line is frame N: a row finished there after the
+// line-250 IRQ still has the next frame's fetch ahead, so its lead is
+// fetch + lines - line, not negative. Keeps the smallest, signed, for this
+// redraw and for the whole run; then prints.
 report:
         lda #$ff
         sta minlead
@@ -322,7 +405,11 @@ lead:   lda rowlo,x
         sta l1                  // l1:l0 = the 9-bit line
         bne inN
         lda l0
+.if (EARLY != 0) {
+        cmp startlo             // :early starts below line 250: bit 8 clear
+} else {
         cmp #LATE
+}
         bcc notN
 inN:    lda l0                  // frame N: line - lines (negative)
         sec
@@ -446,8 +533,14 @@ split_irq:
         pha
         tya
         pha
+.if (EARLY != 0) {
+        lda $d011               // :early: the YSCROLL this frame shows; on the
+        and #7                  // redraw frame `yscroll` already holds the
+        tax                     // next frame's 0, which moves the badlines here
+} else {
         ldx yscroll
         lda yscroll
+}
         ora #PF_D011 | BAND_ON  // same YSCROLL, ECM+BMM: no badline moves
         tay
         lda delay213,x
@@ -568,7 +661,16 @@ rowhi:     .fill PF_ROWS, 0
 ```bash
 java -jar KickAss.jar row-map-redraw.asm -o row-map-redraw.prg
 java -jar KickAss.jar row-map-redraw.asm :wait=10 -o row-map-redraw-torn.prg
+java -jar KickAss.jar row-map-redraw.asm :early=64 -o row-map-redraw-early.prg
+java -jar KickAss.jar row-map-redraw.asm :pair=1 -o row-map-redraw-pair.prg
+java -jar KickAss.jar row-map-redraw.asm :sprites=8 -o row-map-redraw-sprites.prg
+java -jar KickAss.jar row-map-redraw.asm :early=64 :pair=1 -o row-map-redraw-early-pair.prg
 ```
+
+Every variant sits inside `.if` blocks: the default and `:wait=10` PRGs
+are byte for byte the builds pinned before the variants were added (same
+SHA-1). The frontmatter's `sprite_0-7 (owns)` is the `:sprites` build's; the
+other builds write no sprite register.
 
 The PRG is 3,662 bytes, loaded at $0801-$164C. The map is 2,400 of them
 (60 rows at $0CA9-$1608).
@@ -666,6 +768,96 @@ The same check on the `:wait=10` build, 80 exits every 39 lines from
 8,000,000, finds the missing column, at line 152, in eight consecutive exits
 (8,127,764 to 8,144,963, one frame) and in none of the other 72.
 
+### The variants
+
+Four more pinned runs, each on PAL and NTSC at 8,000,000 cycles, read from
+the PNGs the same way (panel by the character ROM, block column per line).
+In all eight the block column steps by one from row to row, lines 214-222
+are black and the panel reads back; the top map row is 8 on PAL and 4 on
+NTSC, as in the default shots.
+
+| Pinned shots | Build | What changes |
+|---|---|---|
+| `row-map-redraw-early.png`, `-early-ntsc.png` | `:early=64` | The redraw starts on line 64 (the panel's 041 hex is 65, read after the wait) of the frame that still shows YSCROLL 7 |
+| `row-map-redraw-pair.png`, `-pair-ntsc.png` | `:pair=1` | The copy moves bytes Y and Y + 20 of a row in one pass |
+| `row-map-redraw-sprites.png`, `-sprites-ntsc.png` | `:sprites=8` | Eight Y-expanded sprites on lines 92-133, at X 0 under the left border. The PAL PNG differs from `row-map-redraw.png` in 183 pixels, all on the panel's lines 223-245: the sprites do not show, their DMA does |
+| `row-map-redraw-early-pair.png`, `-early-pair-ntsc.png` | `:early=64 :pair=1` | Both |
+
+Panel figures, converted (the default column repeats the table above):
+
+| | Default | `:early=64` | `:pair=1` | `:sprites=8` | `:early=64 :pair=1` |
+|---|---|---|---|---|---|
+| PAL start line | 225 | 65 | 225 | 225 | 65 |
+| PAL end line | 135 (next frame) | 306 (same frame) | 114 (next) | 149 (next) | 286 (same) |
+| PAL cycles, last / worst | 13,885 / 13,916 | 15,051 / 15,068 | 12,581 / 12,631 | 14,764 / 14,823 | 13,834 / 13,857 |
+| PAL smallest lead, last / run | 75 / 74 | 216 / 216 | 96 / 95 | 61 / 60 | 235 / 235 |
+| NTSC start line | 225 | 65 | 225 | 225 | 65 |
+| NTSC end line | 181 (next frame) | 35 (next) | 161 (next) | 194 (next) | 17 (next) |
+| NTSC cycles, last / worst | 14,128 / 14,175 | 15,038 / 15,095 | 12,805 / 12,874 | 15,027 / 15,079 | 13,843 / 13,879 |
+| NTSC smallest lead, last / run | 29 / 28 | 175 / 174 | 49 / 49 | 15 / 14 | 193 / 192 |
+
+The smallest lead is on row 20 in every build. No build loses a frame:
+at 12,000,000 cycles N reads $38 or $39 on PAL and $40 on NTSC, as the
+default does (one redraw in eight frames).
+
+**`:early=64`, the start rule.** A row may be rewritten once the beam has
+fetched it in the current frame: that frame keeps showing the old row from
+the VIC's buffer, and the new row is for the next frame. At YSCROLL 7 row 0
+is fetched on line 55 and row r on 55 + 8r. The copy takes about 10 lines a
+row (above), more than the beam's 8, so a copy that starts behind row 0's
+fetch stays behind every later fetch in that frame and then has the whole
+of the next frame's top border to get ahead. Checked from the PNGs: 80 exits
+every 2,457 cycles (39 lines) over ten frames from 8,000,000 on PAL, and 80
+every 2,113 on NTSC, for each of `:early=64`, `:early=64 :pair=1` and
+`:early=64 :sprites=8`, 480 in all, plus each build's 8,000,000 and
+12,000,000 shots: every block column steps by one, the band is black and
+the panel reads back in all 492. The lead rises from 75 to 216 lines on PAL
+and from 29 to 175 on NTSC, although the copy takes about 1,170 cycles more
+on PAL and 910 on NTSC: the band split's polls (lines 211-224) and the
+badlines of the frame it starts in now fall inside it (not separated).
+
+**The lead past the frame IRQ.** On PAL the early copy ends on line 306 of
+the frame it started in, after the line-250 IRQ has written YSCROLL 0. That
+frame's line 208 has passed, but the fetch the rows are for is the next
+frame's: the lead is 208 + 312 − the line row 20 was finished on (304 by
+this arithmetic from the panel's 216), not negative. Under `:early` the
+harness reads a row finished at or after the start line as the start
+frame's. The default build's rule (a line at or above 216 is frame N)
+would have read the rows finished on lines 65-215 as the next frame's, and
+late.
+
+**A mid-frame interrupt that reads YSCROLL.** Under `:early` the main loop
+stores the next frame's YSCROLL 0 on line 64, and the band split on line
+211 of the same frame, which still shows YSCROLL 7, used to read that
+variable for its `$D011` value and delay. A first build did so: on 11 of 80 PAL
+exits and 8 of 80 NTSC exits of the same sweep, the consecutive exits of
+the redraw frame, the panel text was shifted 15 to 20 columns right or
+garbled (inferred: a YSCROLL of 0 in the split's `$D011` stores moves
+the badline condition mid-frame; not traced). The split now reads YSCROLL from `$D011`. Any
+interrupt between the store and line 250 must read the value shown, not
+the value pending.
+
+**`:pair=1`.** Four patched operands, Y from 19 down: 4 + 5 + 4 + 5 for
+two bytes, then `DEY` and `BPL`, 11.5 cycles a byte against 14, and 44
+cycles a row to patch the second pair of operands: 503 cycles a row
+against 559, 1,176 fewer a redraw (instruction-table arithmetic). Measured:
+1,304 fewer on PAL and 1,323 on NTSC, the rest not traced. A row is still
+529 cycles with the harness's reads, more than the 461 (PAL) and 477 (NTSC)
+cycles that 8 display lines leave the CPU after the row's badline
+(arithmetic), so the copy stays behind the beam and `:early` still holds
+(the 160 `:early=64 :pair=1` exits above).
+
+**`:sprites=8`, sprite DMA comes off the lead.** Eight sprites on a line
+take 19 cycles of it (`hardware/vic-ii-reference.md`), 798 over 42 lines
+(arithmetic). Measured: 879 more cycles on PAL and 899 on NTSC, the lead
+down 14 lines on each (75 to 61, 29 to 15). Only the lines the copy runs
+over count: the same sprites at `:spry=160` (lines 160-201, after the PAL
+copy's end on line 135) left PAL at 13,882 cycles and 75 lines, while NTSC,
+whose copy runs to line 181, fell to 20 lines (8,000,000 cycles, not
+pinned). With `:early=64` the same sprites cost 770 cycles on PAL and 812
+on NTSC; the leads were 204 and 162 lines (8,000,000 cycles, not
+pinned).
+
 ## Why this works
 
 **The VIC reads a character row once, on its badline.** Changing screen RAM
@@ -673,7 +865,10 @@ for a row after its badline changes nothing until the next frame. In the
 frame before a redraw YSCROLL is 7, so the last playfield row, row 20, is
 fetched on line 215 (48 + 160 + 7). From line 216 the whole playfield can be
 rewritten without a visible change, and the redraw starts on line 225, when
-the band split ticks the frame counter.
+the band split ticks the frame counter. That is the simple rule, not the
+only one: a row may be rewritten as soon as it has been fetched, and a copy
+slower than the beam can start behind row 0's fetch (`:early=64`, above).
+An earlier version of this page gave line 216 as the earliest start.
 
 **The redraw has to beat the beam once, not every row.** In the next frame
 YSCROLL is 0 and row r is fetched on line 48 + 8r. A build that also printed
@@ -716,3 +911,10 @@ itself still holds 546 cycles of harness reads, so a game without them
 ends the copy about eight lines sooner and gains that time too. An earlier
 version gave 4,131 and 1,332 cycles, by subtracting counts from the frame,
 while the report it did not count ran in that time.
+
+Under `:early=64` the time moves. The copy holds the CPU from line 64 to
+line 306 on PAL and to line 35 of the next frame on NTSC, so the
+logic of the wrap step must end before line 64, and the rest waits for the
+frame after, whose tick on line 224 comes long after the copy's end. How a
+game divides its logic over that pair, and what it measured, is in
+`techniques/scroll.md`, `row_map_redraw`, "How" step 6.

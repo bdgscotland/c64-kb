@@ -2804,6 +2804,67 @@
       "pal": "screenshots/row-map-redraw-torn.png"
     }
   },
+  "kickassembler/row-map-redraw@early": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      ":early=64"
+    ],
+    "shots": {
+      "pal": "screenshots/row-map-redraw-early.png",
+      "ntsc": "screenshots/row-map-redraw-early-ntsc.png"
+    }
+  },
+  "kickassembler/row-map-redraw@pair": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      ":pair=1"
+    ],
+    "shots": {
+      "pal": "screenshots/row-map-redraw-pair.png",
+      "ntsc": "screenshots/row-map-redraw-pair-ntsc.png"
+    }
+  },
+  "kickassembler/row-map-redraw@sprites": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      ":sprites=8"
+    ],
+    "shots": {
+      "pal": "screenshots/row-map-redraw-sprites.png",
+      "ntsc": "screenshots/row-map-redraw-sprites-ntsc.png"
+    }
+  },
+  "kickassembler/row-map-redraw@earlypair": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      ":early=64",
+      ":pair=1"
+    ],
+    "shots": {
+      "pal": "screenshots/row-map-redraw-early-pair.png",
+      "ntsc": "screenshots/row-map-redraw-early-pair-ntsc.png"
+    }
+  },
   "kickassembler/char-attribute-flags": {
     "cycles": 8000000,
     "models": [
