@@ -514,4 +514,184 @@ Sum 119 over facing_turn_step (derived-listing); weakest basis derived-listing; 
 
 ```
 
-MEASURED: filled in below after the meter ran.
+Measured (VICE x64sc 3.10, `make shot check`; the autopilot's first 200
+frames that run the game's logic):
+
+| Frame | PAL | NTSC | Instrument |
+|---|---|---|---|
+| Logic frame, worst | 3,049 | 3,071 | harness meter: C's bracket (CIA2 timer A) plus every IRQ outside it (CIA2 timer B, kernel.asm) |
+| Logic frame, typical (median) | 2,971 | 2,994 | the same |
+| Redraw, most cycles | 14,100 | 14,317 | CIA1 timer B around `redraw`, wall time, IRQs that land inside included (main.c `do_redraw`) |
+| Redraw ends on line (next frame) | 135 | 181 | `$D011`/`$D012` at its end (kernel.asm `redraw_end`) |
+| Redraw's smallest lead over the beam | 73 lines | 27 lines | row 20 is fetched on line 208 at YSCROLL 0; 208 minus the end line |
+| Logic before a redraw ends, lines after line 250 | 50 | 48 | limit 286 (PAL) and 237 (NTSC): the band's tick on line 224 |
+| The frame after a redraw ends on line | 159 | 205 | limit 250, the frame IRQ |
+| Lost frames | 0 | 0 | wait_frame's count; also 0 in a 2,500-frame drive of the normal build that scrolled 397 lines (49 redraws), each model |
+
+The redraw frame against the recipe: 13,885-13,916 on PAL and 14,128-14,175
+on NTSC there, with its harness's 546 cycles of row reads inside and no
+game IRQ; here no row reads, and the frame IRQ (the multiplexer's first
+eight sprites) lands inside it. The end lines are the recipe's (135, 181).
+Not in the figures: about 40 cycles per IRQ taken outside C's bracket
+(entry before timer B starts, exit after it stops; arithmetic from
+kernel.asm), two or three a frame.
+
+Against the plan: its range, 36,916-47,124 plus 2,635 fixed, is more than
+ten times the measured logic frame. The redraw is summed into every frame
+(KB-GAPS.md 1), the multiplexer twice (KB-GAPS.md 3), and every technique
+at its recipe's worst. This slice runs one sprite and no enemies; the next
+modules own the difference. What they must keep:
+
+- A logic frame ends before line 250 of its frame, or the frame is lost.
+  Room left: about 16,600 cycles on PAL and 14,000 on NTSC.
+- The logic frame before a redraw ends before line 224 of the next
+  display frame (286 lines after 250 on PAL, 237 on NTSC), or the redraw
+  starts late and its lead shrinks one line for each line late.
+- Every cycle an IRQ spends while the redraw runs comes off its lead:
+  27 lines on NTSC is about 1,750 cycles. The music (sound.asm
+  `audio_play`, in the line-250 IRQ) and enemy zones above row 20 are
+  that budget. Measure the lead again (row 6 of the verdict) after adding
+  either.
+- The frame after a redraw runs no logic; it ends on NTSC line 205, 45
+  lines before its deadline.
+
+## Memory and screen
+
+| Range | What |
+|---|---|
+| `$0801-$087F` | Oscar64 start-up |
+| `$0880-$11EA` | the KickAssembler blob: kernel.asm, mux.asm, sound.asm (build/asm.h `ASM_END`) |
+| `$2000-$7FFF` | C code, data, stack |
+| `$8000-$83E7` | the one screen: playfield rows 0-20, panel rows 21-23 (VIC bank 2) |
+| `$83F8-$83FF` | sprite pointers |
+| `$8400-$87FF` | scratch: the meter's readout row in AUTOPILOT builds, copied after the verdict |
+| `$8800-$8FFF` | characters: 0-63 copied from the ROM at start-up, 64-255 the jungle (src/gen/charset.bin) |
+| `$9000-$9EFF` | the raw row map, 96 rows x 40 (src/gen/map.bin); the VIC sees the character ROM here |
+| `$9F00-$9FFF` | attr[screen code], page aligned (src/gen/attr.bin) |
+| `$A000-$A83F` | sprites: soldier 8 x 4 frames, then the blank parking block (block 160) |
+| `$A840-$BFFF`, `$C000-$CFFF` | free: enemy, bullet and explosion shapes go at `$A840` |
+
+KERNAL and BASIC are banked out (`$01 = $35`); the IRQ and NMI vectors
+are `$FFFE` and `$FFFA`. Oscar64's zero page is `$02` to about `$5x`; the
+blob uses none and takes arguments through its own bytes (`ASM_<LABEL>`).
+Colour RAM: playfield rows `$0D` (multicolour, green), panel rows white,
+written once; the redraw never touches it. `$02FF` is the verdict,
+`$02FD` the lost-frame count. CIA2 timer A is the meter's, timer B the IRQ
+time's, CIA1 timer B the redraw's (AUTOPILOT builds read it).
+
+Raster: frame IRQ line 250; multiplexer zones between; band IRQ line 211,
+band lines 214-222, panel lines 223-246. Sprites end by line 208
+(`MAX_SY` 187).
+
+## Modules
+
+Every module owns its files and talks to the others through `game.h` and
+its own header. main.c calls each module once a frame in `play_frame`:
+soldier, objects, weapons, collide, flow, then the draws and the commit.
+A module never writes the VIC's sprite registers: it writes its slots
+(objects.h `slot_show`, `slot_park`), and the multiplexer does the rest.
+
+| Module | Files | Owns | Interface it must keep |
+|---|---|---|---|
+| Kernel | kernel.asm, mux.asm | `$D012` and the chain, the band, the redraw, the 16-slot multiplexer | `commit` bits (`COMMIT_YS`, `COMMIT_MUX`), `pend_ys`, `frame_flag`, `band_tick`, `redraw`, `mux_sort`, `mux_build`, the slot tables `slot_y/xl/xh/ptr/col/pri` |
+| Scroll | scroll.c/h | the view: `scroll_top`, `scroll_ys`, `scroll_wy` | `scroll_step`, `scroll_can_step`, `map_x`, `map_y`, `attr_at`, `code_at`, `scroll_init(top, ys)` |
+| Soldier | soldier.c/h | slot 0, the stick | `soldier_x`, `soldier_y`, `soldier_facing` (0-15), `soldier_behind`; `soldier_update(joy)`, `soldier_draw` |
+| Objects and enemies (next) | objects.c/h | slots 5-15, the pool, the spawn list | `obj_alloc`, `obj_free`, `objects_rows(top)` (wave_director: spawns keyed to map rows, fired as the top row reaches them), `objects_update`, `objects_draw`, `objects_scroll`; objects keep map coordinates and draw at Y = my - scroll_wy + 54 |
+| Weapons (next) | weapons.c/h | slots 1-3 (bullets), 4 (grenade), `grenades` | `weapons_update(joy)`: bullets along `soldier_facing` from a 16-entry velocity table, stopped by `attr_at(...) & A_BLOCK`; grenade_lob's flight and box blast |
+| Collision (next) | collide.c/h | boxes | `collide()`, after objects and weapons moved; scenery is `attr_at` |
+| Flow (next) | flow.c/h, main.c's states | score, lives, grenades, title, game over, high score | `flow_new_game`, `flow_frame`; checkpoint_respawn restarts through `scroll_init(row, 0)`, `objects_reset`, `objects_rows`; area_end_gate_wave starts when `scroll_can_step()` is 0; the gate is `G_GATE`, map rows 1-2, columns 18-21; `panel_update` after a change |
+| Audio (next) | sound.asm, main.c `sfx` | the SID | `audio_init`, `audio_play` (line-250 IRQ, costs the redraw's lead), `sfx_request` (A = effect); sfx_voice_takeover: effects on voices 1 and 2 |
+
+Rules for every module:
+
+- Park a slot with `slot_park`; show it with `slot_show`, every field in one
+  frame. Nothing tests "in use" in the IRQs.
+- No zero page in KickAssembler code; no `SEI` spanning line 211 in C
+  (pitfall `sei_in_main_spans_band_entry_line`).
+- A sprite below `MAX_SY` (187) is not shown: keep objects above it.
+- New glyphs and their attributes go in tools/mkassets.py, never by hand
+  in src/gen/; `make assetcheck` proves the committed files match.
+
+## Autopilot and checks
+
+Script (frames, port byte): 2 idle, 2 fire (the title starts the game);
+75 up: 50 frames walk from sprite Y 160 to the threshold (110), 13 frames
+scroll the map (map y on line 55 from 607 to 594), then the sandbags on
+map row 82 stop him, 12 frames blocked; 70 right, from X 168 to 238, past
+the sandbags' end at column 25, into the canopy's column; up: the map
+scrolls again, 94 more lines. The game freezes at the first YSCROLL 3
+after play frame 236: map y 500, 107 steps, 13 redraws, the soldier at
+X 238, Y 110, his body centre on map row 70, the canopy's last row, so he
+is behind it for 2 frames. Each figure is arithmetic from the map and the
+script; the run printed the same on PAL and NTSC.
+
+The verdict (main.c `first_fail`), `$02FF` = `$01` and a green border on
+pass: no frame lost and no redraw late; the soldier's position; the
+scroll's map y and steps; 12 frames blocked; the priority bit set under
+the canopy; 13 redraws; every redraw's lead at least 8 lines; the screen
+equals the map from `scroll_top` (840 bytes); `$D011` = `$13` (YSCROLL 3)
+as the frame IRQ applied it; the multiplexer shows exactly one sprite.
+
+`expect.json` grades the border, the verdict rows, the meter (200
+frames, worst inside a frame), the soldier's white bounding box (lines
+121-127: the canopy hides his upper half), map features where 107 lines
+of scroll put them (the trunk on line 124, the sandbags from line 211,
+the rock on line 170), the band (lines 214-222 black), the panel's first
+line and its text (SCORE, FIREBASE, LIVES, GRENADES), and the panel and
+playfield identical on PAL and NTSC. FORCE_FAULT starts him 8 pixels
+right: the trunk on column 29 stops him, the scroll never reaches YSCROLL
+3 after frame 236, and the build freezes 40 frames later with a red
+border.
+
+`make phases` (run by `make check`): eight builds frozen on YSCROLL 0-7
+with the soldier at sprite Y 187: line 213 is playfield, lines 214-222
+black, the panel identical to phase 3, on both models (16 of 16). With
+the band's badline-phase delay changed from 1 to 9 it failed YSCROLL 5 on
+both models (the band started a line late). `make mapend`
+(VERIFY_TARGETS): the view starts 7 lines from the map's top, stops at
+map y 0 after 7 steps, and the soldier walks on through the gate to
+sprite Y 52 (10 of 10).
+
+`node scripts/verify-templates.ts --only run-and-gun --selftest` in c64-kb
+(the starter made into a fresh project outside the repo): `make all`,
+`make shot check` (45 of 45), `make disk`, `make selftest` and
+`make mapend` (10 of 10) all pass; "verify-templates: 1 of 1 starters
+passed".
+
+## Decisions and open questions
+
+- Oscar64 with a KickAssembler blob, the shmup-vertical layout: the band,
+  the multiplexer and the redraw need exact cycles and no zero page; the
+  game's rules are C that the next modules extend. The briefing's split
+  agrees, and adds the redraw here (KB-GAPS.md 8).
+- The loop wakes at line 250, after the frame IRQ applied what the last
+  frame committed. A commit is one store of two bits, YSCROLL and the
+  sprite table, so the soldier and the ground move in the same frame.
+  Waking at the band's tick (224) instead, as the redraw recipe's loop
+  does, gives a frame 26 lines to commit before line 250.
+- The redraw pair: the logic frame in which YSCROLL wraps commits YSCROLL
+  0 with its sprites, waits for the band's tick on line 224 (row 20 was
+  fetched by line 215 at YSCROLL 7), and calls `redraw`. The frame IRQ
+  applies YSCROLL 0 during the copy. The next frame wakes late (the copy
+  ends on line 135 or 181) and runs no logic: it repeats the scroll step
+  if the soldier's up probe is still free and commits YSCROLL only. So the
+  scroll keeps 1 line a frame, and objects on the ground lag one line for
+  that one frame (Commando skips its sort on coarse frames too; the
+  archetype page). `objects_scroll` is where the enemies module may fix
+  that if it fits.
+- Sprites stop at Y 187 (last line 208), three lines above the band IRQ.
+  The band's windows were measured in its recipe with one sprite across
+  them, not eight; `make phases` checks one sprite at 187.
+- Priority is one probe at the body centre (sprite pixel 12, 10); Commando
+  takes one cell ahead (char_attribute_flags page). Blocking is the feet
+  box's leading edge, X then Y, so a diagonal push slides along a wall.
+- The facing turns one step a frame toward the stick (a tie turns
+  clockwise); the body frame is the facing rounded to eight. The walk
+  cycle steps every 6 moved frames.
+- Open: the enemies' zones and the music both come out of the redraw's
+  NTSC lead (27 lines); measure it after each. A `DEADLINE_LINE`
+  (harness `make watch`) of 224 would check the pre-redraw rule on every
+  frame; it needs an `OVERRUN` build and is not wired yet.
+- Open: the README gallery and the archetype page's `**Starter:**` line
+  for this starter land with the merge (the README belongs to another
+  session; the archetype line needs an ingest).
