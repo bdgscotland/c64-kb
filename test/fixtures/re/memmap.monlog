@@ -1,0 +1,29 @@
+#1 (Stop on  exec fce2)    0/$000,   6/$06
+.C:fce2  A2 FF       LDX #$FF       - A:00 X:00 Y:00 SP:00 ..-..IZ.          6
+TRACE: 1  C:$080e  (Trace exec)
+Setting checkpoint 1 command to: memmapzap; disable 1
+TRACE: 2  C:$d019  (Trace store)
+Will ignore the next 2 hits of checkpoint #2
+Setting checkpoint 2 command to: memmapshow; disable 2
+#1 (Trace  exec 080e)   39/$027,   8/$08
+.C:080e  78          SEI            - A:00 X:00 Y:00 SP:f6 ..-.....    2970521
+Executing: memmapzap; disable 1
+#2 (Trace store d019)   50/$032,  51/$33
+.C:0848  8D 19 D0    STA $D019      - A:01 X:F0 Y:00 SP:f0 ..-..I..    2971257
+Executing: memmapshow; disable 2
+addr: IO  ROM RAM
+01f1: --- --- -w-
+01f2: --- --- -w-
+01f4: --- --- rw-
+0314: --- --- rw-
+0315: --- --- rw-
+033c: --- --- rw-
+033d: --- --- rw-
+080e: --- --- --x (uninitialized exec)
+083a: --- --- --x (uninitialized exec)
+0840: --- --- r-x (uninitialized exec)
+0846: --- --- --x (uninitialized exec)
+0848: --- --- --x (uninitialized exec)
+d019: -w- --- ---
+ff48: --- --x ---
+fffe: --- r-- ---

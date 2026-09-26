@@ -4,6 +4,7 @@ import { type Command, InvalidArgumentError, Option } from "commander";
 import { claimsWatchReply } from "../server/tools-claims.ts";
 import { claimsWatch } from "../tools/claims-watch.ts";
 import { reFrameProfile, reIrqChain, reSnapshot } from "../tools/re.ts";
+import { reCoverage } from "../tools/re-coverage.ts";
 import { reLoadMap } from "../tools/re-load-map.ts";
 import { reSession } from "../tools/re-session.ts";
 
@@ -59,7 +60,7 @@ function afterHitsArg(value: string): number {
   return n;
 }
 
-/** re-session, re-snapshot, re-irq-chain, re-frame-profile: the observation tools. */
+/** re-session, re-snapshot, re-irq-chain, re-frame-profile, re-coverage: the observation tools. */
 function registerReplayCommands(program: Command): void {
   program
     .command("re-session <file>")
@@ -113,6 +114,28 @@ function registerReplayCommands(program: Command): void {
     process.stdout.write(
       `${JSON.stringify(r.ok ? { run: r.run, ...r.result, samples: r.result.samples.length } : r, null, 2)}\n`,
     );
+    if (!r.ok) process.exitCode = 1;
+  });
+
+  /** --frames for re-coverage: an integer from 1. */
+  function framesArg(value: string): number {
+    const n = Number(value);
+    if (!Number.isInteger(n) || n < 1) throw new InvalidArgumentError("--frames must be an integer from 1.");
+    return n;
+  }
+
+  reOptions(
+    program
+      .command("re-coverage <prg>")
+      .description('A .prg, or "session:<file>"; report CPU coverage after N $D019 writes from play start')
+      .addOption(
+        new Option("--frames <n>", "number of $D019 writes to wait for before showing the coverage map")
+          .argParser(framesArg)
+          .default(3),
+      ),
+  ).action(async (prg: string, o: ReOpts & { frames: number }, cmd: Command) => {
+    const r = await reCoverage({ ...reInput(prg, o, cmd), frames: o.frames });
+    process.stdout.write(`${JSON.stringify(r, null, 2)}\n`);
     if (!r.ok) process.exitCode = 1;
   });
 }

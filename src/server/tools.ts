@@ -31,6 +31,7 @@ import { runGameTool } from "./tools-runtime.ts";
 import {
   reIrqChainTool,
   reFrameProfileTool,
+  reCoverageTool,
   reLoadMapTool,
   reSessionTool,
   reSnapshotTool,
@@ -68,6 +69,7 @@ export const TOOLS: readonly RegistrableTool[] = [
   // Reverse engineering: observations from a PRG run headless in VICE
   reIrqChainTool,
   reFrameProfileTool,
+  reCoverageTool,
   reSessionTool,
   reSnapshotTool,
   reLoadMapTool,

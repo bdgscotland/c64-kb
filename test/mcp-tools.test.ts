@@ -3,6 +3,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { z } from "zod";
 import {
+  CoverageOutput,
+  coverageReply,
   FrameProfileOutput,
   frameProfileReply,
   IrqChainOutput,
@@ -63,6 +65,7 @@ const SKIP = new Set([
   "c64_re_session",
   "c64_re_snapshot",
   "c64_re_load_map",
+  "c64_re_coverage",
   "c64_claims_watch",
 ]);
 
@@ -171,13 +174,14 @@ describe("RE tool replies carry the whole result", () => {
   };
   const o = { basis: "measured-vice" as const, rung: 1 as const };
 
-  it("declares an outputSchema for both", () => {
+  it("declares an outputSchema for each RE tool", () => {
     for (const name of [
       "c64_re_irq_chain",
       "c64_re_frame_profile",
       "c64_re_session",
       "c64_re_snapshot",
       "c64_re_load_map",
+      "c64_re_coverage",
     ])
       expect(tools.find((t) => t.name === name)?.outputSchema, name).toBeDefined();
   });
@@ -428,5 +432,24 @@ describe("RE tool replies carry the whole result", () => {
       text: "refused (no-entry): entry $080D not reached in 200000 cycles; raise cycles",
       isError: true,
     });
+  });
+
+  it("c64_re_coverage: code, data and written_only ranges are in structured content", () => {
+    const result = {
+      code: [
+        { start: 0x080e, end: 0x0848, kinds: ["x" as const] },
+        { start: 0x0840, end: 0x0843, kinds: ["r" as const, "x" as const] },
+      ],
+      data: [{ start: 0x0314, end: 0x0315, kinds: ["r" as const, "w" as const] }],
+      written_only: [{ start: 0xd019, end: 0xd019, kinds: ["w" as const] }],
+      unknowns: [],
+    };
+    const r = coverageReply({ ok: true, run, result });
+    expect(r.text).toMatch(/code:\n {2}\$080E-\$0848/);
+    expect(r.text).toMatch(/data:\n {2}\$0314-\$0315/);
+    expect(r.text).toMatch(/written_only:\n {2}\$D019-\$D019/);
+    const parsed = z.object(CoverageOutput).safeParse(r.structured);
+    expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
+    expect(r.structured).toEqual({ run, ...result });
   });
 });

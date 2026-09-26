@@ -14,6 +14,7 @@ import {
   type SnapshotResult,
 } from "../tools/re.ts";
 import { LoadMapInput, reLoadMap, type LoadMapResult } from "../tools/re-load-map.ts";
+import { CoverageInput, reCoverage, type Coverage } from "../tools/re-coverage.ts";
 import {
   reSession,
   SessionInput,
@@ -395,4 +396,49 @@ Output (structured): run {prg, model, cycles, entry, start_clock, vice, session?
   annotations: READ_ONLY,
   readsGraph: false,
   run: async (args) => loadMapReply(await reLoadMap(args)),
+});
+
+const range = z.object({
+  start: z.number().int(),
+  end: z.number().int(),
+  kinds: z.array(z.enum(["x", "r", "w"])),
+});
+
+export const CoverageOutput = {
+  run,
+  code: z.array(range).describe("Address ranges where the CPU executed instructions"),
+  data: z.array(range).describe("Address ranges read but never executed (read-only data)"),
+  written_only: z.array(range).describe("Address ranges written but neither read nor executed"),
+  unknowns: z.array(z.string()),
+};
+
+const hexRange = (r: Coverage["code"][number]) => `${hex(r.start)}-${hex(r.end)} [${r.kinds.join("")}]`;
+
+export function coverageReply(r: ReResult<Coverage>): ToolReply {
+  return reply(r, (c) => {
+    const section = (name: string, ranges: Coverage["code"]) =>
+      ranges.length ? `${name}:\n  ${ranges.map(hexRange).join("\n  ")}` : `${name}: none`;
+    return (
+      [section("code", c.code), section("data", c.data), section("written_only", c.written_only)].join("\n") +
+      unknownsText(c.unknowns)
+    );
+  });
+}
+
+export const reCoverageTool = defineTool({
+  name: "c64_re_coverage",
+  title: "CPU coverage map from a game session in VICE",
+  description: `Run a .prg or a session headless in VICE x64sc, zap the CPU memory map at the in-play checkpoint (the SYS entry for a PRG, or in_play.pc for a session), let the game run until $D019 (raster IRQ acknowledge) is written N times, then dump the map. Classifies every address the CPU touched since the zap into code (executed), data (read, not executed), or written_only. Untouched addresses are not listed (they are unknown, not data).
+
+$D019 is written by the game's raster IRQ handler on every interrupt. For a PRG, the default frames=3 skips the KERNAL boot write and the setup write, firing on the first IRQ handler write. For a session, the pre-play $D019 writes (title screen and KERNAL) are counted in a first pass so frames counts from in-play start.
+
+Needs the windowless x64sc (\`npm run vice:headless\`).
+
+Inputs: prg_path or session, model pal|ntsc, cycles, frames (default 3).
+Output (structured): run {prg, model, cycles, entry, start_clock, vice, session?, image?}, code [{start, end, kinds}], data [{start, end, kinds}], written_only [{start, end, kinds}], unknowns.`,
+  inputSchema: CoverageInput,
+  outputSchema: CoverageOutput,
+  annotations: READ_ONLY,
+  readsGraph: false,
+  run: async (args) => coverageReply(await reCoverage(args)),
 });
