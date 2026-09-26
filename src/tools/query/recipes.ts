@@ -188,7 +188,7 @@ function isNotFound(err: unknown): boolean {
  * listing gate builds exactly this fence, so it is the code the pinned
  * screenshot was made from. Returns null when the page is not on disk.
  */
-function readRecipeListing(source_doc: string): SourceListing | null {
+export function readRecipeListing(source_doc: string): SourceListing | null {
   let page: string;
   try {
     page = fs.readFileSync(path.join(config.docs.dir, source_doc), "utf-8");

@@ -108,6 +108,9 @@ export const ToolchainHintSchema = z.object({
   snippet: z.string(),
   rationale: z.string(),
   sources: z.array(DocChunkSchema),
+  // Set when the intent names a technique with a recipe in the toolchain:
+  // the snippet is then that recipe's Source listing (KB-GAPS 8).
+  recipe: z.string().optional(),
 });
 
 // A CLAIMS edge (schema 25): the HardwareUnit, the mode, and for zero_page
