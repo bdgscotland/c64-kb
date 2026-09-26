@@ -2816,6 +2816,21 @@
       "ntsc": "screenshots/char-attribute-flags-ntsc.png"
     }
   },
+  "kickassembler/char-attribute-flags@mc": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      ":mc=1"
+    ],
+    "shots": {
+      "pal": "screenshots/char-attribute-flags-mc.png",
+      "ntsc": "screenshots/char-attribute-flags-mc-ntsc.png"
+    }
+  },
   "kickassembler/facing-turn-step": {
     "cycles": 8000000,
     "models": [
