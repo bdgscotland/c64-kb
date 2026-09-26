@@ -13,7 +13,9 @@ Outputs (all committed, so a build needs no Python):
     src/gen/attr.bin     256 bytes: attr[screen code] (char_attribute_flags)
     src/gen/map.bin      MAP_ROWS x 40 screen codes, row 0 at the top (row_map_redraw)
     src/gen/sprites.bin  64-byte sprite blocks: the soldier's 8 directions x 4 walk
-                         frames, then a blank block (sprite_slot_parking)
+                         frames, then a blank block (sprite_slot_parking), then the
+                         enemies (rifleman, runner, grenadier), the enemy bullet,
+                         the enemy grenade's three sizes, its blast and a hit's dust
     src/gen/assets.h     the codes, sizes and positions C needs
 
 Colours (multicolour characters, one colour RAM value for every playfield cell):
@@ -390,12 +392,203 @@ def draw_soldier(direction, frame):
     return block
 
 
+# ---- sprites: enemies, their shots, grenades and blasts (objects.c) ------------
+# Same pixel values as the soldier: 00 clear, 01 $D025 black, 10 the slot's
+# colour, 11 $D026 light red. Each enemy is drawn in body space on a 24 x 21
+# square grid (forward = the facing), then halved in X. Three figures, told
+# apart by the head and what the hands hold: the rifleman wears a peaked cap
+# and holds a long rifle across his body; the runner is bareheaded with empty
+# swinging arms; the grenadier wears a banded helmet and carries a grenade,
+# raised over his head in his throwing frame.
+SPR_RIFLE = 33         # 8 directions x 2 step frames
+SPR_RUNNER = 49        # 2 directions (right, left) x 2 step frames
+SPR_GREN = 53          # 8 directions x 2 frames (carry, throw)
+SPR_SHOT = 69          # the enemy bullet
+SPR_NADE = 70          # the enemy grenade, 3 sizes (small, middle, large)
+SPR_BLAST = 73         # 2 frames
+SPR_DOWN = 75          # a hit enemy: a dust puff
+
+
+def halve(grid, outline=True):
+    """24 x 21 hires grid -> a 64-byte multicolour block (strongest pixel of
+    each pair; clear pixels next to the figure turn black)."""
+    rank = {S_CLEAR: 0, S_UNIFORM: 1, S_SKIN: 2, S_BLACK: 3}
+    mc = [[max(grid[y][2 * i], grid[y][2 * i + 1], key=lambda v: rank[v]) for i in range(12)]
+          for y in range(21)]
+    out = [row[:] for row in mc]
+    if outline:
+        for y in range(21):
+            for x in range(12):
+                if mc[y][x] != S_CLEAR:
+                    continue
+                for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                    nx, ny = x + dx, y + dy
+                    if 0 <= nx < 12 and 0 <= ny < 21 and mc[ny][nx] in (S_UNIFORM, S_SKIN):
+                        out[y][x] = S_BLACK
+                        break
+    block = bytearray(64)
+    for y in range(21):
+        for b in range(3):
+            v = 0
+            for k in range(4):
+                v = (v << 2) | out[y][b * 4 + k]
+            block[y * 3 + b] = v
+    return block
+
+
+def draw_enemy(kind, direction, frame):
+    ang = direction * math.pi / 4
+    fx, fy = math.sin(ang), -math.cos(ang)
+    rx, ry = -fy, fx
+    cx, cy = 12.0, 10.5
+    grid = [[S_CLEAR] * 24 for _ in range(21)]
+
+    def local(x, y):
+        dx, dy = x + 0.5 - cx, y + 0.5 - cy
+        return dx * rx + dy * ry, dx * fx + dy * fy
+
+    def fill(test, colour, only=None):
+        for y in range(21):
+            for x in range(24):
+                r, f = local(x, y)
+                if test(r, f) and (only is None or grid[y][x] == only):
+                    grid[y][x] = colour
+
+    def seg(r0, f0, r1, f1, w):
+        dr, df = r1 - r0, f1 - f0
+        n = dr * dr + df * df or 1.0
+
+        def t(r, f):
+            k = max(0.0, min(1.0, ((r - r0) * dr + (f - f0) * df) / n))
+            return (r - r0 - k * dr) ** 2 + (f - f0 - k * df) ** 2 <= w * w
+        return t
+
+    def disc(r0, f0, rad):
+        return lambda r, f: (r - r0) ** 2 + (f - f0) ** 2 <= rad * rad
+
+    stride = {"rifle": 1.8, "runner": 3.2, "gren": 1.2}[kind]
+    step = stride if frame == 0 else -stride
+    if kind == "gren" and frame == 1:
+        step = 0.0                              # planted to throw
+    # Legs and boots.
+    fill(seg(-1.8, -1.2, -1.8, -4.8 + step, 1.4), S_UNIFORM)
+    fill(seg(1.8, -1.2, 1.8, -4.8 - step, 1.4), S_UNIFORM)
+    fill(disc(-1.8, -5.2 + step, 1.3), S_BLACK)
+    fill(disc(1.8, -5.2 - step, 1.3), S_BLACK)
+    # Body: narrower than the soldier's pack-and-shoulders oval.
+    fill(lambda r, f: (r / 4.6) ** 2 + ((f - 0.4) / 2.4) ** 2 <= 1.0, S_UNIFORM)
+    if kind == "rifle":
+        # Both arms forward to a rifle held across the body at an angle.
+        fill(seg(3.4, 0.8, 1.8, 3.6, 1.1), S_UNIFORM)
+        fill(seg(-3.4, 0.8, -1.2, 4.2, 1.1), S_UNIFORM)
+        fill(seg(-2.6, 2.4, 3.2, 8.8, 0.8), S_BLACK)
+        fill(disc(1.8, 3.8, 1.0), S_SKIN)
+        fill(disc(-1.1, 4.4, 1.0), S_SKIN)
+        # Peaked cap: a skin face under a flat cap whose brim points forward.
+        fill(disc(0.0, 0.8, 2.3), S_SKIN)
+        fill(lambda r, f: (r / 2.4) ** 2 + ((f - 0.2) / 2.0) ** 2 <= 1.0 and f < 1.4, S_UNIFORM)
+        fill(lambda r, f: abs(r) <= 2.0 and 2.4 <= f <= 3.4, S_BLACK)
+    elif kind == "runner":
+        # Arms swing against the legs; nothing in the hands.
+        fill(seg(3.8, 0.4, 3.8, 0.4 - step * 1.2, 1.1), S_UNIFORM)
+        fill(seg(-3.8, 0.4, -3.8, 0.4 + step * 1.2, 1.1), S_UNIFORM)
+        fill(disc(3.8, 0.4 - step * 1.4, 1.0), S_SKIN)
+        fill(disc(-3.8, 0.4 + step * 1.4, 1.0), S_SKIN)
+        # Bare head: skin, black hair on the back half.
+        fill(disc(0.0, 1.0, 2.4), S_SKIN)
+        fill(lambda r, f: r * r + (f - 1.0) ** 2 <= 2.4 ** 2 and f < 0.8, S_BLACK)
+    else:
+        if frame == 0:
+            # Carrying: the grenade in the right hand, low at his side.
+            fill(seg(3.6, 0.6, 4.2, 2.6, 1.1), S_UNIFORM)
+            fill(seg(-3.6, 0.6, -3.0, 2.4, 1.1), S_UNIFORM)
+            fill(disc(4.4, 3.4, 1.4), S_BLACK)
+        else:
+            # Throwing: the right arm raised forward over the head, the grenade in it.
+            fill(seg(3.4, 0.8, 1.6, 6.6, 1.1), S_UNIFORM)
+            fill(seg(-3.6, 0.6, -3.8, -1.6, 1.1), S_UNIFORM)
+            fill(disc(1.4, 7.6, 1.5), S_BLACK)
+        # Banded helmet: a round shell with a black band across it.
+        fill(lambda r, f: r * r + (f - 0.8) ** 2 <= 2.9 ** 2, S_UNIFORM)
+        fill(lambda r, f: r * r + (f - 0.8) ** 2 <= 2.9 ** 2 and abs(f - 0.8) <= 0.6, S_BLACK)
+    return halve(grid)
+
+
+def draw_round(rad, core, rim=True):
+    """A ball centred on sprite pixel (12, 10): the slot's colour, a light-red
+    core of radius `core`, a black rim."""
+    grid = [[S_CLEAR] * 24 for _ in range(21)]
+    for y in range(21):
+        for x in range(24):
+            d = math.hypot(x + 0.5 - 12.0, y + 0.5 - 10.5)
+            if d <= core:
+                grid[y][x] = S_SKIN
+            elif d <= rad:
+                grid[y][x] = S_UNIFORM
+    return halve(grid, outline=rim)
+
+
+def draw_blast(frame):
+    """A starburst: light-red heart, the slot's colour (yellow) around it, black
+    spikes; the second frame turned half a spike and wider."""
+    grid = [[S_CLEAR] * 24 for _ in range(21)]
+    spikes = 9
+    turn = frame * math.pi / spikes
+    for y in range(21):
+        for x in range(24):
+            dx, dy = x + 0.5 - 12.0, (y + 0.5 - 10.5) * 1.1
+            d = math.hypot(dx, dy)
+            a = math.atan2(dy, dx) + turn
+            reach = (7.0 + 2.0 * frame) + (2.5 + frame) * math.cos(spikes * a)
+            if d <= 2.2 + frame:
+                grid[y][x] = S_SKIN
+            elif d <= reach - 1.2:
+                grid[y][x] = S_UNIFORM
+            elif d <= reach:
+                grid[y][x] = S_BLACK
+    return halve(grid, outline=False)
+
+
+def draw_down():
+    """A hit enemy: three dust puffs in the slot's colour over black grit."""
+    grid = [[S_CLEAR] * 24 for _ in range(21)]
+    for (px, py, r) in ((9.0, 12.0, 4.2), (15.0, 11.0, 3.6), (12.0, 7.5, 3.4)):
+        for y in range(21):
+            for x in range(24):
+                if math.hypot(x + 0.5 - px, y + 0.5 - py) <= r:
+                    grid[y][x] = S_UNIFORM
+    rnd = lfsr_seq(0x5EED)
+    for _ in range(14):
+        x, y = next(rnd) % 22 + 1, next(rnd) % 17 + 2
+        if grid[y][x] == S_CLEAR:
+            grid[y][x] = S_BLACK
+    return halve(grid)
+
+
 def make_sprites():
     data = bytearray()
     for d in range(8):
         for f in range(4):
             data += draw_soldier(d, f)
     data += bytearray(64)                       # the parking block: all zero
+    assert len(data) // 64 == SPR_RIFLE
+    for d in range(8):
+        for f in range(2):
+            data += draw_enemy("rifle", d, f)
+    for d in (2, 6):
+        for f in range(2):
+            data += draw_enemy("runner", d, f)
+    for d in range(8):
+        for f in range(2):
+            data += draw_enemy("gren", d, f)
+    assert len(data) // 64 == SPR_SHOT
+    data += draw_round(2.6, 1.0, rim=False)
+    for rad in (2.2, 3.2, 4.2):
+        data += draw_round(rad, 0.8)
+    for f in range(2):
+        data += draw_blast(f)
+    data += draw_down()
+    assert len(data) // 64 == SPR_DOWN + 1
     return data
 
 
@@ -416,6 +609,13 @@ def write_header(path, n_blocks):
         f"#define START_ROW    {START_ROW}",
         f"#define SPR_SOLDIER  0    // block offset: direction * 4 + walk frame",
         f"#define SPR_BLANK    32   // the parking block (all zero)",
+        f"#define SPR_RIFLE    {SPR_RIFLE}   // rifleman: direction (0 up, clockwise) * 2 + step frame",
+        f"#define SPR_RUNNER   {SPR_RUNNER}   // runner: (0 right, 1 left) * 2 + step frame",
+        f"#define SPR_GREN     {SPR_GREN}   // grenadier: direction * 2 + (0 carry, 1 throw)",
+        f"#define SPR_SHOT     {SPR_SHOT}   // enemy bullet, centred on sprite pixel (12, 10)",
+        f"#define SPR_NADE     {SPR_NADE}   // enemy grenade: small, middle, large",
+        f"#define SPR_BLAST    {SPR_BLAST}   // grenade blast, 2 frames",
+        f"#define SPR_DOWN     {SPR_DOWN}   // a hit enemy's dust",
         f"#define SPR_BLOCKS   {n_blocks}",
         "#endif",
         "",
@@ -450,6 +650,20 @@ def preview(outdir, charset, m, sprites):
                     sp[f * 26 + 2 * x, d * 23 + y] = spal[v]
                     sp[f * 26 + 2 * x + 1, d * 23 + y] = spal[v]
     sim.resize((sim.width * 4, sim.height * 4), Image.NEAREST).save(os.path.join(outdir, "sprites.png"))
+    # Every block after the parking block, 8 to a row: enemies, shot, grenades, blasts, dust.
+    first = SPR_RIFLE
+    n = len(sprites) // 64 - first
+    eim = Image.new("RGB", (8 * 26, (n + 7) // 8 * 23))
+    ep = eim.load()
+    for k in range(n):
+        blk = sprites[(first + k) * 64:(first + k) * 64 + 64]
+        ox, oy = k % 8 * 26, k // 8 * 23
+        for y in range(21):
+            for x in range(12):
+                v = (blk[y * 3 + x // 4] >> (6 - 2 * (x % 4))) & 3
+                ep[ox + 2 * x, oy + y] = spal[v]
+                ep[ox + 2 * x + 1, oy + y] = spal[v]
+    eim.resize((eim.width * 4, eim.height * 4), Image.NEAREST).save(os.path.join(outdir, "enemies.png"))
 
 
 def main():

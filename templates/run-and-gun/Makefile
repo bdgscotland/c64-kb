@@ -7,6 +7,7 @@
 #   make selftest   prove check fails on the FORCE_FAULT=1 build
 #   make drive      the normal game played headless (harness/drive.py), stick on $DC00
 #   make gallery    shots/gallery.png: the normal game in play, for a README
+#   make enemies    the enemies' own proof (expect-enemies.json) and its ENEMY_FAULT build
 #   make assets     re-run tools/mkassets.py (src/gen/ is committed)
 #   make assetcheck the committed src/gen/ is what the tool writes now
 #   make disk       build/run-and-gun.d64
@@ -49,7 +50,7 @@ assetcheck:
 # MAPEND): the view stops at map y 0 after 7 lines (YSCROLL 0 to 7), and he
 # walks on through the fort's gate to sprite Y 52. expect-mapend.json reads
 # its verdict at YSCROLL 7 ("dy": 4).
-VERIFY_TARGETS := mapend
+VERIFY_TARGETS := mapend enemies
 PRG_MAPEND := build/$(NAME)-mapend.prg
 $(PRG_MAPEND): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
@@ -60,6 +61,37 @@ mapend: $(PRG_MAPEND)
 	$(call vice_shot,$(PRG_MAPEND),$(SHOT_CYCLES_PAL),,shots/mapend-pal.png)
 	$(call vice_shot,$(PRG_MAPEND),$(SHOT_CYCLES_NTSC),-model ntsc,shots/mapend-ntsc.png)
 	$(PYTHON) $(HARNESS_DIR)/check.py expect-mapend.json shots/mapend-pal.png shots/mapend-ntsc.png
+
+# ---- enemies: the spawn list, the three kinds, their fire, the parked slots ------------
+# The -dENEMYTEST=1 autopilot build walks the graded shot's script and grades
+# the objects module (main.c first_fail_enemies): every due event spawned on
+# the frame its row reached the view's top, shots and grenades fired, a shot
+# ended on a blocking cell, every free slot parked and the multiplexer showing
+# exactly the slots above its cut on every frame, shown slots on their map
+# cells on redraw frames too, and obj_kill. expect-enemies.json grades the
+# verdict and the enemies where the arithmetic puts them. The ENEMY_FAULT=1
+# build (spawns a row late, freed slots left unparked, no redraw-frame move)
+# must fail the same checks.
+PRG_ENEMIES := build/$(NAME)-enemies.prg
+PRG_ENEMIES_FAULT := build/$(NAME)-enemies-fault.prg
+$(PRG_ENEMIES): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dENEMYTEST=1 -o=$@ $(C_MAIN)
+$(PRG_ENEMIES_FAULT): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dENEMYTEST=1 -dENEMY_FAULT=1 -o=$@ $(C_MAIN)
+
+.PHONY: enemies
+enemies: $(PRG_ENEMIES) $(PRG_ENEMIES_FAULT)
+	$(call vice_shot,$(PRG_ENEMIES),$(SHOT_CYCLES_PAL),,shots/enemies-pal.png)
+	$(call vice_shot,$(PRG_ENEMIES),$(SHOT_CYCLES_NTSC),-model ntsc,shots/enemies-ntsc.png)
+	$(PYTHON) $(HARNESS_DIR)/check.py expect-enemies.json shots/enemies-pal.png shots/enemies-ntsc.png
+	$(call vice_shot,$(PRG_ENEMIES_FAULT),$(SHOT_CYCLES_PAL),,shots/enemies-fault-pal.png)
+	$(call vice_shot,$(PRG_ENEMIES_FAULT),$(SHOT_CYCLES_NTSC),-model ntsc,shots/enemies-fault-ntsc.png)
+	@$(PYTHON) $(HARNESS_DIR)/check.py expect-enemies.json shots/enemies-fault-pal.png shots/enemies-fault-ntsc.png > shots/enemies-fault.txt 2>&1; st=$$?; \
+	if [ $$st -eq 1 ] && grep -q '^FAIL' shots/enemies-fault.txt; then \
+	  grep '^FAIL' shots/enemies-fault.txt | head -6; echo "enemies: PASS, check.py rejected the ENEMY_FAULT build"; \
+	else cat shots/enemies-fault.txt; echo "enemies: FAIL, check.py did not reject the ENEMY_FAULT build (exit $$st)"; exit 1; fi
 
 # ---- phases: the band and the panel at every YSCROLL phase ---------------------------
 # The graded shot freezes on YSCROLL 3 only. Each build here freezes on one

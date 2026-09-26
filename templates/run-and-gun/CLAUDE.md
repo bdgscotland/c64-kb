@@ -19,8 +19,10 @@ walks up a jungle map that scrolls only while he pushes past the middle of
 the screen, over a black band and a three-row score panel. Trees, rocks and
 sandbags stop him; canopies draw over him. This is the first slice: the
 scroll, the redraw, the band, the multiplexer with parked slots, and the
-soldier. Enemies, weapons, collisions, game flow and audio are stubs whose
-interfaces are in `PLAN.md`, "Modules". `README.md` has the file map and how
+soldier, and the enemies (`objects.c`: spawn list, rifleman, runner,
+grenadier, their shots and grenades; `make enemies` proves them). Weapons,
+collisions, game flow and audio are stubs whose interfaces are in
+`PLAN.md`, "Modules". `README.md` has the file map and how
 to extend it. Start a program from it with
 `npm run new-project -- run-and-gun <dir>` in c64-kb.
 
@@ -37,9 +39,11 @@ What will bite you here:
   tick (line 224) and copies 21 map rows to the screen. The copy ends on
   line 135 (PAL) or 181 (NTSC) of the next frame, which then runs no game
   logic. So the logic frame before a redraw must end by line 224, and every
-  IRQ cycle during the copy comes off its lead over the beam: 73 lines on
-  PAL, 27 on NTSC (about 1,750 cycles). Music and enemy zones spend that.
-  The verdict's row 6 prints the lead; re-read it after adding either.
+  IRQ cycle and sprite DMA during the copy comes off its lead over the
+  beam: 65 lines on PAL, 13 on NTSC with the enemies' eight sprites up (73
+  and 27 before them; PLAN.md, "Enemies"). Music and more sprites spend
+  what is left: 5 lines on NTSC above the verdict's 8-line floor. The
+  verdict's row 6 prints the lead; re-read it after adding either.
 - Sprites stop at Y 187 (last line 208), above the band IRQ. `make phases`
   (run by `make check`) checks the band and panel at all eight YSCROLL
   phases with the soldier at Y 187.

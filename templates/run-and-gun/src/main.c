@@ -12,7 +12,7 @@
 //
 // Files: main.c (states, the frame loop, the autopilot, the meter, the
 // verdict), scroll.c (map, scroll, attributes), soldier.c (the player),
-// objects.c (slots, pool; enemies go here), weapons.c, collide.c, flow.c (stubs
+// objects.c (slots, pool, the enemies), weapons.c, collide.c, flow.c (stubs
 // for the next modules), display.c (VIC, text, panel), kernel.asm + mux.asm +
 // sound.asm (IRQ chain, band, redraw, multiplexer, audio hooks). PLAN.md,
 // "Modules", says who owns what.
@@ -319,32 +319,86 @@ static void actors_commit(char what)
     K_COMMIT = what;                    // one store: the frame IRQ applies both halves at once
 }
 
+// The frame after a redraw: the pool's slots moved one line with the ground
+// and nothing else moved, so the last sort stands (Commando skips its sort on
+// coarse frames too, archetype vertical_run_and_gun); only the table is built.
+static void actors_rebuild(void)
+{
+    __asm {
+        jsr ASM_MUX_BUILD
+    }
+    K_COMMIT = COMMIT_YS | COMMIT_MUX;
+}
+
 // One frame of play. The order: the soldier (who may scroll the map), the
 // objects on the new view, the weapons, the collisions, the rules; then every
 // slot and the commit, which the frame IRQ applies at line 250 with YSCROLL.
+#ifdef ENEMYTEST
+// make enemies: the objects' work each frame, timed by CIA1 timer A (wall
+// time: an IRQ that lands inside is counted), and obj_kill tried once.
+static unsigned obj_cyc_max, lfx_cyc_max, mux_cyc_max, obj_cyc_now;
+static unsigned long obj_cyc_sum, mux_cyc_sum;
+static unsigned obj_cyc_n;
+static char kill_kind, kill_slot, kill_gone;
+#define OBJ_T0 do { cia1.cra = 0x00; cia1.ta = 0xffff; cia1.cra = 0x11; } while (0)
+#define OBJ_T1(m) do { cia1.cra = 0x00; unsigned c_ = 0xffff - cia1.ta; obj_cyc_now += c_; if (counting && meter_frames < METER_HOLD && c_ > (m)) (m) = c_; } while (0)
+#else
+#define OBJ_T0
+#define OBJ_T1(m)
+#endif
+
 static void play_frame(char joy)
 {
     char top = scroll_top;
     soldier_update(joy);
+#ifdef ENEMYTEST
+    obj_cyc_now = 0;
+#endif
+    OBJ_T0;
     if (scroll_top != top)
         objects_rows(scroll_top);
     objects_update();
+    OBJ_T1(obj_cyc_max);
     weapons_update(joy);
     collide();
     flow_frame();
     soldier_draw();
+    OBJ_T0;
     objects_draw();
+    OBJ_T1(obj_cyc_max);
+#ifdef ENEMYTEST
+    if (counting && meter_frames < METER_HOLD) {
+        obj_cyc_sum += obj_cyc_now;
+        obj_cyc_n++;
+    }
+    obj_cyc_now = 0;
+    OBJ_T0;
     actors_commit(COMMIT_YS | COMMIT_MUX);
+    OBJ_T1(mux_cyc_max);
+    if (counting && meter_frames < METER_HOLD)
+        mux_cyc_sum += obj_cyc_now;
+#else
+    actors_commit(COMMIT_YS | COMMIT_MUX);
+#endif
 }
 
 // The frame after a redraw starts late (the redraw ran over the top of the
 // screen). It runs no game logic (row_map_redraw, "How" step 6): the scroll
 // keeps its pace, and the sprite table stays as committed.
+// The pool's move and the table's build take about 39 lines with nine
+// sprites up (make enemies, LFX), and the band IRQ holds lines 211-224: begun
+// after LFX_LAST they could end past line 250 and lose the frame, so the
+// objects then keep last frame's lines for this one frame (the slice's lag).
+#define LFX_LAST 192
 static void light_frame(void)
 {
     soldier_repeat_step();
-    objects_scroll();
-    K_COMMIT = COMMIT_YS;
+    OBJ_T0;
+    if (raster_line() <= LFX_LAST && objects_scroll())  // the ground moved: objects move with it
+        actors_rebuild();
+    else
+        K_COMMIT = COMMIT_YS;
+    OBJ_T1(lfx_cyc_max);
     light = 0;
 }
 
@@ -369,6 +423,14 @@ static bool screen_is_map(void)
 }
 
 static char hw_d011;
+
+static char slots_above_cut(void)
+{
+    char n = 0;
+    for (char s = 0; s < N_SLOTS; s++)
+        n += SLOT_Y[s] <= MAX_SY;
+    return n;
+}
 
 #ifdef MAPEND
 static char first_fail(void)
@@ -397,11 +459,35 @@ static char first_fail(void)
     CHECK(rd_lead >= MIN_LEAD)                              // 7 every redraw beat the beam
     CHECK(screen_is_map())                                  // 8 the screen holds the map from scroll_top
     CHECK((hw_d011 & 0x7f) == 0x13 && K_CUR_YS == 3)        // 9 the frame IRQ applied YSCROLL 3
-    CHECK(K_MUX_SHOWN == 1)                                 // 10 one sprite: every other slot parked
+    CHECK(K_MUX_SHOWN == slots_above_cut())                 // 10 every slot above the cut shown, parked ones not
     return 0;
 }
 #endif
 
+#ifdef ENEMYTEST
+// make enemies: the same walk as the graded shot, graded on the enemies
+// (PLAN.md, "Enemies"). The counts are the run's own, pinned in
+// expect-enemies.json; the rules below hold for any spawn list.
+#define EXPECT_SPAWNS 6                 // rows 88, 84, 77 in view at the start (75-95); 73, 66, 64 reached
+static char first_fail_enemies(void)
+{
+    char n = 1;
+    CHECK(overruns == 0 && rd_late == 0)                    // 1 no frame lost, no redraw late
+    CHECK(rd_lead >= MIN_LEAD)                              // 2 every redraw beat the beam
+    CHECK(ost_spawned == EXPECT_SPAWNS && ost_lost == 0)    // 3 every due event spawned
+    CHECK(ost_at_row == ost_spawned)                        // 4 ... each on the frame its row reached the top
+    CHECK(ost_shots > 0 && ost_nades > 0)                   // 5 riflemen fired, grenadiers threw
+    CHECK(ost_wall > 0)                                     // 6 a shot ended on a blocking cell
+    CHECK(ost_park_bad == 0 && ost_shown_bad == 0)          // 7 free slots parked, shown = above the cut, every frame
+    CHECK(ost_lag_bad == 0 && ost_fixes + ost_lag_skip > 0) // 8 shown slots on their cells, redraw frames too
+    CHECK(kill_kind == K_RUNNER && kill_gone == 24)         // 9 obj_kill: dust for 24 frames, then free
+    return 0;
+}
+#endif
+
+#ifdef ENEMYTEST
+#define first_fail first_fail_enemies
+#endif
 static void verdict(void)
 {
     char fail = first_fail();
@@ -413,6 +499,45 @@ static void verdict(void)
     put_text(s, 3, 1, ok ? "RESULT 01 PASS   " : "RESULT 02 FAIL 00");
     if (!ok)
         put_dec(s + 3 * 40 + 16, fail, 2);
+#ifdef ENEMYTEST
+    // Rows 3-13, columns 1-25 only: the enemies stand right of column 25 at the freeze.
+    put_text(s, 4, 1, "EV 00 ROW 00 LOST 00");
+    put_dec(s + 4 * 40 + 4, ost_spawned, 2);
+    put_dec(s + 4 * 40 + 11, ost_at_row, 2);
+    put_dec(s + 4 * 40 + 19, ost_lost, 2);
+    put_text(s, 5, 1, "SHOT 00 GREN 00 WALL 00");
+    put_dec(s + 5 * 40 + 6, ost_shots, 2);
+    put_dec(s + 5 * 40 + 14, ost_nades, 2);
+    put_dec(s + 5 * 40 + 22, ost_wall, 2);
+    put_text(s, 6, 1, "NW 00 KILL 0 KG 00");
+    put_dec(s + 6 * 40 + 4, ost_nwall, 2);
+    put_dec(s + 6 * 40 + 12, kill_kind, 1);
+    put_dec(s + 6 * 40 + 17, kill_gone, 2);
+    put_text(s, 7, 1, "PARK 000 SHOWN 000");
+    put_dec(s + 7 * 40 + 6, ost_park_bad, 3);
+    put_dec(s + 7 * 40 + 16, ost_shown_bad, 3);
+    put_text(s, 8, 1, "LAG 000 FIX 00 SKIP 00");
+    put_dec(s + 8 * 40 + 5, ost_lag_bad, 3);
+    put_dec(s + 8 * 40 + 13, ost_fixes, 2);
+    put_dec(s + 8 * 40 + 21, ost_lag_skip, 2);
+    put_text(s, 10, 1, "OBJ 00000 00000");
+    put_dec(s + 10 * 40 + 5, obj_cyc_max, 5);
+    put_dec(s + 10 * 40 + 11, (unsigned)(obj_cyc_sum / obj_cyc_n), 5);
+    put_text(s, 11, 1, "MUX 00000 00000");
+    put_dec(s + 11 * 40 + 5, mux_cyc_max, 5);
+    put_dec(s + 11 * 40 + 11, (unsigned)(mux_cyc_sum / obj_cyc_n), 5);
+    put_text(s, 12, 1, "LFX 00000 LF 000");
+    put_dec(s + 12 * 40 + 5, lfx_cyc_max, 5);
+    put_dec(s + 12 * 40 + 14, light_end, 3);
+    put_text(s, 13, 1, "PEAK 00 LOST 00 LD 000");
+    put_dec(s + 13 * 40 + 6, ost_peak, 2);
+    put_dec(s + 13 * 40 + 14, overruns, 2);
+    put_dec(s + 13 * 40 + 20, rd_lead < 0 ? 0 : rd_lead, 3);
+    text_colour(3, 1, 17, TEXT_CRAM);
+    for (char r = 4; r <= 13; r++)
+        text_colour(r, 1, 24, TEXT_CRAM);
+    return;
+#endif
     put_text(s, 4, 1, "X 000 Y 000 WY 000 ST 000");
     put_dec(s + 4 * 40 + 3, soldier_x, 3);
     put_dec(s + 4 * 40 + 9, soldier_y, 3);
@@ -513,6 +638,9 @@ int main(void)
                 unsigned l = raster_line();
                 if (counting && l < 250 && l > light_end)
                     light_end = l;
+#if AUTOPILOT
+                objects_audit();        // outside the meter, after the line is read
+#endif
             } else {
                 meter_open();
                 play_frame(joy);
@@ -523,6 +651,20 @@ int main(void)
                     if (l > pre_end)
                         pre_end = l;
                 }
+#ifdef ENEMYTEST
+                if (kill_kind && !kill_gone && obj_kind[kill_slot - SLOT_POOL] != K_DOWN)
+                    kill_gone = play_frames - 120;
+                if (play_frames == 120) // obj_kill on the first runner alive
+                    for (char i = 0; i < N_POOL; i++)
+                        if (obj_kind[i] == K_RUNNER) {
+                            kill_slot = SLOT_POOL + i;
+                            kill_kind = obj_kill(kill_slot);
+                            break;
+                        }
+#endif
+#if AUTOPILOT
+                objects_audit();
+#endif
                 if (scroll_redraw_due)
                     do_redraw();
             }

@@ -13,5 +13,12 @@
 #define START_ROW    91
 #define SPR_SOLDIER  0    // block offset: direction * 4 + walk frame
 #define SPR_BLANK    32   // the parking block (all zero)
-#define SPR_BLOCKS   33
+#define SPR_RIFLE    33   // rifleman: direction (0 up, clockwise) * 2 + step frame
+#define SPR_RUNNER   49   // runner: (0 right, 1 left) * 2 + step frame
+#define SPR_GREN     53   // grenadier: direction * 2 + (0 carry, 1 throw)
+#define SPR_SHOT     69   // enemy bullet, centred on sprite pixel (12, 10)
+#define SPR_NADE     70   // enemy grenade: small, middle, large
+#define SPR_BLAST    73   // grenade blast, 2 frames
+#define SPR_DOWN     75   // a hit enemy's dust
+#define SPR_BLOCKS   76
 #endif
