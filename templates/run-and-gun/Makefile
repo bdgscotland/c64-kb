@@ -1,5 +1,6 @@
 # run-and-gun (FIREBASE): a vertical run-and-gun starter. Every target but
-# assets and assetcheck comes from the harness:
+# assets, assetcheck, mapend, phases, enemies, weapons, weaponsfault, audio and
+# audiotest comes from the harness:
 #   make            build build/run-and-gun.prg (after the PLAN.md gate)
 #   make run        windowed VICE, joystick in port 2
 #   make shot       headless PAL and NTSC exit screenshots of the autopilot build
@@ -8,15 +9,18 @@
 #   make drive      the normal game played headless (harness/drive.py), stick on $DC00
 #   make gallery    shots/gallery.png: the normal game in play, for a README
 #   make enemies    the enemies' own proof (expect-enemies.json) and its ENEMY_FAULT build
-#   make assets     re-run tools/mkassets.py and tools/mkweapons.py (src/gen/ is committed)
+#   make assets     re-run tools/mkassets.py, tools/mkweapons.py and tools/mktune.py (src/gen/ is committed)
 #   make assetcheck the committed src/gen/ is what the tool writes now
 #   make weapons    the -dWEAPONS=1 build: shots and grenades played and graded (expect-weapons.json)
 #   make weaponsfault  its WEAPONS_FAULT build (autofire) must fail those checks
+#   make audio      the SID store trace: effects on voices 1-2, the tune on voice 3 in time
+#   make audiotest  its AUDIO_FAULT and AUDIO_DROP builds must fail the trace
 #   make disk       build/run-and-gun.d64
 #   make clean
 NAME     := run-and-gun
 C_MAIN   := src/main.c
 KICK_SRC := src/kernel.asm
+KICK_DEPS := $(wildcard src/*.asm src/gen/*.asm)
 C_DEPS   := $(wildcard src/*.c src/*.h src/gen/*)
 
 # The autopilot freezes at play frame 224 or a few after (the first YSCROLL 3),
@@ -25,6 +29,13 @@ C_DEPS   := $(wildcard src/*.c src/*.h src/gen/*)
 # changes after the verdict.
 SHOT_CYCLES_PAL  := 10000000
 SHOT_CYCLES_NTSC := 10000000
+
+# make watch (run by make check): the SID is written in at least SID_FRAMES frames
+# of the autopilot run. Measured (make watch): 324 frames on PAL, 370-371 on NTSC in
+# 10,000,000 cycles (the driver starts about 160 frames in); the NO_PLAYER build
+# writes it in 2 (the start-up's copy of the blob and audio_init), which make
+# watchtest wants to fail.
+SID_FRAMES := 300
 
 # make drive, make gallery: the text lives on the one screen at $8000.
 DRIVE_SCREEN := 8000:0-23
@@ -41,12 +52,14 @@ include $(HARNESS)/harness.mk
 assets:
 	$(PYTHON) tools/mkassets.py
 	$(PYTHON) tools/mkweapons.py
+	$(PYTHON) tools/mktune.py
 
 assetcheck:
 	@rm -rf build/gencheck && mkdir -p build/gencheck && cp -r src/gen build/gencheck/was
 	$(PYTHON) tools/mkassets.py > /dev/null
 	$(PYTHON) tools/mkweapons.py > /dev/null
-	@diff -r build/gencheck/was src/gen && echo "assetcheck: PASS, src/gen/ is what tools/mkassets.py and mkweapons.py write" || { cp build/gencheck/was/* src/gen/; echo "assetcheck: FAIL, src/gen/ differs from the tool's output (restored)"; exit 1; }
+	$(PYTHON) tools/mktune.py > /dev/null
+	@diff -r build/gencheck/was src/gen && echo "assetcheck: PASS, src/gen/ is what tools/mkassets.py, mkweapons.py and mktune.py write" || { cp build/gencheck/was/* src/gen/; echo "assetcheck: FAIL, src/gen/ differs from the tool's output (restored)"; exit 1; }
 
 # ---- mapend: the scroll stops at the map's top --------------------------------------
 # The -dMAPEND=1 autopilot build starts 7 lines from the map's top with the
@@ -54,7 +67,7 @@ assetcheck:
 # MAPEND): the view stops at map y 0 after 7 lines (YSCROLL 0 to 7), and he
 # walks on through the fort's gate to sprite Y 52. expect-mapend.json reads
 # its verdict at YSCROLL 7 ("dy": 4).
-VERIFY_TARGETS := mapend enemies weapons weaponsfault
+VERIFY_TARGETS := mapend enemies weapons weaponsfault audio audiotest
 PRG_MAPEND := build/$(NAME)-mapend.prg
 $(PRG_MAPEND): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
 	@mkdir -p build
@@ -145,3 +158,54 @@ weaponsfault: $(PRG_WEAPONS_FAULT)
 	if [ $$st -eq 1 ] && grep -q '^FAIL' shots/weaponsfault.txt; then \
 	  grep '^FAIL' shots/weaponsfault.txt | head -8; echo "weaponsfault: PASS, check.py rejected the WEAPONS_FAULT build"; \
 	else cat shots/weaponsfault.txt; echo "weaponsfault: FAIL, exit $$st"; exit 1; fi
+
+# ---- audio: the SID store trace (tools/sidtrace.py) ----------------------------------
+# The autopilot build requests eight effects on scripted frames (src/sound.c); the
+# -dNO_SFX=1 build requests none. tools/sidtrace.py runs both headless with a
+# monitor store trace and wants: no music store to voices 1-2 while an effect
+# runs, no effect store to voice 3, voice 3's stores identical in both builds,
+# voices 1-2's identical outside the effects, voice 3's note-ons on the steps
+# the tune data gives, one driver step a frame with as many steps as frames,
+# $D418 at $0F and voice 3's pitches from the table. PAL and NTSC.
+# audiotest: the -define AUDIO_FAULT build (the music writes voices 1-2 during
+# an effect) must fail owned, and the -define AUDIO_DROP build (the first owed
+# step after a redraw is never played) must fail frames, on both models.
+PRG_NOSFX := build/$(NAME)-nosfx.prg
+$(PRG_NOSFX): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dNO_SFX=1 -o=$@ $(C_MAIN)
+$(eval $(call variant_prg,audiofault,AUDIO_FAULT))
+$(eval $(call variant_prg,audiodrop,AUDIO_DROP))
+
+# 20,000,000 cycles: past one whole loop of the tune (768 frames) after the start-up.
+AUDIO_CYCLES := 20000000
+SIDTRACE = $(TIMEOUT) $(VICE_TIMEOUT) $(PYTHON) tools/sidtrace.py --x64sc '$(X64SC)'
+
+.PHONY: audio audiotest
+audio: $(PRG_AUTO) $(PRG_NOSFX)
+	@mkdir -p shots
+	@$(SIDTRACE) --model pal --cycles $(AUDIO_CYCLES) --sym build/kernel.sym $(PRG_AUTO) $(PRG_NOSFX) > shots/audio-pal.txt 2>&1; echo $$? > shots/audio-pal.st & \
+	 $(SIDTRACE) --model ntsc --cycles $(AUDIO_CYCLES) --sym build/kernel.sym $(PRG_AUTO) $(PRG_NOSFX) > shots/audio-ntsc.txt 2>&1; echo $$? > shots/audio-ntsc.st & \
+	 wait; cat shots/audio-pal.txt shots/audio-ntsc.txt; \
+	 [ "$$(cat shots/audio-pal.st)" = 0 ] && [ "$$(cat shots/audio-ntsc.st)" = 0 ] || { echo "audio: FAIL"; exit 1; }
+	@echo "audio: PASS"
+
+# $(1) the variant, $(2) the check its build must fail: exit 1, a FAIL line for that
+# check, and no Python traceback (a crashed checker also exits 1).
+define audio_must_fail
+	@for m in pal ntsc; do \
+	  $(SIDTRACE) --model $$m --cycles $(AUDIO_CYCLES) --sym build/$(1)/kernel.sym --sym-nofx build/kernel.sym build/$(NAME)-$(1).prg $(PRG_NOSFX) > shots/audiotest-$(1)-$$m.txt 2>&1; st=$$?; \
+	  grep '^FAIL' shots/audiotest-$(1)-$$m.txt | head -3; \
+	  if [ $$st -eq 1 ] && grep -q '^FAIL .* $(2):' shots/audiotest-$(1)-$$m.txt && ! grep -q '^Traceback' shots/audiotest-$(1)-$$m.txt; then \
+	    echo "audiotest: the $(1) build fails $(2) on $$m: PASS"; \
+	  else cat shots/audiotest-$(1)-$$m.txt; echo "audiotest: FAIL, the $(1) build did not fail $(2) on $$m (exit $$st)"; exit 1; fi; \
+	done
+endef
+
+audiotest: build/$(NAME)-audiofault.prg build/$(NAME)-audiodrop.prg $(PRG_NOSFX)
+	@mkdir -p shots
+	$(call audio_must_fail,audiofault,owned)
+	$(call audio_must_fail,audiodrop,frames)
+
+check: audio
+selftest: audiotest
