@@ -1674,4 +1674,17 @@ describe("gameBriefing beside a large fingerprint (KB-GAPS 2)", () => {
       expect(got).not.toContain(t);
     expect(got.length).toBeLessThanOrEqual(FINGERPRINT.length + 4);
   });
+
+  it("reaches the front end and the state machine from the archetype (KB-GAPS 28)", async () => {
+    const r = await gameBriefing(BRIEF, "vertical_run_and_gun");
+    const patterns = r.structured.design_patterns ?? [];
+    expect(patterns.map((p) => p.name)).toEqual(
+      expect.arrayContaining(["game_state_machine", "front_end_and_attract"]),
+    );
+    const front = patterns.find((p) => p.name === "front_end_and_attract");
+    expect(front?.source).toBe("game-design/game-structure.md");
+    expect(front?.realised_by).toContain("high_score_table_insert");
+    expect(r.text).toContain("**Game structure:** front_end_and_attract");
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
+  });
 });

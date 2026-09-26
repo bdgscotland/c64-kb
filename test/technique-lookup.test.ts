@@ -145,6 +145,14 @@ describe("techniqueLookup", () => {
     expect((await techniqueLookup("text_zoom")).structured.alternatives).toEqual([]);
   });
 
+  it("names the game-design pattern when the name is one, not a technique (KB-GAPS 28)", async () => {
+    const r = await techniqueLookup("front_end_and_attract");
+    expect(r.structured.name).toBe("");
+    expect(r.text).toContain("front_end_and_attract is a game-design pattern");
+    expect(r.text).toContain("game-design/game-structure.md");
+    expect(r.text).toMatch(/Realised by:.*high_score_table_insert/);
+  });
+
   it("returns suggestions when not found", async () => {
     const r = await techniqueLookup("stable_raster");
     expect(r.structured.name).toBe("");

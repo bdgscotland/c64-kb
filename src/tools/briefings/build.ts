@@ -35,6 +35,8 @@ import { computeBudget } from "./budget.ts";
 import { fetchBudgetMembers } from "../query/plan-budget.ts";
 import { designsOfArchetype } from "../query/game-design.ts";
 import { briefSummary, renderArchetype, renderBriefingText } from "./render.ts";
+import { designPatternsFor } from "../query/design-patterns.ts";
+import { config } from "../../config.ts";
 
 export type BriefingResult = { structured: BriefingOutput; text: string };
 
@@ -282,6 +284,26 @@ async function designFields(
   };
 }
 
+/** The game-design patterns that apply to the plan's archetype; absent when none do. */
+function patternFields(resolved: ArchetypeResolution | undefined): Pick<BriefingOutput, "design_patterns"> {
+  const archetypes =
+    resolved?.mode === "graph"
+      ? [resolved.archetype.name]
+      : resolved?.mode === "ambiguous"
+        ? resolved.candidates
+        : [];
+  const patterns = designPatternsFor(config.docs.dir, archetypes);
+  if (patterns.length === 0) return {};
+  return {
+    design_patterns: patterns.map(({ name, title, source, realised_by }) => ({
+      name,
+      title,
+      source,
+      realised_by,
+    })),
+  };
+}
+
 /**
  * A named archetype is looked up. A game brief that names none is routed by
  * the archetypes' brief words; a demo brief that names none is not.
@@ -356,6 +378,7 @@ export async function buildBriefing(
     budget,
     ...archetypeFields(resolved),
     ...(await designFields(resolved)),
+    ...patternFields(resolved),
   };
 
   getAnalytics().logQuery({

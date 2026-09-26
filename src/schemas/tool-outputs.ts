@@ -535,6 +535,15 @@ export const BriefingSchema = z.object({
   // The GameDesigns INSTANCE_OF the resolved archetype (schema 28, tools
   // 2.1.0); c64_plan_budget takes a name as 'design'.
   designs: z.array(BriefingDesignSchema).optional(),
+  // The game-design patterns whose **Applies to:** line names the resolved
+  // archetype (every candidate, when several fit): the state machine, the
+  // front end, level ends and transitions (KB-GAPS 28). Prose pages, not
+  // graph nodes; realised_by names techniques and toolchain/recipe pages.
+  design_patterns: z
+    .array(
+      z.object({ name: z.string(), title: z.string(), source: z.string(), realised_by: z.array(z.string()) }),
+    )
+    .optional(),
 });
 export type BriefingOutput = z.infer<typeof BriefingSchema>;
 
