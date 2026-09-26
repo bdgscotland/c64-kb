@@ -115,6 +115,44 @@ describe("region samples", () => {
     const p = analyseRegion(hits, TIMER_B, PAL_TIMING, 0);
     expect(p.samples.map((s) => s.frame)).toEqual([0, 0, 1]);
   });
+
+  // #129: the fallback when findFrameRef finds no hit with a raster position.
+  it("numbers frames from the start clock when no hit logs a raster line and cycle", () => {
+    // Every hit is unlogged, so the frames come from the start clock: frame 0
+    // is 19000-38655 and the two samples read 0, 0. Numbered from clock 0
+    // instead, they would read 0, 1.
+    const noLine = (h: Hit): Hit => ({ ...h, line: -1, cycle: -1 });
+    const hits = [
+      noLine(st(0x11, 19100)),
+      noLine(st(0x00, 19500)),
+      noLine(st(0x11, 20000)),
+      noLine(st(0x00, 20400)),
+    ];
+    const p = analyseRegion(hits, TIMER_B, PAL_TIMING, 19000);
+    expect(p.samples.map((s) => s.frame)).toEqual([0, 0]);
+    expect(p.unknowns.join(" ")).toMatch(
+      /no hit at or after clock 19000 logged a raster line and cycle; frames numbered from the start clock/,
+    );
+  });
+
+  it("anchors on the first hit that logs a raster line and cycle, skipping the unlogged ones before it", () => {
+    // The anchor is the start at clock 12000 (line 100, cycle 20), so frame 0
+    // starts at clock 5680 and the sample at 22000 is still frame 0: numbered
+    // from the start clock it would be 1. The unlogged pair before it is
+    // analysed but never the anchor, and no unknown is recorded.
+    const noLine = (h: Hit): Hit => ({ ...h, line: -1, cycle: -1 });
+    const hits = [
+      noLine(st(0x11, 11000)),
+      noLine(st(0x00, 11400)),
+      stAt(0x11, 12000, 100),
+      stAt(0x00, 12400, 100),
+      stAt(0x11, 22000, 122),
+      stAt(0x00, 22400, 122),
+    ];
+    const p = analyseRegion(hits, TIMER_B, PAL_TIMING, 0);
+    expect(p.samples.map((s) => s.frame)).toEqual([0, 0, 0]);
+    expect(p.unknowns).toEqual([]);
+  });
 });
 
 describe("region commands", () => {

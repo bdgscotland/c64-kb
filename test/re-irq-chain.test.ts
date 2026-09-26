@@ -195,6 +195,48 @@ describe("entries and summary", () => {
     const r = analyseIrqChain(hits, PAL_TIMING, 0);
     expect(r.entries.map((e) => e.frame)).toEqual([0, 0, 1]);
   });
+  // #129: the fallback when findFrameRef finds no hit with a raster position.
+  it("numbers frames from the start clock when no hit logs a raster line and cycle", () => {
+    // Every hit is unlogged, so the frames come from the start clock: frame 0
+    // is 19000-38655 and the three entries read 0, 0, 1. Numbered from clock 0
+    // instead, they would read 0, 1, 1.
+    const noLine = (h: Hit): Hit => ({ ...h, line: -1, cycle: -1 });
+    const hits = [
+      noLine(st(0x314, 0x00, 1)),
+      noLine(st(0x315, 0x20, 2)),
+      noLine(irq(19071)),
+      noLine(ex(0x2000, 19100, 40)),
+      noLine(irq(19671)),
+      noLine(ex(0x2000, 19700, 40)),
+      noLine(irq(38727)),
+      noLine(ex(0x2000, 38756, 40)),
+    ];
+    const r = analyseIrqChain(hits, PAL_TIMING, 19000);
+    expect(r.entries.map((e) => e.frame)).toEqual([0, 0, 1]);
+    expect(r.unknowns.join(" ")).toMatch(
+      /no hit at or after clock 19000 logged a raster line and cycle; frames numbered from the start clock/,
+    );
+  });
+  it("anchors on the first hit that logs a raster line and cycle, skipping the unlogged ones before it", () => {
+    // The anchor is the entry at clock 12000 (line 100, cycle 20), so frame 0
+    // starts at clock 5680 and the entry at 22000 is still frame 0: numbered
+    // from the start clock it would be 1. The unlogged hits before it are
+    // analysed but never the anchor, so the frames get no fallback note.
+    const noLine = (h: Hit): Hit => ({ ...h, line: -1, cycle: -1 });
+    const hits = [
+      noLine(st(0x314, 0x00, 1)),
+      noLine(st(0x315, 0x20, 2)),
+      noLine(irq(11971)),
+      ex(0x2000, 12000, 100),
+      noLine(irq(21971)),
+      ex(0x2000, 22000, 122),
+      irq(31627),
+      ex(0x2000, 31656, 100),
+    ];
+    const r = analyseIrqChain(hits, PAL_TIMING, 0);
+    expect(r.entries.map((e) => e.frame)).toEqual([0, 0, 1]);
+    expect(r.unknowns.join(" ")).not.toMatch(/numbered from the start clock/);
+  });
   it("handles missing timing (-1) by storing null and recording unknowns", () => {
     const missingTimingHit: Hit = {
       ...base,
