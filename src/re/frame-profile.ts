@@ -170,6 +170,8 @@ interface FrameRow extends Obs {
   start_clock: number;
   /** Cycles inside interrupts, nested ones once. */
   handlers: number;
+  /** Interrupts that started in this frame, nested ones included. */
+  interrupts: number;
   /** Cycles in the wait loop outside interrupts; null without a wait. */
   idle: number | null;
   /** frame - handlers - idle; null without a wait. */
@@ -281,6 +283,11 @@ function interruptSpans(hits: Hit[], o: FrameOpts): Span[] {
   const open: Span[] = [];
   for (const e of events(hits, new Set(o.rtis), o.startClock)) {
     if (e.kind === 1) {
+      // A nested interrupt pushes strictly lower. One open at this SP or
+      // deeper never returned (no traced RTI, or a handler that reset the
+      // stack): close it unreturned, or every later interrupt would nest
+      // under it and no frame would count them.
+      while ((open.at(-1)?.sp ?? -1) <= e.sp && open.length) open.pop();
       const parent = open.at(-1);
       const s: Span = {
         start: e.clock - INTERRUPT_CYCLES,
@@ -385,6 +392,7 @@ function frameRows(
       frame: k,
       start_clock: f0,
       handlers,
+      interrupts: spans.filter((s) => s.start >= f0 && s.start < f1).length,
       idle,
       main: idle === null ? null : F - handlers - idle,
       rest: F - handlers,
@@ -445,6 +453,26 @@ function partsOf(spans: Span[], frame: (clock: number) => number): Part[] {
     }));
 }
 
+const listed = (xs: number[]) =>
+  xs.slice(0, 20).join(", ") + (xs.length > 20 ? ` and ${xs.length - 20} more` : "");
+
+/** Frames the wait never ran in, and frames with fewer interrupts than the median. */
+function rowUnknowns(frames: FrameRow[], waited: boolean): string[] {
+  const out: string[] = [];
+  const unwaited = frames.filter((f) => f.idle === 0);
+  if (waited && unwaited.length)
+    out.push(
+      `${unwaited.length} of ${frames.length} frames never reached the wait (the main loop ran past the frame, or another loop ran): frames ${listed(unwaited.map((f) => f.frame))}; measured_frame worst is capped at one frame`,
+    );
+  const typical = median(frames.map((f) => f.interrupts));
+  const few = frames.filter((f) => typical !== null && f.interrupts < typical);
+  if (few.length)
+    out.push(
+      `${few.length} frames had fewer interrupts than the typical ${typical}: frame ${listed(few.map((f) => f.frame))}`,
+    );
+  return out;
+}
+
 function frameUnknowns(spans: Span[], o: FrameOpts, ref: FrameRef | null): string[] {
   const out: string[] = [];
   if (!ref)
@@ -463,7 +491,7 @@ function frameUnknowns(spans: Span[], o: FrameOpts, ref: FrameRef | null): strin
     );
   if (!o.wait)
     out.push(
-      "no wait loop (wait_pc not given, or its exit not found), so main and idle are one figure (rest) and there is no measured_frame",
+      "no wait loop (wait_pc not given, or its exit not found: a loop closed by JMP, or by a forward branch to a JMP, is not found), so main and idle are one figure (rest) and there is no measured_frame",
     );
   return out;
 }
@@ -499,7 +527,7 @@ export function analyseFrames(hits: Hit[], entries: FrameEntry[], o: FrameOpts):
     wait: o.wait,
     interrupts: spans.length,
     unreturned: spans.filter((s) => s.end === null).length,
-    unknowns: frameUnknowns(spans, o, found),
+    unknowns: [...frameUnknowns(spans, o, found), ...rowUnknowns(frames, o.wait !== null)],
   };
 }
 

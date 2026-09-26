@@ -255,6 +255,7 @@ describe("RE tool replies carry the whole result", () => {
           frame: 3,
           start_clock: 58_968,
           handlers: 626,
+          interrupts: 5,
           idle: 9000,
           main: 10_030,
           rest: 19_030,
@@ -282,7 +283,9 @@ describe("RE tool replies carry the whole result", () => {
     const parsed = z.object(FrameProfileOutput).safeParse(r.structured);
     expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
     expect(r.text).toMatch(/\$4134 -> \$41C5: 1 entries on lines 30; cost 1097 typical/);
-    expect(r.text).toMatch(/\*\*Measured frame:\*\* play pal worst=10656 typical=10656/);
+    expect(r.text).toMatch(
+      /\*\*Measured frame:\*\* play pal worst=10656 typical=10656 \(measured-vice-study, c64_re_frame_profile frame mode, frame minus the \$402A to \$4032 wait over 1 frames, /,
+    );
     expect(r.text).toMatch(/wait \$402A to \$4032/);
   });
 

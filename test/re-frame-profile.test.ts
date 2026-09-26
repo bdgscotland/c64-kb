@@ -266,6 +266,33 @@ describe("frame mode", () => {
     expect(b.unknowns.join()).toMatch(/1 of 1 interrupts.*RTI/);
   });
 
+  it("closes an interrupt that never returned when a later push is not deeper, so later frames still count", () => {
+    const { hits, entries } = twoHandlers(4);
+    // An interrupt in frame 0 at SP $F3 that never reaches an RTI (a handler that resets the stack).
+    const lost = at(0, 10);
+    hits.push(push(lost));
+    entries.push(entry(0x1000, lost + 29));
+    hits.sort((x, y) => x.clock - y.clock);
+    const b = analyseFrames(hits, entries, opts);
+    expect(b.unreturned).toBe(1);
+    expect(b.frames.map((f) => f.handlers)).toEqual([626, 626, 626, 626]);
+  });
+
+  it("names frames that never reached the wait and frames with fewer interrupts than usual", () => {
+    const { hits, entries } = twoHandlers(4);
+    const wait = { pc: 0x402a, exit: 0x4032 };
+    for (const f of [0, 1, 3])
+      hits.push(op(0x402a, at(f, 100), ["LDA", ""], 0xf4), op(0x4032, at(f, 250), ["RTS", ""], 0xf4));
+    // Frame 2: no wait, and its line-200 interrupt removed.
+    const drop = hits.findIndex((h) => h.clock === at(2, 200));
+    hits.splice(drop, 3);
+    hits.sort((x, y) => x.clock - y.clock);
+    const b = analyseFrames(hits, entries, { ...opts, wait });
+    expect(b.frames.map((f) => f.interrupts)).toEqual([2, 2, 1, 2]);
+    expect(b.unknowns.join()).toMatch(/1 of 4 frames never reached the wait.*capped at one frame/);
+    expect(b.unknowns.join()).toMatch(/fewer interrupts than the typical 2: frame 2/);
+  });
+
   it("measures idle as the wait loop's cycles less the interrupts inside it, and main as the rest", () => {
     const { hits, entries } = twoHandlers(2);
     const wait = { pc: 0x402a, exit: 0x4032 };

@@ -53,7 +53,7 @@ function findWait(hits: Hit[], waitPc: number | null): { wait: Wait | null; unkn
   return {
     wait: null,
     unknowns: [
-      `wait_pc ${hexUp(waitPc)}: not executed in the discovery trace, or no conditional branch back to it at its stack depth within 64 instructions`,
+      `wait_pc ${hexUp(waitPc)}: not executed in the discovery trace, or no conditional branch back to it at its stack depth within 64 instructions (a loop closed by JMP, or by a forward branch to a JMP, is not found)`,
     ],
   };
 }

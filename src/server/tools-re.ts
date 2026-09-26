@@ -122,6 +122,7 @@ export const FrameProfileOutput = {
         frame: int,
         start_clock: int,
         handlers: int.describe("Cycles inside interrupts, a nested one once"),
+        interrupts: int.describe("Interrupts that started in this frame, nested ones included"),
         idle: int.nullable().describe("Cycles in the wait loop outside interrupts; null without a wait"),
         main: int.nullable().describe("frame - handlers - idle; null without a wait"),
         rest: int.describe("frame - handlers: main and idle together"),
@@ -321,6 +322,7 @@ const partText = (p: FrameBudget["parts"][number]) =>
   `${p.entries} entries on lines ${p.entry_lines.join(", ") || "?"}; cost ${statText(p.cost)}; dispatch ${p.dispatch.typical ?? "?"}`;
 
 export function frameModeReply(r: ReResult<FrameBudget>): ToolReply {
+  const source = r.ok ? (r.run.session ?? r.run.prg) : "";
   return reply(r, (b) => {
     const f = b.per_frame;
     return (
@@ -328,7 +330,9 @@ export function frameModeReply(r: ReResult<FrameBudget>): ToolReply {
       b.parts.map(partText).join("\n") +
       `\nper frame: handlers ${statText(f.handlers)}; main ${statText(f.main)}; idle ${statText(f.idle)}; main+idle ${statText(f.rest)}` +
       (b.wait ? `\nwait ${waitLabel(b.wait)}` : "") +
-      (b.measured_frame ? `\n**Measured frame:** ${b.measured_frame}` : "") +
+      (b.measured_frame
+        ? `\n**Measured frame:** ${b.measured_frame} (measured-vice-study, c64_re_frame_profile frame mode, frame minus the ${b.wait ? waitLabel(b.wait) : ""} wait over ${b.frames.length} frames, ${source})`
+        : "") +
       unknownsText(b.unknowns)
     );
   });
@@ -365,7 +369,7 @@ export const reFrameProfileTool = defineTool({
 
 mode "region" (default): time every occurrence of a region, from a start marker to the next stop marker. A marker is "store:$DC0F=$11" (a store of that value to that address) or "pc:$2000" (an executed PC). Returns worst, typical (median), the count, starts with no stop (unpaired: cut off by the run's end or replaced by a later start), samples longer than one frame (over_frame, kept in worst), and every sample with its frame.
 
-mode "frame": no markers, for a program with no timer of its own. Per raster frame (from line 0): cycles inside interrupts, and with wait_pc (the first instruction of the main loop's frame wait) the idle cycles in that loop outside interrupts and main = frame - handlers - idle; without it main and idle are one figure (rest). Per part (a handler, or a JMP (pointer) handler's target, by its order of entry in the frame): cost from the start of the interrupt sequence to the end of its RTI, nested interrupts taken out, and dispatch, the start of the sequence to the handler's first instruction: 7 cycles of sequence plus 29 for the KERNAL's $FF48 stub on a $0314 handler (36 measured); a JMP (pointer) handler's own 5 cycles count in its target's cost. Worst, typical (median) and least of each, and measured_frame in the **Measured frame:** shape (frame minus idle). Four runs: the two irq-chain discovery passes, a full exec trace capped at 64 MB from the start PC that finds every RTI and the wait's exit (the instruction after its branch back), and the measuring pass. An interrupt's RTI is the first one executed at its push's stack depth; one with none is counted under unreturned and left out.
+mode "frame": no markers, for a program with no timer of its own. Per raster frame (from line 0): cycles inside interrupts, and with wait_pc (the first instruction of the main loop's frame wait) the idle cycles in that loop outside interrupts and main = frame - handlers - idle; without it main and idle are one figure (rest). Per part (a handler, or a JMP (pointer) handler's target, by its order of entry in the frame): cost from the start of the interrupt sequence to the end of its RTI, nested interrupts taken out, and dispatch, the start of the sequence to the handler's first instruction: 7 cycles of sequence plus 29 for the KERNAL's $FF48 stub on a $0314 handler (36 measured); a JMP (pointer) handler's own 5 cycles count in its target's cost. Worst, typical (median) and least of each, and measured_frame in the **Measured frame:** shape (frame minus idle). Four runs: the two irq-chain discovery passes, a full exec trace capped at 64 MB from the start PC that finds every RTI and the wait's exit (the instruction after its conditional branch back; a wait closed by JMP, or by a forward branch to a JMP, is not found and main and idle stay one figure), and the measuring pass. An interrupt's RTI is the first one executed at its push's stack depth; one with none is counted under unreturned and left out.
 
 ${NEEDS}
 
