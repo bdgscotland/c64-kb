@@ -256,13 +256,18 @@ function studyFields(body: string, name: string, where: string, kind: DesignKind
     return { irq_chain: [], memory_map: [], edges: [] };
   }
   if (!hasLine(body, "Studied from")) warn(`${where} is kind: studied but has no **Studied from:** line`);
-  // One Studied from line is read; a second is the same study twice.
-  const from = everyLine(
+  // One Studied from line is read; a second is the same study twice, or two studies on one page.
+  const froms = everyLine(
     body,
     STUDIED_FROM_LINE,
     { label: "Studied from", where },
     asList(parseStudiedFrom),
-  ).at(0);
+  );
+  if (froms.length > 1)
+    warn(
+      `${where}: more than one **Studied from:** line parses — only the first (${froms[0]?.title}) is read`,
+    );
+  const from = froms.at(0);
   const diverges = everyLine(
     body,
     DIVERGES_LINE,

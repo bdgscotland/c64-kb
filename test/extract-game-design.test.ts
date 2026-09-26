@@ -323,6 +323,62 @@ describe("game-design extractor: a studied design", () => {
     }
   });
 
+  it("reads the widened Memory map grammar: digits after in, any I/O port, - / ( ) in labels (Task 8 review)", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const line =
+      "**Memory map:** charset area 0 $C000-$C7FF; blank sprite (block $FF) $FFC0-$FFFF; code/tables $0850-$44FF; sound-driver $5000; $DD00=$94; $D018=$80 in area 0; $01=$36 in play (measured-vice, obs x)";
+    const es = extractGraphEntities(STUDY.replace(/^\*\*Memory map:\*\*.*$/m, line), PATH);
+    expect(es.find((e) => e.type === "game_design")).toMatchObject({
+      memory_map: [
+        {
+          entries: [
+            { label: "charset area 0", value: "$C000-$C7FF" },
+            { label: "blank sprite (block $FF)", value: "$FFC0-$FFFF" },
+            { label: "code/tables", value: "$0850-$44FF" },
+            { label: "sound-driver", value: "$5000" },
+            { label: "$DD00", value: "$94" },
+            { label: "$D018", value: "$80", when: "area 0" },
+            { label: "$01", value: "$36", when: "play" },
+          ],
+        },
+      ],
+    });
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("warns when a second Studied from line parses, and keeps the first", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const second =
+      "**Studied from:** Other Shooter (1986, Bo Coder); image sha1=89abcdef0123456789abcdef0123456789abcdef; session x.json";
+    const doc = STUDY.replace(/^(\*\*Studied from:\*\*.*)$/m, `$1\n${second}`);
+    const es = extractGraphEntities(doc, PATH);
+    expect(es.find((e) => e.type === "game_design")).toMatchObject({
+      studied_from: { title: "Test Shooter" },
+    });
+    expect(es.filter((e) => e.type === "studies")).toHaveLength(1);
+    expect(warn.mock.calls.map((c) => String(c[0])).join("\n")).toContain("more than one **Studied from:**");
+  });
+
+  it("bounds IRQ chain lines by region: PAL 0-311, NTSC 0-262", () => {
+    const chain = (value: string) => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+      const doc = STUDY.split("\n")
+        .filter((l) => !l.startsWith("**IRQ chain:**"))
+        .join("\n")
+        .replace("**Memory map:**", `**IRQ chain:** ${value} (measured-vice, obs x)\n**Memory map:**`);
+      const node = extractGraphEntities(doc, PATH).find((e) => e.type === "game_design");
+      const warned = warn.mock.calls.map((c) => String(c[0])).join("\n");
+      warn.mockRestore();
+      return { irq: (node as { irq_chain: unknown[] }).irq_chain, warned };
+    };
+    expect(chain("play pal: $41C5 @ line 311").irq).toHaveLength(1);
+    expect(chain("play pal: $41C5 @ line 312").warned).toContain("above 311");
+    expect(chain("play ntsc: $41C5 @ line 262").irq).toHaveLength(1);
+    const ntsc = chain("play ntsc: $41C5 @ line 30/290");
+    expect(ntsc.irq).toEqual([]);
+    expect(ntsc.warned).toContain("above 262");
+  });
+
   it("a studied page with no Studied from line is warned about", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     extractGraphEntities(STUDY.replace(/^\*\*Studied from:\*\*.*$/m, ""), PATH);

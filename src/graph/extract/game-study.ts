@@ -54,9 +54,13 @@ const STUDIED_FROM =
 const IRQ_GROUP = /^([a-z]+)\s+(pal|ntsc)\s*:\s*(.+)$/i;
 const IRQ_HANDLER = /^\$([0-9a-f]{4})\s*@\s*line\s+(\d{1,3}(?:\/\d{1,3})*)$/i;
 const HEX = String.raw`\$[0-9a-f]{2,4}`;
-const MAP_PORT = new RegExp(String.raw`^(\$0[01])\s*=\s*(\$[0-9a-f]{2})$`, "i");
-const MAP_VALUE = new RegExp(String.raw`^([a-z][a-z0-9 ]*?)\s+(${HEX}(?:-${HEX})?|\d+)$`, "i");
-const MAP_WHEN = /^(.*?)\s+in\s+([a-z][a-z ]*)$/i;
+// A port or register and the value it holds: `$01=$36`, `$DD00=$94`, `$D018=$80`.
+const MAP_PORT = new RegExp(String.raw`^(${HEX})\s*=\s*(\$[0-9a-f]{2})$`, "i");
+// A label may carry digits, spaces and - / ( ): `charset area 0`, `blank sprite (block $FF)`.
+const MAP_VALUE = new RegExp(String.raw`^([a-z][a-z0-9 ()/$-]*?)\s+(${HEX}(?:-${HEX})?|\d+)$`, "i");
+const MAP_WHEN = /^(.*?)\s+in\s+([a-z][a-z0-9 ]*)$/i;
+// The last raster line of each region: PAL has 312 lines (0-311), NTSC 6567R8 263 (0-262).
+const LAST_LINE = { PAL: 311, NTSC: 262 } as const;
 const DIVERGE_GROUP = /^(extra|missing)\s*:\s*(.+)$/;
 
 /** `<body> (basis, source)`: the parenthetical every measured line ends with. */
@@ -100,8 +104,10 @@ function irqGroup(text: string): Parsed<Omit<IrqChain, "basis" | "source">> {
     if (!m) return { error: `"${h}" is not "$pc @ line N" or "$pc @ line N/M"` };
     handlers.push({ pc: `$${group(m, 1).toUpperCase()}`, lines: group(m, 2).split("/").map(Number) });
   }
-  if (handlers.some((h) => h.lines.some((l) => l > 311))) return { error: `a line above 311 in "${text}"` };
   const region = group(g, 2).toUpperCase() === "PAL" ? "PAL" : "NTSC";
+  const last = LAST_LINE[region];
+  if (handlers.some((h) => h.lines.some((l) => l > last)))
+    return { error: `a line above ${last} (the last ${region} line) in "${text}"` };
   return { phase: group(g, 1).toLowerCase(), region, handlers };
 }
 

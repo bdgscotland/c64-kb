@@ -290,6 +290,24 @@ describe("a studied GameDesign in the graph, the budget and the briefing's list"
     expect(ds.map((d) => [d.name, d.kind, d.source_doc])).toEqual([["test_shooter_study", "studied", PATH]]);
   });
 
+  it("a re-ingest through the extractor of the page without its IRQ chain lines clears them and keeps the rest", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const doc = readFileSync("test/fixtures/study-page.md", "utf8")
+      .split("\n")
+      .filter((l) => !l.startsWith("**IRQ chain:**"))
+      .join("\n");
+    for (const e of extractGraphEntities(doc, PATH)) if (isNodeEntity(e)) await applyNode(f, e);
+    warn.mockRestore();
+    const r = await f.roQuery(
+      `MATCH (g:GameDesign {name: 'test_shooter_study'})
+       RETURN g.kind AS kind, g.irq_chain AS irq, g.memory_map AS mm`,
+    );
+    const row = r.data[0] as { kind: string; irq: string | null; mm: string };
+    expect(row.kind).toBe("studied");
+    expect(row.irq).toBeNull();
+    expect((JSON.parse(row.mm) as unknown[]).length).toBe(1);
+  });
+
   it("a re-ingest as a built page clears kind and the study lines", async () => {
     await f.addGameDesign({
       name: "test_shooter_study",

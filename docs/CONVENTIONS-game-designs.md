@@ -124,25 +124,26 @@ kind: studied
 
 ## Commando (Elite, 1985), studied
 
-**Game design:** `commando_study`
-**Instance of:** vertical_shmup
+**Game design:** `commando_1985`
+**Instance of:** vertical_run_and_gun
 **Region:** PAL
-**Studied from:** Commando (1985, Chris Butler, Elite); image sha1=<40 hex digits>; session studies/sessions/commando.json
-**IRQ chain:** title pal: $41C5 @ line 30, $4284 @ line 50/52, $4389 @ line 192 (measured-vice, obs commando#…)
-**Memory map:** VIC bank 3; screen $C000; charset $D000; $01=$35 in play (measured-vice, obs commando#…)
+**Studied from:** Commando (1985, Chris Butler, Rob Hubbard, Elite); image sha1=<40 hex digits>; session studies/sessions/commando.json
+**IRQ chain:** play pal: $41C5 @ line 30, $4284 @ line 50/60, $4389 @ line 161/198, $4137 @ line 213, $4188 @ line 222 (measured-vice, <instrument and run>)
+**Memory map:** VIC bank 3; $DD00=$94; screen $E000-$E3E7; charset area 0 $C000-$C7FF; $01=$36 in play; $D018=$80 in area 0 (measured-vice, <instrument and run>)
 **Diverges from archetype:** extra: <technique>; missing: <technique>
-**Measured frame:** play pal worst=N typical=N (measured-vice-study, <instrument>, obs commando#…)
+**Measured frame:** play pal worst=N typical=N (measured-vice-study, <instrument>, <run>)
 ```
 
-The IRQ chain handlers and lines are three of the five title parts the
-spec's 2026-09-24 amendment measured in VICE x64sc 3.10; the other values
-show the form only, and the study page holds the measurements.
+The lines are cut from `game-design/studies/commando.md`, which holds the
+full set and where each was measured; an earlier version of this example
+had placeholder values (`commando_study`, `vertical_shmup`, screen $C000,
+`$01=$35`).
 
 | Line | Required | Becomes |
 |---|---|---|
-| `**Studied from:**` | yes | `studied_from` JSON `{title, year, authors[], image_sha1, session}`, and a `STUDIES` edge to the Production of that title. The title is MATCHed against the Productions the archetype pages' `**Reference titles:**` create: add it there, with its source, first. |
-| `**IRQ chain:**` | no | `irq_chain` JSON. `<phase> <pal\|ntsc>: $pc @ line N, …`, groups separated by `;`; `line N/M` for a handler armed on two lines. The phase word is free (`title`, `play`). Several lines allowed. |
-| `**Memory map:**` | no | `memory_map` JSON. Entries separated by `;`: `<what> $addr`, `<what> $addr-$addr`, `<what> N`, or `$01=$nn`, each optionally followed by `in <phase>`. Several lines allowed. |
+| `**Studied from:**` | yes | `studied_from` JSON `{title, year, authors[], image_sha1, session}`, and a `STUDIES` edge to the Production of that title. One per page: a second line that parses is warned about and ignored. The title is MATCHed against the Productions the archetype pages' `**Reference titles:**` create: add it there, with its source, first. |
+| `**IRQ chain:**` | no | `irq_chain` JSON. `<phase> <pal\|ntsc>: $pc @ line N, …`, groups separated by `;`; `line N/M` for a handler armed on more than one line: the lines seen, or the ends of a range, which the prose says. The phase word is free (`title`, `play`). A line above the region's last (PAL 311, NTSC 262) refuses the line. Several lines allowed. |
+| `**Memory map:**` | no | `memory_map` JSON. Entries separated by `;`: `<what> $addr`, `<what> $addr-$addr`, `<what> N`, or a port or register and its value (`$01=$36`, `$DD00=$94`, `$D018=$80`), each optionally followed by `in <when>` (letters, digits, spaces: `in play`, `in area 0`). `<what>` is letters, digits, spaces and `- / ( ) $`, with no comma or `;`. Several lines allowed. An earlier version took only `$00`/`$01` as ports, letters only after `in`, and no punctuation in `<what>`. |
 | `**Diverges from archetype:**` | no | `DIVERGES_FROM` edges with `direction`: `extra: a, b` (the game uses them, the archetype does not list them) and `missing: c` (the archetype lists it, the game does not use it), separated by `;`. |
 
 `**IRQ chain:**` and `**Memory map:**` end in the same `(basis, source)`
