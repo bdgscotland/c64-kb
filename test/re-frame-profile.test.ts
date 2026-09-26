@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { REGION_TIMING } from "../src/domain/timing.ts";
 import type { Hit } from "../src/re/monlog.ts";
-import { analyseRegion, regionCommands } from "../src/re/frame-profile.ts";
+import {
+  analyseFrames,
+  analyseRegion,
+  frameCommands,
+  regionCommands,
+  rtiAddresses,
+  waitExit,
+  type FrameEntry,
+} from "../src/re/frame-profile.ts";
 
 const base: Hit = {
   kind: "store",
@@ -114,6 +122,185 @@ describe("region commands", () => {
     expect(regionCommands(TIMER_B)).toBe("trace store dc0f dc0f\n");
     expect(regionCommands({ start: { pc: 0x2000 }, stop: { pc: 0x2100 } })).toBe(
       "trace exec 2000 2000\ntrace exec 2100 2100\n",
+    );
+  });
+});
+
+// Frame mode. PAL: 63 cycles a line, 19,656 a frame; frame 0 starts at clock 0.
+const F = PAL_TIMING.cycles_per_frame;
+const at = (frame: number, line: number, cycle = 10) => frame * F + line * 63 + cycle;
+const lineOf = (clock: number) => Math.floor((clock % F) / 63);
+/** An interrupt's three pushes log one hit at $0100+SP+3, at the clock the sequence ended (measured). */
+const push = (clock: number, sp = 0xf3): Hit => ({
+  ...base,
+  kind: "store",
+  addr: 0x100 | ((sp + 3) & 0xff),
+  mnemonic: "JMP",
+  sp,
+  clock,
+  line: lineOf(clock),
+  cycle: clock % 63,
+});
+const exec = (pc: number, clock: number, mnemonic = "NOP", sp = 0xf0): Hit => ({
+  ...base,
+  kind: "exec",
+  addr: pc,
+  pc,
+  mnemonic,
+  sp,
+  clock,
+  line: lineOf(clock),
+  cycle: clock % 63,
+});
+/** An exec hit with an operand, for the wait-loop search. */
+const op = (pc: number, clock: number, insn: [string, string], sp: number): Hit => ({
+  ...exec(pc, clock, insn[0], sp),
+  operand: insn[1],
+});
+const rti = (clock: number, sp = 0xf3, pc = 0xea86) => exec(pc, clock, "RTI", sp);
+const entry = (handler: number, clock: number, target: number | null = null): FrameEntry => ({
+  handler,
+  target,
+  clock,
+  line: lineOf(clock),
+});
+
+/**
+ * Two handlers a frame: $1000 at line 40 (push, entry 29 cycles later, RTI
+ * 200 cycles after the push) and $2000 at line 200 (RTI 400 after). Cost is
+ * the interrupt sequence (7) to the end of RTI (6): 213 and 413.
+ */
+function twoHandlers(frames: number): { hits: Hit[]; entries: FrameEntry[] } {
+  const hits: Hit[] = [];
+  const entries: FrameEntry[] = [];
+  for (let f = 0; f < frames; f++) {
+    const a = at(f, 40);
+    const b = at(f, 200);
+    hits.push(push(a), exec(0x1000, a + 29), rti(a + 200), push(b), exec(0x2000, b + 29), rti(b + 400));
+    entries.push(entry(0x1000, a + 29), entry(0x2000, b + 29));
+  }
+  hits.push(exec(0x0900, frames * F + 5, "JMP", 0xf6));
+  return { hits, entries };
+}
+
+const opts = { timing: PAL_TIMING, startClock: 0, region: "pal" as const, rtis: [0xea86], wait: null };
+
+describe("frame mode", () => {
+  it("sums each frame's handler cycles and gives main plus idle as the rest", () => {
+    const { hits, entries } = twoHandlers(3);
+    const b = analyseFrames(hits, entries, opts);
+    expect(b.frames.map((f) => f.handlers)).toEqual([626, 626, 626]);
+    expect(b.frames.map((f) => f.rest)).toEqual([F - 626, F - 626, F - 626]);
+    expect(b.frames.every((f) => f.idle === null && f.main === null)).toBe(true);
+    expect(b.parts.map((p) => [p.handler, p.slot, p.entries, p.cost.typical, p.dispatch.typical])).toEqual([
+      [0x1000, 0, 3, 213, 36],
+      [0x2000, 0, 3, 413, 36],
+    ]);
+    expect(b.per_frame.handlers).toEqual({ worst: 626, typical: 626, least: 626 });
+    expect(b.measured_frame).toBeNull();
+    expect(b.unknowns.join()).toMatch(/no wait/);
+  });
+
+  it("numbers slots when one handler is entered several times a frame", () => {
+    const hits: Hit[] = [];
+    const entries: FrameEntry[] = [];
+    for (let f = 0; f < 2; f++)
+      for (const [k, line] of [40, 130, 260].entries()) {
+        const c = at(f, line);
+        hits.push(push(c), rti(c + 100 + k * 10));
+        entries.push(entry(0x0876, c + 29));
+      }
+    hits.push(exec(0x0900, 2 * F + 5));
+    const b = analyseFrames(hits, entries, opts);
+    expect(b.parts.map((p) => [p.slot, p.cost.typical, p.entry_lines])).toEqual([
+      [0, 113, [40]],
+      [1, 123, [130]],
+      [2, 133, [260]],
+    ]);
+    expect(b.frames.map((f) => f.handlers)).toEqual([369, 369]);
+  });
+
+  it("keys a JMP (pointer) handler's parts by target", () => {
+    const c = at(0, 30);
+    const d = at(0, 213);
+    const hits = [push(c), rti(c + 1000), push(d), rti(d + 240), exec(0x0900, F + 1)];
+    const b = analyseFrames(hits, [entry(0x4134, c + 34, 0x41c5), entry(0x4134, d + 34, 0x4137)], opts);
+    expect(b.parts.map((p) => [p.handler, p.target, p.cost.typical])).toEqual([
+      [0x4134, 0x4137, 253],
+      [0x4134, 0x41c5, 1013],
+    ]);
+  });
+
+  it("takes a nested interrupt's cycles out of the one it interrupted, and counts the span once per frame", () => {
+    const c = at(0, 100);
+    const hits = [
+      push(c, 0xf3),
+      push(c + 50, 0xed),
+      rti(c + 80, 0xed, 0xfe72),
+      rti(c + 200, 0xf3),
+      exec(0x0900, F + 1),
+    ];
+    const b = analyseFrames(hits, [entry(0x1000, c + 29), entry(0x3000, c + 60)], {
+      ...opts,
+      rtis: [0xea86, 0xfe72],
+    });
+    const cost = Object.fromEntries(b.parts.map((p) => [p.handler, p.cost.typical]));
+    // The NMI: push c+50 less 7 to RTI c+80 plus 6 = 43; the IRQ spans 213 and keeps 170.
+    expect(cost[0x3000]).toBe(43);
+    expect(cost[0x1000]).toBe(213 - 43);
+    expect(b.frames[0]?.handlers).toBe(213);
+  });
+
+  it("splits an interrupt that crosses a frame boundary between the two frames", () => {
+    const c = F - 100;
+    const hits = [exec(0x0900, 0, "JMP", 0xf6), push(c), rti(c + 200), exec(0x0900, 2 * F + 1)];
+    const b = analyseFrames(hits, [entry(0x1000, c + 29)], opts);
+    expect(b.frames.map((f) => f.handlers)).toEqual([107, 106]);
+  });
+
+  it("names an interrupt that never returned and leaves it out of the sums", () => {
+    const c = at(0, 50);
+    const b = analyseFrames([push(c), exec(0x0900, F + 1)], [entry(0x1000, c + 29)], opts);
+    expect(b.unreturned).toBe(1);
+    expect(b.frames[0]?.handlers).toBe(0);
+    expect(b.unknowns.join()).toMatch(/1 of 1 interrupts.*RTI/);
+  });
+
+  it("measures idle as the wait loop's cycles less the interrupts inside it, and main as the rest", () => {
+    const { hits, entries } = twoHandlers(2);
+    const wait = { pc: 0x402a, exit: 0x4032 };
+    for (let f = 0; f < 2; f++)
+      hits.push(exec(0x402a, at(f, 100), "LDA", 0xf4), exec(0x4032, at(f, 250), "RTS", 0xf4));
+    hits.sort((x, y) => x.clock - y.clock);
+    const b = analyseFrames(hits, entries, { ...opts, wait });
+    const idle = 150 * 63 - 413;
+    expect(b.frames.map((f) => f.idle)).toEqual([idle, idle]);
+    expect(b.frames.map((f) => f.main)).toEqual([F - 626 - idle, F - 626 - idle]);
+    expect(b.measured_frame).toBe(`play pal worst=${F - idle} typical=${F - idle}`);
+  });
+});
+
+describe("frame mode discovery", () => {
+  it("lists every RTI address executed at or after the start", () => {
+    const hits = [rti(10, 0xf3, 0xea31), rti(100, 0xf3, 0xea86), rti(120, 0xf3, 0x0950), rti(130)];
+    expect(rtiAddresses(hits, 50)).toEqual([0x0950, 0xea86]);
+  });
+
+  it("finds a wait loop's exit: the instruction after the backward branch, at the wait's stack depth", () => {
+    const hits = [
+      op(0x402a, 100, ["LDA", "$040B"], 0xf4),
+      op(0x402d, 104, ["CMP", "$040B"], 0xf4),
+      exec(0xff48, 106, "PHA", 0xed),
+      op(0xff53, 110, ["BEQ", "$FF50"], 0xed),
+      op(0x4030, 140, ["BEQ", "$402D"], 0xf4),
+    ];
+    expect(waitExit(hits, 0x402a)).toBe(0x4032);
+    expect(waitExit(hits, 0x5000)).toBeNull();
+  });
+
+  it("traces each RTI and the wait's two addresses", () => {
+    expect(frameCommands([0xea86], { pc: 0x402a, exit: 0x4032 })).toBe(
+      "trace exec ea86 ea86\ntrace exec 402a 402a\ntrace exec 4032 4032\n",
     );
   });
 });

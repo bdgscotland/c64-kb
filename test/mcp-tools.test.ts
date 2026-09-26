@@ -6,6 +6,7 @@ import {
   CoverageOutput,
   coverageReply,
   FrameProfileOutput,
+  frameModeReply,
   frameProfileReply,
   IrqChainOutput,
   irqChainReply,
@@ -239,7 +240,50 @@ describe("RE tool replies carry the whole result", () => {
     const r = frameProfileReply({ ok: true, run, result });
     const parsed = z.object(FrameProfileOutput).safeParse(r.structured);
     expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
-    expect(parsed.data?.samples.map((s) => s.frame)).toEqual([0, 1, 2]);
+    expect(parsed.data?.samples?.map((s) => s.frame)).toEqual([0, 1, 2]);
+    expect(parsed.data?.mode).toBe("region");
+  });
+
+  it("c64_re_frame_profile frame mode: parts, per-frame figures and the Measured frame line", () => {
+    const st = (n: number) => ({ worst: n, typical: n, least: n });
+    const result = {
+      mode: "frame" as const,
+      frames: [
+        {
+          ...o,
+          id: "f0",
+          frame: 3,
+          start_clock: 58_968,
+          handlers: 626,
+          idle: 9000,
+          main: 10_030,
+          rest: 19_030,
+        },
+      ],
+      parts: [
+        {
+          handler: 0x4134,
+          target: 0x41c5,
+          slot: 0,
+          entries: 1,
+          entry_lines: [30],
+          cost: st(1097),
+          dispatch: st(41),
+        },
+      ],
+      per_frame: { handlers: st(626), rest: st(19_030), main: st(10_030), idle: st(9000) },
+      measured_frame: "play pal worst=10656 typical=10656",
+      wait: { pc: 0x402a, exit: 0x4032 },
+      interrupts: 1,
+      unreturned: 0,
+      unknowns: [],
+    };
+    const r = frameModeReply({ ok: true, run, result });
+    const parsed = z.object(FrameProfileOutput).safeParse(r.structured);
+    expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
+    expect(r.text).toMatch(/\$4134 -> \$41C5: 1 entries on lines 30; cost 1097 typical/);
+    expect(r.text).toMatch(/\*\*Measured frame:\*\* play pal worst=10656 typical=10656/);
+    expect(r.text).toMatch(/wait \$402A to \$4032/);
   });
 
   it("c64_re_session: the in-play clock and each injection's firing are in the structured content", () => {

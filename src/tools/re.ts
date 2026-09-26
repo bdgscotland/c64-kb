@@ -39,7 +39,7 @@ import { readHits, type Hit } from "../re/monlog.ts";
 import { readPrg } from "../re/prg.ts";
 import { runBatch, ViceBatchError, type Model } from "../services/vice-batch.ts";
 import { resolveX64sc } from "../services/vice-bin.ts";
-import { parseHex, sessionScript, type MonitorScript, type Session } from "../re/session.ts";
+import { MonitorScript, parseHex, sessionScript, type Session } from "../re/session.ts";
 import { decodeSnapshot, type Snapshot } from "../re/vic-state.ts";
 import {
   notInPlay,
@@ -132,10 +132,25 @@ const sourced = {
 export const IrqChainInput = sourced;
 export const FrameProfileInput = {
   ...sourced,
+  mode: z
+    .enum(["region", "frame"])
+    .default("region")
+    .describe(
+      "region: time start to stop markers. frame: per raster frame, cycles in each interrupt handler, main loop and idle wait, no markers",
+    ),
   start: z
     .string()
-    .describe('Start marker: "store:$DC0F=$11" (a store of that value) or "pc:$2000" (an executed PC)'),
-  stop: z.string().describe('Stop marker, same forms: "store:$DC0F=$00"'),
+    .optional()
+    .describe(
+      'Region mode: start marker, "store:$DC0F=$11" (a store of that value) or "pc:$2000" (an executed PC)',
+    ),
+  stop: z.string().optional().describe('Region mode: stop marker, same forms: "store:$DC0F=$00"'),
+  wait_pc: z
+    .string()
+    .optional()
+    .describe(
+      'Frame mode: the first instruction of the main loop\'s frame wait, "$402A"; its exit is found from a full trace. Without it main and idle are one figure',
+    ),
 };
 export const LoadMapInput = {
   ...sourced,
@@ -212,11 +227,22 @@ export function fromEntry(
 
 const hexUp = (n: number) => "$" + n.toString(16).toUpperCase().padStart(4, "0");
 
+/** A pass's checkpoints: a block of lines, or a builder given the script and the PC the analysis starts at. */
+type Build = string | ((m: MonitorScript, startPc: number | null) => void);
+
+function scriptOf(build: Build, startPc: number | null, m = new MonitorScript()): MonitorScript {
+  if (typeof build === "string") m.add(build);
+  else build(m, startPc);
+  return m;
+}
+
 async function traced(
   prg: string,
   args: { model: Model; cycles: number; disk_path?: string | undefined },
-  commands: string,
+  build: Build,
+  maxLogBytes?: number,
 ): Promise<{ hits: Hit[]; start: number; entry: number | null }> {
+  const commands = scriptOf(build, readPrg(readFileSync(prg)).sys ?? null).text();
   const { cmd, entry, own } = entryCommand(prg, commands);
   const run = await runBatch({
     prg,
@@ -224,6 +250,7 @@ async function traced(
     cycles: args.cycles,
     model: args.model,
     ...(args.disk_path ? { disk: args.disk_path } : {}),
+    ...(maxLogBytes !== undefined ? { maxLogBytes } : {}),
   });
   try {
     const r = fromEntry(await collect(run.log), entry, own);
@@ -259,15 +286,16 @@ export function refusal(e: unknown): Refusal {
   throw e;
 }
 
-interface Traced {
+export interface Traced {
   hits: Hit[];
   start: number;
   entry: number | null;
 }
 
 /** Where a tool's passes run: a PRG from its entry, or a session from its in-play clock. */
-interface Source {
-  trace(commands: string): Promise<Traced>;
+export interface Source {
+  /** One run; maxLogBytes stops it once the log passes that size (a full-memory trace). */
+  trace(build: Build, maxLogBytes?: number): Promise<Traced>;
   info(t: Traced): RunInfo;
   /** What the run itself could not settle (an injection that never fired, no SYS line). */
   unknowns(t: Traced): string[];
@@ -286,7 +314,7 @@ export interface SourceArgs {
 function prgSource(prg: string, given: SourceArgs): Source {
   const args = { ...given, model: given.model ?? "pal", cycles: given.cycles ?? 8_000_000 };
   return {
-    trace: (c) => traced(prg, args, c),
+    trace: (c, max) => traced(prg, args, c, max),
     info: (t) => info(prg, args, t),
     unknowns: (t) => (t.entry === null ? [NO_SYS] : []),
     timing: REGION_TIMING[videoRegion(args.model)],
@@ -301,10 +329,9 @@ function sessionSource(staged: Staged, l: SessionRef, shotDir: string | undefine
   const pending: string[] = [];
   const args = { model: s.machine.model, cycles: s.limitcycles };
   return {
-    trace: async (c) => {
-      const m = sessionScript(s);
-      m.add(c);
-      const p = await sessionPass(staged, s, m, shot);
+    trace: async (c, max) => {
+      const m = scriptOf(c, parseHex(s.in_play.pc), sessionScript(s));
+      const p = await sessionPass(staged, s, m, { screenshot: shot, maxLogBytes: max });
       if (p.play_clock === null) throw new NotInPlay(notInPlay(s, shot));
       pending.splice(0, pending.length, ...p.unknowns);
       return { hits: p.hits, start: p.play_clock, entry };
@@ -337,7 +364,7 @@ export function conflict(args: SourceArgs, s: Session): string | null {
  * The source is built inside the guard, so a throw while building it (a
  * PRG that cannot be read) is a refusal too.
  */
-async function withSource<T>(
+export async function withSource<T>(
   args: SourceArgs,
   tool: string,
   opts: RunOpts,
@@ -366,14 +393,21 @@ async function withSource<T>(
   return guarded(() => prgSource(prg, args));
 }
 
+/** The irq-chain tool's first two passes: the handlers the vectors held, and the pointers any JMP (pointer) handler reads. */
+export async function chainPasses(
+  src: Source,
+): Promise<{ handlers: number[]; pointers: number[]; last: Traced }> {
+  const a = await src.trace(storeCommands());
+  const handlers = liveHandlers(a.hits, a.start);
+  const b = await src.trace(execCommands(handlers));
+  return { handlers, pointers: indirectPointers(b.hits), last: b };
+}
+
 export async function reIrqChain(args: SourceArgs, opts: RunOpts = {}): Promise<ReResult<IrqChain>> {
   return withSource(args, "irq-chain", opts, async (src) => {
-    const a = await src.trace(storeCommands());
-    const handlers = liveHandlers(a.hits, a.start);
-    let b = await src.trace(execCommands(handlers));
+    const { handlers, pointers, last } = await chainPasses(src);
     // A handler that is JMP (pointer): a third pass adds the pointer's bytes.
-    const pointers = indirectPointers(b.hits);
-    if (pointers.length) b = await src.trace(execCommands(handlers, pointers));
+    const b = pointers.length ? await src.trace(execCommands(handlers, pointers)) : last;
     const result = analyseIrqChain(b.hits, src.timing, b.start);
     result.unknowns.push(...src.unknowns(b));
     return { ok: true, run: src.info(b), result };
@@ -381,9 +415,11 @@ export async function reIrqChain(args: SourceArgs, opts: RunOpts = {}): Promise<
 }
 
 export async function reFrameProfile(
-  args: SourceArgs & { start: string; stop: string },
+  args: SourceArgs & { start?: string | undefined; stop?: string | undefined },
   opts: RunOpts = {},
 ): Promise<ReResult<Profile>> {
+  if (args.start === undefined || args.stop === undefined)
+    return { ok: false, error: "region mode needs start and stop markers", reason: "marker" };
   const start = parseMarker(args.start);
   const stop = parseMarker(args.stop);
   if (!start || !stop)
@@ -494,7 +530,7 @@ async function snapshotPass(
     const m = sessionScript(s);
     const nums = dumpCheckpoints(m, s.in_play.pc, afterHits, files);
     const shot = screenshotPath(shotName, opts.shotDir);
-    const p = await sessionPass(staged, s, m, shot);
+    const p = await sessionPass(staged, s, m, { screenshot: shot });
     if (p.play_clock === null) return notInPlay(s, shot);
     const clock = p.hits.find((h) => h.checkpoint === nums.ram)?.clock ?? null;
     if (clock === null)

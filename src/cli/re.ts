@@ -4,6 +4,7 @@ import { type Command, InvalidArgumentError, Option } from "commander";
 import { claimsWatchReply } from "../server/tools-claims.ts";
 import { claimsWatch } from "../tools/claims-watch.ts";
 import { reFrameProfile, reIrqChain, reSnapshot } from "../tools/re.ts";
+import { reFrameMode } from "../tools/re-frame.ts";
 import { reCoverage } from "../tools/re-coverage.ts";
 import { reLoadMap } from "../tools/re-load-map.ts";
 import { reSession } from "../tools/re-session.ts";
@@ -26,6 +27,13 @@ interface ReOpts {
   model: "pal" | "ntsc";
   cycles: number;
   disk?: string;
+}
+
+interface FrameProfileOpts extends ReOpts {
+  mode: "region" | "frame";
+  start?: string;
+  stop?: string;
+  waitPc?: string;
 }
 
 const reArgs = (prg: string, o: ReOpts) => ({
@@ -58,6 +66,37 @@ function afterHitsArg(value: string): number {
   if (!Number.isInteger(n) || n < 0)
     throw new InvalidArgumentError("--after-hits must be an integer from 0.");
   return n;
+}
+
+/** re-frame-profile: region mode (--start/--stop) or frame mode (--mode frame, --wait-pc). */
+function registerFrameProfile(program: Command): void {
+  reOptions(
+    program
+      .command("re-frame-profile <prg>")
+      .description(
+        'A .prg, or "session:<file>"; region mode times --start to --stop, frame mode a whole frame',
+      )
+      .addOption(new Option("--mode <m>", "region or frame").choices(["region", "frame"]).default("region"))
+      .option("--start <marker>", 'region mode, e.g. "store:$DC0F=$11"')
+      .option("--stop <marker>", 'region mode, e.g. "store:$DC0F=$00"')
+      .option("--wait-pc <addr>", 'frame mode: the main loop\'s frame wait, e.g. "$402A"'),
+  ).action(async (prg: string, o: FrameProfileOpts, cmd: Command) => {
+    if (o.mode === "frame") {
+      const f = await reFrameMode({ ...reInput(prg, o, cmd), wait_pc: o.waitPc });
+      // The per-frame rows go to MCP structured content; the CLI prints their count.
+      process.stdout.write(
+        `${JSON.stringify(f.ok ? { run: f.run, ...f.result, frames: f.result.frames.length } : f, null, 2)}\n`,
+      );
+      if (!f.ok) process.exitCode = 1;
+      return;
+    }
+    const r = await reFrameProfile({ ...reInput(prg, o, cmd), start: o.start, stop: o.stop });
+    // The MCP reply's structured content carries every sample; the CLI prints the count, not the list.
+    process.stdout.write(
+      `${JSON.stringify(r.ok ? { run: r.run, ...r.result, samples: r.result.samples.length } : r, null, 2)}\n`,
+    );
+    if (!r.ok) process.exitCode = 1;
+  });
 }
 
 /** re-session, re-snapshot, re-irq-chain, re-frame-profile, re-coverage: the observation tools. */
@@ -103,19 +142,7 @@ function registerReplayCommands(program: Command): void {
     },
   );
 
-  reOptions(
-    program
-      .command("re-frame-profile <prg>")
-      .requiredOption("--start <marker>", 'e.g. "store:$DC0F=$11"')
-      .requiredOption("--stop <marker>", 'e.g. "store:$DC0F=$00"'),
-  ).action(async (prg: string, o: ReOpts & { start: string; stop: string }, cmd: Command) => {
-    const r = await reFrameProfile({ ...reInput(prg, o, cmd), start: o.start, stop: o.stop });
-    // The MCP reply's structured content carries every sample; the CLI prints the count, not the list.
-    process.stdout.write(
-      `${JSON.stringify(r.ok ? { run: r.run, ...r.result, samples: r.result.samples.length } : r, null, 2)}\n`,
-    );
-    if (!r.ok) process.exitCode = 1;
-  });
+  registerFrameProfile(program);
 
   /** --frames for re-coverage: an integer from 1. */
   function framesArg(value: string): number {

@@ -107,7 +107,7 @@ export function batchOf(
   staged: Staged,
   s: Session,
   script: MonitorScript,
-  opts: { screenshot: string; cyclesOverride?: number },
+  opts: { screenshot: string; cyclesOverride?: number; maxLogBytes?: number },
 ): BatchRun {
   return {
     prg: staged.prg,
@@ -116,6 +116,7 @@ export function batchOf(
     model: s.machine.model,
     ...(staged.disk !== undefined ? { disk: staged.disk } : {}),
     args: ["-exitscreenshot", opts.screenshot],
+    ...(opts.maxLogBytes !== undefined ? { maxLogBytes: opts.maxLogBytes } : {}),
   };
 }
 
@@ -150,9 +151,12 @@ export async function sessionPass(
   staged: Staged,
   s: Session,
   script: MonitorScript,
-  screenshot: string,
+  pass: { screenshot: string; maxLogBytes?: number | undefined },
 ): Promise<SessionPass> {
-  const run = await runBatch(batchOf(staged, s, script, { screenshot }));
+  const { screenshot, maxLogBytes } = pass;
+  const run = await runBatch(
+    batchOf(staged, s, script, { screenshot, ...(maxLogBytes !== undefined ? { maxLogBytes } : {}) }),
+  );
   try {
     const all: Hit[] = [];
     for await (const h of readHits(run.log)) all.push(h);
@@ -236,7 +240,7 @@ export async function runSession(
 ): Promise<{ ok: true; result: SessionResult } | Refusal> {
   return withImage(s, opts.manifestPath, async (staged) => {
     const shot = screenshotPath(`session-${name}`, opts.shotDir);
-    const p = await sessionPass(staged, s, sessionScript(s), shot);
+    const p = await sessionPass(staged, s, sessionScript(s), { screenshot: shot });
     if (p.play_clock === null) return notInPlay(s, shot);
     const timing = REGION_TIMING[videoRegion(s.machine.model)];
     return {

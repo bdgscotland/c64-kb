@@ -1,6 +1,6 @@
 /** Reverse-engineering tools: observations from a PRG run headless in VICE. */
 import { z } from "zod";
-import type { Profile } from "../re/frame-profile.ts";
+import { waitLabel, type FrameBudget, type Profile, type Stat } from "../re/frame-profile.ts";
 import type { IrqChain } from "../re/irq-chain.ts";
 import { DISPATCH_WINDOW } from "../re/interrupts.ts";
 import {
@@ -13,6 +13,7 @@ import {
   type ReResult,
   type SnapshotResult,
 } from "../tools/re.ts";
+import { reFrameMode } from "../tools/re-frame.ts";
 import { LoadMapInput, reLoadMap, type LoadMapResult } from "../tools/re-load-map.ts";
 import { CoverageInput, reCoverage, type Coverage } from "../tools/re-coverage.ts";
 import {
@@ -97,14 +98,60 @@ export const IrqChainOutput = {
   unknowns: z.array(z.string()),
 };
 
+const stat = z.object({
+  worst: int.nullable(),
+  typical: int.nullable().describe("median"),
+  least: int.nullable(),
+});
+
 export const FrameProfileOutput = {
   run,
-  samples: z.array(z.object({ ...obs, cycles: int, start_clock: int, frame: int })),
-  worst: int.nullable(),
-  typical: int.nullable(),
-  count: int,
-  unpaired: int,
-  over_frame: int,
+  mode: z.enum(["region", "frame"]),
+  // Region mode.
+  samples: z.array(z.object({ ...obs, cycles: int, start_clock: int, frame: int })).optional(),
+  worst: int.nullable().optional(),
+  typical: int.nullable().optional(),
+  count: int.optional(),
+  unpaired: int.optional(),
+  over_frame: int.optional(),
+  // Frame mode.
+  frames: z
+    .array(
+      z.object({
+        ...obs,
+        frame: int,
+        start_clock: int,
+        handlers: int.describe("Cycles inside interrupts, a nested one once"),
+        idle: int.nullable().describe("Cycles in the wait loop outside interrupts; null without a wait"),
+        main: int.nullable().describe("frame - handlers - idle; null without a wait"),
+        rest: int.describe("frame - handlers: main and idle together"),
+      }),
+    )
+    .optional(),
+  parts: z
+    .array(
+      z.object({
+        handler: int,
+        target: int.nullable().describe("A JMP (pointer) handler's target at these entries"),
+        slot: int.describe("The n-th entry of this handler and target in its frame, from 0"),
+        entries: int,
+        entry_lines: z.array(int),
+        cost: stat.describe("Interrupt sequence to the end of RTI, nested interrupts taken out"),
+        dispatch: stat.describe("Interrupt sequence to the handler's first instruction"),
+      }),
+    )
+    .optional(),
+  per_frame: z
+    .object({ handlers: stat, rest: stat, main: stat.nullable(), idle: stat.nullable() })
+    .optional(),
+  measured_frame: z
+    .string()
+    .nullable()
+    .optional()
+    .describe('The **Measured frame:** figures, frame minus idle: "play pal worst=N typical=N"'),
+  wait: z.object({ pc: int, exit: int }).nullable().optional(),
+  interrupts: int.optional(),
+  unreturned: int.optional().describe("Interrupts that reached no traced RTI; left out of the sums"),
   unknowns: z.array(z.string()),
 };
 
@@ -259,11 +306,32 @@ export function irqChainReply(r: ReResult<IrqChain>): ToolReply {
 
 export function frameProfileReply(r: ReResult<Profile>): ToolReply {
   return reply(
-    r,
+    r.ok ? { ...r, result: { mode: "region" as const, ...r.result } } : r,
     (p) =>
       `samples ${p.count}, worst ${p.worst ?? "none"}, typical ${p.typical ?? "none"} (median), unpaired ${p.unpaired}, over one frame ${p.over_frame}` +
       unknownsText(p.unknowns),
   );
+}
+
+const statText = (s: Stat | null) =>
+  s ? `${s.typical ?? "?"} typical, ${s.worst ?? "?"} worst` : "not known";
+
+const partText = (p: FrameBudget["parts"][number]) =>
+  `${hex(p.handler)}${p.target === null ? "" : ` -> ${hex(p.target)}`}${p.slot ? ` slot ${p.slot}` : ""}: ` +
+  `${p.entries} entries on lines ${p.entry_lines.join(", ") || "?"}; cost ${statText(p.cost)}; dispatch ${p.dispatch.typical ?? "?"}`;
+
+export function frameModeReply(r: ReResult<FrameBudget>): ToolReply {
+  return reply(r, (b) => {
+    const f = b.per_frame;
+    return (
+      `${b.frames.length} frames, ${b.interrupts} interrupts (${b.unreturned} with no RTI)\n` +
+      b.parts.map(partText).join("\n") +
+      `\nper frame: handlers ${statText(f.handlers)}; main ${statText(f.main)}; idle ${statText(f.idle)}; main+idle ${statText(f.rest)}` +
+      (b.wait ? `\nwait ${waitLabel(b.wait)}` : "") +
+      (b.measured_frame ? `\n**Measured frame:** ${b.measured_frame}` : "") +
+      unknownsText(b.unknowns)
+    );
+  });
 }
 
 const NEEDS = `Needs the windowless x64sc (\`npm run vice:headless\`); refuses a windowed one. The disk is copied; writes are discarded. Refuses (reason "no-entry") when the PRG has a BASIC SYS target that did not run within the cycles given.`;
@@ -292,20 +360,27 @@ Output (structured): run {prg, model, cycles, entry, start_clock, vice, session?
 
 export const reFrameProfileTool = defineTool({
   name: "c64_re_frame_profile",
-  title: "Measure cycles between two markers in VICE",
-  description: `Run a .prg headless in VICE x64sc and time every occurrence of a region, from a start marker to the next stop marker, in CPU cycles (badline and sprite stalls included). A marker is "store:$DC0F=$11" (a store of that value to that address) or "pc:$2000" (an executed PC). Returns worst, typical (median), the count, starts with no stop (unpaired: cut off by the run's end or replaced by a later start), samples longer than one frame (over_frame, kept in worst), and every sample with its frame.
+  title: "Measure cycles between two markers, or a whole frame's budget, in VICE",
+  description: `Run a .prg headless in VICE x64sc and measure CPU cycles (badline and sprite stalls included).
+
+mode "region" (default): time every occurrence of a region, from a start marker to the next stop marker. A marker is "store:$DC0F=$11" (a store of that value to that address) or "pc:$2000" (an executed PC). Returns worst, typical (median), the count, starts with no stop (unpaired: cut off by the run's end or replaced by a later start), samples longer than one frame (over_frame, kept in worst), and every sample with its frame.
+
+mode "frame": no markers, for a program with no timer of its own. Per raster frame (from line 0): cycles inside interrupts, and with wait_pc (the first instruction of the main loop's frame wait) the idle cycles in that loop outside interrupts and main = frame - handlers - idle; without it main and idle are one figure (rest). Per part (a handler, or a JMP (pointer) handler's target, by its order of entry in the frame): cost from the start of the interrupt sequence to the end of its RTI, nested interrupts taken out, and dispatch, the start of the sequence to the handler's first instruction: 7 cycles of sequence plus 29 for the KERNAL's $FF48 stub on a $0314 handler (36 measured); a JMP (pointer) handler's own 5 cycles count in its target's cost. Worst, typical (median) and least of each, and measured_frame in the **Measured frame:** shape (frame minus idle). Four runs: the two irq-chain discovery passes, a full exec trace capped at 64 MB from the start PC that finds every RTI and the wait's exit (the instruction after its branch back), and the measuring pass. An interrupt's RTI is the first one executed at its push's stack depth; one with none is counted under unreturned and left out.
 
 ${NEEDS}
 
 ${SESSION_INPUT}
 
-Inputs: prg_path or session, model, cycles, disk_path, start, stop.
-Output (structured): run {prg, model, cycles, entry, start_clock, vice, session?, image?}, samples [{id, cycles, start_clock, frame}], worst, typical, count, unpaired, over_frame, unknowns.`,
+Inputs: prg_path or session, model, cycles, disk_path, mode, start and stop (region), wait_pc (frame).
+Output (structured): run {prg, model, cycles, entry, start_clock, vice, session?, image?}, mode, unknowns; region: samples [{id, cycles, start_clock, frame}], worst, typical, count, unpaired, over_frame; frame: frames [{id, frame, start_clock, handlers, idle, main, rest}], parts [{handler, target, slot, entries, entry_lines, cost, dispatch}], per_frame {handlers, rest, main, idle}, measured_frame, wait, interrupts, unreturned.`,
   inputSchema: FrameProfileInput,
   outputSchema: FrameProfileOutput,
   annotations: READ_ONLY,
   readsGraph: false,
-  run: async (args) => frameProfileReply(await reFrameProfile(args)),
+  run: async (args) =>
+    args.mode === "frame"
+      ? frameModeReply(await reFrameMode(args))
+      : frameProfileReply(await reFrameProfile(args)),
 });
 
 export const reSessionTool = defineTool({

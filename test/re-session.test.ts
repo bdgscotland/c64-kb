@@ -18,6 +18,7 @@ import {
 } from "../src/re/session.ts";
 import { batchOf, loadSession, reSession, runSession, screenshotPath } from "../src/tools/re-session.ts";
 import { reFrameProfile, reIrqChain } from "../src/tools/re.ts";
+import { reFrameMode } from "../src/tools/re-frame.ts";
 import { resolveX64sc } from "../src/services/vice-bin.ts";
 import { findC1541, findToolchains } from "../scripts/lib/toolchains.ts";
 
@@ -488,4 +489,41 @@ describe.skipIf(!hasCommando)("the Commando session (the maintainer's image; ski
     const r = await runSession({ ...l.session, inject: [] }, "commando-noinject", opts());
     expect(r).toMatchObject({ ok: false, reason: "not-in-play", clock: 60_000_000 });
   }, 240_000);
+  it("frame mode: the five parts cost what the teardown measured, and the frame splits as it did", async () => {
+    const r = await reFrameMode(
+      { session: "docs/game-design/studies/sessions/commando.json", wait_pc: "$402A" },
+      opts(),
+    );
+    expect(r.ok, JSON.stringify(r)).toBe(true);
+    if (!r.ok) return;
+    const b = r.result;
+    expect(b.wait).toEqual({ pc: 0x402a, exit: 0x4032 });
+    expect(b.unreturned).toBe(0);
+    // data/re/commando/frame/findings.txt 2.3 (medians, IRQ sequence to the end of RTI, standing):
+    // $41C5 1,097, $4284 442, $4389 457, $4137 255, $4188 974 (1,026 walking). Measured here:
+    // 1,097, 442, 457, 255, 1,031 over the whole session (974 over its first 850 frames).
+    const teardown: [number, number][] = [
+      [0x41c5, 1097],
+      [0x4284, 442],
+      [0x4389, 457],
+      [0x4137, 255],
+      [0x4188, 1026],
+    ];
+    for (const [target, cycles] of teardown) {
+      const p = b.parts.find((x) => x.handler === 0x4134 && x.target === target && x.slot === 0);
+      expect(Math.abs((p?.cost.typical ?? 0) - cycles) / cycles, `$${target.toString(16)}`).toBeLessThan(
+        0.03,
+      );
+    }
+    // Normal-frame budget, findings.txt 2.5: IRQs ~3,300, main ~8,200, idle ~8,100. These medians
+    // take every play frame, dying ones too (main 6,747, idle 9,916 there), so main reads lower
+    // and idle higher: measured 3,295, 7,892, 8,404.
+    const near = (x: number | null | undefined, want: number, tol: number) => {
+      expect(Math.abs((x ?? 0) - want) / want).toBeLessThan(tol);
+    };
+    near(b.per_frame.handlers.typical, 3300, 0.03);
+    near(b.per_frame.main?.typical, 8200, 0.06);
+    near(b.per_frame.idle?.typical, 8100, 0.06);
+    expect(b.measured_frame).toMatch(/^play pal worst=\d+ typical=\d+$/);
+  }, 600_000);
 });

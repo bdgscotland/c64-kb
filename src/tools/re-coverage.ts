@@ -227,7 +227,7 @@ async function sessionProbe(
   const ff48CpNum = m1.checkpoint("trace exec ff48 ff48");
   const d019CpNum = m1.checkpoint("trace store d019 d019");
   const shot = screenshotPath(`coverage-p1-${name}`, opts.shotDir);
-  const p1 = await sessionPass(staged, s, m1, shot);
+  const p1 = await sessionPass(staged, s, m1, { screenshot: shot });
   const trigger = analyzeTrigger(p1.hits, {
     playClock: p1.play_clock ?? s.limitcycles,
     frameCycles: timing.cycles_per_frame,
