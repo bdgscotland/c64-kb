@@ -2690,5 +2690,61 @@
       "pal": "screenshots/sprite-slot-parking.png",
       "ntsc": "screenshots/sprite-slot-parking-ntsc.png"
     }
+  },
+  "kickassembler/invalid-mode-band": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/invalid-mode-band.png",
+      "ntsc": "screenshots/invalid-mode-band-ntsc.png"
+    }
+  },
+  "kickassembler/invalid-mode-band@ys0": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      ":ys=0"
+    ],
+    "shots": {
+      "pal": "screenshots/invalid-mode-band-ys0.png",
+      "ntsc": "screenshots/invalid-mode-band-ys0-ntsc.png"
+    }
+  },
+  "kickassembler/invalid-mode-band@ys7": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      ":ys=7"
+    ],
+    "shots": {
+      "pal": "screenshots/invalid-mode-band-ys7.png",
+      "ntsc": "screenshots/invalid-mode-band-ys7-ntsc.png"
+    }
+  },
+  "kickassembler/invalid-mode-band@noband": {
+    "cycles": 8000000,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "build": [
+      ":ys=0",
+      ":band=0"
+    ],
+    "shots": {
+      "pal": "screenshots/invalid-mode-band-noband.png"
+    }
   }
 }

@@ -1713,6 +1713,123 @@ The $D018 write is the most timing-sensitive of the three, and its two halves be
 
 ---
 
+## invalid_mode_band — Black band from the invalid ECM+BMM mode over a split
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D012, D018, D019, D01A, D021
+**Demands:** midframe_raster_irqs
+**Raster band:** movable (the program picks the band's lines; the invalid-mode-band recipe holds lines 211-224 and 250-251)
+**Alternative to:** scroll_panel_split (nine black lines between playfield and panel; in exchange each store gets a window of at least 15 cycles, measured at the switch-on's badline phase, instead of one line's right border and a delay per YSCROLL phase; an earlier version said 19 cycles or more, counted from an extrapolated edge)
+**Cost:** cycles_per_frame=918, irq_slots=2, lines_active=16
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-invalid-mode-band (PAL, screen on; the split handler polls from line 211 to 224, the second IRQ runs on line 250 and, at 66 cycles, into 251; an earlier version said lines_active=15)
+**Claims:** vic_raster_irq (owns), vic_yscroll (shares), vic_char_base (shares)
+**Claims basis:** derived-listing
+
+### Why
+
+A split between a scrolled playfield and a fixed panel has three jobs that
+each want an exact cycle: end the playfield on a fixed line whatever its
+YSCROLL, change YSCROLL so the panel's badline lands on a fixed line, and
+switch charset and colours without a torn line. `scroll_panel_split` does all
+three inside one line's right border, with a delay per YSCROLL phase
+(pitfall `scroll_phase_breaks_panel_split`). This technique buys slack
+instead: it blacks out a band of lines between the two, and does the work
+inside it.
+
+### How
+
+1. On the last playfield line, set ECM and BMM together (`$D011` bits 6 and
+   5), keeping YSCROLL as it is. From the next line the display window is
+   black.
+2. Inside the band, store the panel's `$D018` and `$D021`, and set YSCROLL 7
+   before line 216's badline check (for a band from 214).
+3. On the band's last line, clear ECM and BMM in the right border, before
+   the panel's first badline.
+
+The recipe's numbers, measured in VICE x64sc 3.10 on PAL and NTSC: the
+playfield ends on line 213 at every YSCROLL, the band is lines 214-222, and
+the panel starts on line 223. The windows in which each store shows nothing:
+
+| Store | Window (line/cycle, VICE monitor) |
+|---|---|
+| ECM+BMM on | 213/61 to 214/12 (at least to 214/14 when 214 is not a badline): 15 cycles on PAL at the badline phase, the smallest window measured; 213/53 leaves 24 pixels of line 213 black, so the early edge is near 213/56 (extrapolated, 8 pixels a cycle; not a measured landing) |
+| YSCROLL 7 | 215/7 to 215/54; 215/62 at YSCROLL 0 lets line 216 fetch the next row and the panel shows the wrong rows |
+| ECM+BMM off | 222/55 to 223/10; 224/0 blacks the panel's first line |
+
+A `$D012` poll that exits up to 7 cycles late fits in each. The one phase
+that needs care is the one where the line before the band is a badline
+(YSCROLL 5 for a band from 214): its 40-cycle stall falls inside a delay
+loop, so that phase needs a shorter delay.
+
+### Why it works
+
+ECM with BMM is an invalid mode (`hardware/vic-ii-reference.md`, "Illegal
+display modes"). The VIC keeps its fetches, badlines and pixel sequencer
+running, but every character or bitmap pixel is black, whatever `$D021` and
+colour RAM hold, so the charset, background and YSCROLL changes made inside
+the band are not seen. The panel's position depends only on where the next
+badline falls. Row 20 of a 24-row playfield starts on line 208+YSCROLL, so
+its next row would start on 216+YSCROLL; YSCROLL 7 set on line 215 leaves no
+match on lines 216-222 and makes 223 the next badline at all eight phases. A
+store of YSCROLL 7 anywhere in 215/7-54 makes 215 a badline when YSCROLL was
+not already 7 (Bauer's model; not measured separately). That did not move the
+panel in VICE: the badline fetches the row in progress again. It does stall
+the CPU, up to about 40 cycles, inside the band, where it costs nothing seen.
+
+Sprites are not blanked. The sprite unit draws over the invalid mode as over
+any other: a sprite in the band shows (measured in the recipe, 24 pixels on
+each band line). A sprite behind the playfield (`$D01B`) is still cut by the
+now-black foreground pixels (measured in the ECM+MCM mode by the pitfall
+below; not measured here for ECM+BMM). To hide sprites
+in the band, turn them off or point them at an empty sprite block there.
+
+### When not to use it
+
+- When the lines cannot be spared: the band is 9 black lines, a character
+  row and one line more.
+- When the panel must touch the playfield.
+- When the IRQ can already be made stable (`stable_raster_irq`,
+  `double_irq`): `scroll_panel_split` then costs no lines.
+
+### Pitfalls
+
+- Setting ECM while MCM is on is the same black mode reached by accident:
+  `ecm_with_mcm_set_is_invalid_black_mode` (`pitfalls/text-mode-render.md`).
+  Here BMM is set on purpose; `$D016` MCM does not matter.
+- Clearing ECM gives 16 black pixels from a cell boundary before the text
+  returns (`hardware/vic-ii-reference.md`, "Mode-switch timing"; measured
+  there for ECM alone on the 8565, not measured with BMM), so the clear
+  belongs in the right border, not in the panel's first line.
+- A delay loop spanning a badline is 40 cycles longer. Poll `$D012` for the
+  line, then delay, and give the badline phase its own count.
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (the c64-kb teardown).
+A raster IRQ at line 213 sets ECM+BMM; the store lands at cycle 56, in the
+right border, so the playfield ends on line 213 and lines 214-222 are black.
+Inside the band the game sets YSCROLL 7 (on line 215), the panel's background
+and the panel's charset, and blanks the four low sprites by pointing them at
+an empty sprite block. A second IRQ at line 222 clears the two bits at cycle
+56, and the one-row score panel starts on line 223. The playfield shows on
+lines 55-213 at every scroll phase (four screenshots, measured with PIL).
+The game does not stabilise its interrupts: entry jitter is 2-7 cycles, and
+about 45 when the armed line is a badline; the band is where that jitter
+goes unseen. A sprite forced into the band in a test run showed across it,
+so the game's pointer blanking is needed. The line-213 handler costs 255
+cycles (median of 750 frames).
+
+### Recipes
+
+- `recipes/kickassembler/invalid-mode-band.md`: a playfield at any YSCROLL
+  over a three-row panel with a black band on lines 214-222, the panel on
+  line 223 at all eight phases, a sprite across the band, measured on PAL
+  and NTSC.
+
+---
+
 ## pal_ntsc_detection — Detect PAL vs NTSC at boot
 
 **Complexity:** low
