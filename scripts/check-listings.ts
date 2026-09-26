@@ -409,12 +409,18 @@ async function studyImageBytes(
   const imageRef = file !== undefined ? { sha1: ref.sha1, file } : { sha1: ref.sha1 };
   const resolved = await resolveImage(imageRef, join(ROOT, "data/games/manifest.json"));
   if (resolved.ok) {
-    const bytes = readFileSync(resolved.prg);
-    resolved.dispose();
-    console.log(`     [study] image resolved for ${label}`);
-    return bytes;
+    // dispose() in a finally so a readFileSync throw cannot leak the temp dir.
+    try {
+      const bytes = readFileSync(resolved.prg);
+      console.log(`     [study] image resolved for ${label}`);
+      return bytes;
+    } finally {
+      resolved.dispose();
+    }
   }
-  if (resolved.reason !== "no-manifest" && resolved.reason !== "unknown-sha1") {
+  if (resolved.reason === "no-manifest") {
+    console.log(`     [study] image-match skipped for ${label} (no local manifest)`);
+  } else if (resolved.reason !== "unknown-sha1") {
     console.log(`     [study] image unavailable for ${label}: ${resolved.error}`);
   }
   return null;

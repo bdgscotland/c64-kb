@@ -640,6 +640,65 @@ describe("lintStudyExpression — image-match (synthetic image)", () => {
   });
 });
 
+describe("lintStudyExpression — bare hex runs (no $ prefix, outside fences)", () => {
+  // A bare hex run is 16+ two-digit hex tokens (no $ prefix) with at least
+  // one token containing a letter a–f, separated only by whitespace or commas,
+  // appearing outside a fenced code block.
+  const bareRun16 = Array.from({ length: 16 }, (_, i) => (0xa0 + i).toString(16)).join(" ");
+  // "a0 a1 a2 a3 a4 a5 a6 a7 a8 a9 aa ab ac ad ae af" — 16 tokens with letters
+
+  it("flags a bare run of 16 hex tokens with letters as definite", () => {
+    const page = STUDIED_HEADER + `Bytes: ${bareRun16}\n`;
+    const findings = lintStudyExpression(page);
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.rule).toBe("study_expression");
+    expect(findings[0]?.certainty).toBe("definite");
+    expect(findings[0]?.message).toContain("16");
+  });
+
+  it("is quiet on a bare run of 15 tokens (below threshold)", () => {
+    const run15 = Array.from({ length: 15 }, (_, i) => (0xa0 + i).toString(16)).join(" ");
+    expect(lintStudyExpression(STUDIED_HEADER + `Bytes: ${run15}\n`)).toEqual([]);
+  });
+
+  it("is quiet when bare hex tokens appear inside a fenced block", () => {
+    // Inside a fence: covered by the mnemonic check if it has mnemonics,
+    // but a bare hex table inside a fence should not trigger the bare-run rule.
+    const page = STUDIED_HEADER + "```\n" + bareRun16 + "\n```\n";
+    // No mnemonics → mnemonic check is quiet too
+    expect(lintStudyExpression(page)).toEqual([]);
+  });
+
+  it("is quiet on a run of 16 pure-decimal tokens (no hex letters a–f)", () => {
+    // 00 01 02 03 04 05 06 07 08 09 00 01 02 03 04 05 — all digits, no letters
+    const decRun = Array.from({ length: 16 }, (_, i) => (i % 10).toString().padStart(2, "0")).join(" ");
+    expect(lintStudyExpression(STUDIED_HEADER + `Values: ${decRun}\n`)).toEqual([]);
+  });
+
+  it("is quiet on 4-digit bare addresses even in long sequences", () => {
+    // 16 four-digit hex addresses — NOT 2-digit tokens
+    const addrs = Array.from({ length: 16 }, (_, i) => (0x4000 + i * 0x100).toString(16)).join(" ");
+    expect(lintStudyExpression(STUDIED_HEADER + `Addresses: ${addrs}\n`)).toEqual([]);
+  });
+
+  it("is quiet when tokens are separated by prose words (not a consecutive run)", () => {
+    // Tokens scattered in prose — a word between each pair breaks the run
+    const page = STUDIED_HEADER + "line a9 address 36 value 85 count 01 check a9\n";
+    expect(lintStudyExpression(page)).toEqual([]);
+  });
+});
+
+describe("lintStudyExpression — PAGE reference exists", () => {
+  it("points at a page that exists in the repo", () => {
+    const run = Array.from({ length: 16 }, (_, i) => (0xa0 + i).toString(16)).join(" ");
+    const page = STUDIED_HEADER + `Bytes: ${run}\n`;
+    const findings = lintStudyExpression(page);
+    expect(findings.length).toBeGreaterThan(0);
+    const pagePath = findings[0]?.page ?? "";
+    expect(fs.existsSync(path.join(here, "..", pagePath)), `PAGE "${pagePath}" does not exist`).toBe(true);
+  });
+});
+
 describe("lintStudyExpression — commando.md passes", () => {
   it("finds no violations in the committed commando.md", () => {
     const commando = fs.readFileSync(path.join(here, "../docs/game-design/studies/commando.md"), "utf-8");
