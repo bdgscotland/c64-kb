@@ -404,7 +404,7 @@ check, was not timed separately.
 **Complexity:** low
 **Cost:** cycles_per_frame=380
 **Cost basis:** measured-vice
-**Cost measured on:** oscar64-object-pool (eight live slots, screen blanked)
+**Cost measured on:** oscar64-object-pool (eight live slots, screen blanked; the pool's own tick only, a Y add, an off-screen test and a timer a slot; enemy behaviour is not in it, see Cycle budget)
 
 **Why.** A game spawns and kills enemies, bullets and explosions all the
 time, and it has no heap worth the name: eight sprites, a few hundred
@@ -438,7 +438,29 @@ hundred calls: the update pass over eight active slots costs 380 cycles,
 over none 106; a scan allocation costs 27 with slot 0 free, 64 with slot
 3 free and 124 when the pool is full and refuses; a free-list pop and
 push together cost 44; a spawn plus despawn 146. The Cost line carries
-the update pass with all eight slots live, which is the per-frame figure.
+the update pass with all eight slots live: 47.5 cycles a live slot for
+one Y add, an off-screen test and a timer countdown. It is the pool's
+bookkeeping, not what the objects do; an earlier version of this page
+called it the per-frame figure without saying so, and a budget read it
+as the cost of eight enemies.
+
+What behaviour costs, measured in a game: in the run-and-gun starter
+(`templates/run-and-gun/`, Oscar64 -O2, VICE x64sc 3.10) an enemy aims
+at the player, walks with an `A_BLOCK` test ahead of it
+(`char_attribute_flags`), fires on a timer and is culled off screen. The
+VICE monitor's profiler (`prof`) put its `objects_update` at 3,118
+cycles a call with 4.7 objects alive on average and every object
+thinking every frame: about 660 cycles an object (arithmetic), of which
+the terrain lookup was about 60. With each object thinking on alternate
+frames and the other half only following the scrolled ground, the
+objects cost 2,288 cycles a logic frame on average and 4,221 at most on
+PAL (2,325 and 4,436 on NTSC), over 200 logic frames with up to 8
+alive, CIA1 timer B around the calls, interrupts that landed inside
+included (`templates/run-and-gun/PLAN.md`, `make enemies`). That is
+about 490 cycles an object a frame on average (2,288 / 4.7,
+arithmetic), ten times the 47.5 above. Budget a game's enemies from a
+figure like this, and the pool's own 380 on top only if the enemy
+update does not already walk the slots.
 
 ### Recipes
 
@@ -512,7 +534,14 @@ one byte, high bytes required equal) all survive: X + 18 = 268 wraps to
   when height reaches 0. It costs a second sprite and a few more cycles.
 - **Blast on contact.** End the flight early when the grenade's own box
   meets a target or a blocking cell (`tile_grid_collision`); a lob that
-  should go over walls must not do this.
+  should go over walls must not do this. The run-and-gun starter does it
+  for its enemy grenade: from age 16 the grenade bursts on an `A_BLOCK`
+  cell (`char_attribute_flags`), tested every second tick, and otherwise
+  at age 80 (`templates/run-and-gun/src/objects.c`, `nade_tick`, read
+  from the source). That rule is the starter's brief, not Commando's (its
+  enemy grenade ignores walls, below). The starter's enemy check shows
+  the count of wall bursts on screen but does not grade it, so the rule
+  is not verified in a run.
 
 **Cycle budget.** Measured in the recipe with CIA2 timer A, on PAL and
 NTSC alike: a flight tick is at most 84 cycles; the worst tick, the first
@@ -581,6 +610,16 @@ touch; the grenade in flight does not. The Y steps sum to zero over 80
 ticks, so a throw lands about 80 × trunc(d / 64) pixels away on each axis:
 the aim comes in 80-pixel steps, and a player within 63 pixels on an axis
 gets no offset on it (arithmetic from the measured rule, rung 3).
+
+An enemy grenade flies over walls, as the player's does. Its handler,
+`$2EBF` (object type `$0B` in the dispatch table at `$24F2`), counts the
+age, picks the sprite frame from age / 16, adds 1 to vy every 16 ticks
+and turns the object into an explosion at age 80; it reads no terrain.
+The enemy bullet's handler, `$2F37` (type `$08`), does: from age 22 it
+calls `$28A3` for the cell under the bullet, reads that character's
+attribute, and bit 0 ends the bullet. Read from the bytes of a play-time
+RAM dump of the maintainer's copy (rung 1 for the bytes). That a grenade
+crosses a solid cell is read from the code, not watched in play.
 
 Its box tests compare X in 8 bits with the high bytes required equal.
 Measured on the bullet test: a bullet at X 250 missed a target at X 255,
@@ -941,8 +980,11 @@ the typical frame. It covers the director, the spawner, the spawn into
 `object_pool`'s slots and the enemy updates, so the Cost includes line
 names `object_pool` and a plan that lists both counts the pool once. It
 leaves out the scroll advance, the sprite writes, and `gone()` with its end-of-wave accounting,
-which runs only when an enemy leaves. Code layout moves these figures by
-a few cycles. Hand-written assembly would cost less; the C figures are an upper
+which runs only when an enemy leaves. The 146 per enemy is a path
+interpreter with no terrain test and no aim; enemies that aim at the
+player and test the map as they walk cost about 660 cycles each
+thinking frame in Oscar64 C (`object_pool`, Cycle budget). Code layout
+moves these figures by a few cycles. Hand-written assembly would cost less; the C figures are an upper
 reference.
 
 On NTSC the frame rate is 60 Hz, so a scroll that moves one position a
