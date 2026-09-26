@@ -18,7 +18,7 @@ import {
 import { analyseIrqChain, execCommands } from "../re/irq-chain.ts";
 import type { Hit } from "../re/monlog.ts";
 import type { MonitorScript } from "../re/session.ts";
-import { chainPasses, withSource, type ReResult, type SourceArgs } from "./re.ts";
+import { chainPasses, truncationNotes, withSource, type ReResult, type SourceArgs } from "./re.ts";
 import type { RunOpts } from "./re-session.ts";
 
 const hex4 = (n: number) => n.toString(16).padStart(4, "0");
@@ -80,7 +80,12 @@ export async function reFrameMode(
       rtis,
       wait,
     });
-    result.unknowns.push(...unknowns, ...chain.unknowns, ...src.unknowns(f));
+    result.unknowns.push(
+      ...unknowns,
+      ...truncationNotes(d, "discovery trace (RTIs and the wait loop)"),
+      ...chain.unknowns,
+      ...src.unknowns(f),
+    );
     return { ok: true, run, result };
   });
 }

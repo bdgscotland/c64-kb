@@ -132,6 +132,8 @@ export interface SessionPass {
   injections: Injected[];
   unknowns: string[];
   screenshot: string;
+  /** maxLogBytes stopped the replay before its cycle limit. */
+  truncated: boolean;
 }
 
 /** Injection i is checkpoint i + 1: sessionScript writes them first. */
@@ -171,7 +173,14 @@ export async function sessionPass(
       .map(
         (i) => `injection at $${parseHex(i.at_pc).toString(16).toUpperCase().padStart(4, "0")} never fired`,
       );
-    return { hits: script.toolHits(all), play_clock, injections, unknowns, screenshot };
+    return {
+      hits: script.toolHits(all),
+      play_clock,
+      injections,
+      unknowns,
+      screenshot,
+      truncated: run.truncated,
+    };
   } finally {
     run.dispose();
   }

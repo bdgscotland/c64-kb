@@ -376,7 +376,7 @@ ${NEEDS}
 ${SESSION_INPUT}
 
 Inputs: prg_path or session, model, cycles, disk_path, mode, start and stop (region), wait_pc (frame).
-Output (structured): run {prg, model, cycles, entry, start_clock, vice, session?, image?}, mode, unknowns; region: samples [{id, cycles, start_clock, frame}], worst, typical, count, unpaired, over_frame; frame: frames [{id, frame, start_clock, handlers, idle, main, rest}], parts [{handler, target, slot, entries, entry_lines, cost, dispatch}], per_frame {handlers, rest, main, idle}, measured_frame, wait, interrupts, unreturned.`,
+Output (structured): run {prg, model, cycles, entry, start_clock, vice, session?, image?}, mode, unknowns; region: samples [{id, cycles, start_clock, frame}], worst, typical, count, unpaired, over_frame; frame: frames [{id, frame, start_clock, handlers, interrupts, idle, main, rest}], parts [{handler, target, slot, entries, entry_lines, cost, dispatch}], per_frame {handlers, rest, main, idle}, measured_frame, wait, interrupts, unreturned.`,
   inputSchema: FrameProfileInput,
   outputSchema: FrameProfileOutput,
   annotations: READ_ONLY,

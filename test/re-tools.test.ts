@@ -5,7 +5,14 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Hit } from "../src/re/monlog.ts";
 import { REGION_TIMING } from "../src/domain/timing.ts";
-import { allowedPrg, fromEntry, parseMarker, reFrameProfile, reIrqChain } from "../src/tools/re.ts";
+import {
+  allowedPrg,
+  fromEntry,
+  parseMarker,
+  reFrameProfile,
+  reIrqChain,
+  truncationNotes,
+} from "../src/tools/re.ts";
 import { reFrameMode } from "../src/tools/re-frame.ts";
 import { resolveX64sc } from "../src/services/vice-bin.ts";
 import { findToolchains } from "../scripts/lib/toolchains.ts";
@@ -164,6 +171,18 @@ function assemble(source: string): string {
 
 const PAL_FRAME = REGION_TIMING.PAL.cycles_per_frame;
 
+describe("a run its log cap stopped", () => {
+  const t = { hits: [], start: 0, entry: 0x080e };
+  it("names the cut in unknowns", () => {
+    expect(truncationNotes({ ...t, truncated: true })).toEqual([
+      "trace stopped early: the monitor log reached its size cap before the cycle limit, so later hits are missing",
+    ]);
+  });
+  it("says nothing when the run reached its cycle limit", () => {
+    expect(truncationNotes({ ...t, truncated: false })).toEqual([]);
+  });
+});
+
 describe("frame mode inputs", () => {
   it("refuses a region run without markers and a bad wait_pc, before any run", async () => {
     expect(await reFrameProfile({ prg_path: "/etc/hosts" })).toMatchObject({ ok: false, reason: "marker" });
@@ -197,6 +216,10 @@ describe.skipIf(!canRun)("c64_re_frame_profile frame mode in VICE", () => {
     expect(b.parts.every((p) => p.dispatch.typical === 36)).toBe(true);
     expect(b.unreturned).toBe(0);
     expect(b.frames.length).toBeGreaterThan(200);
+    // 8,000,000 cycles outrun the discovery trace's 64 MB log cap: the cut is named, not silent.
+    expect(
+      b.unknowns.some((u) => u.startsWith("discovery trace (RTIs and the wait loop) stopped early")),
+    ).toBe(true);
     const least = b.parts.reduce((n, p) => n + (p.cost.least ?? 0), 0);
     for (const f of b.frames) {
       expect(f.handlers).toBeGreaterThanOrEqual(least);

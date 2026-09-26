@@ -10,11 +10,12 @@
  * 3000362. All three slot handlers ($0846, $085D, $0874) are present as
  * executed. Measured 2026-09-26.
  */
-import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import {
   classifyCoverage,
   extendByInstrLen,
@@ -22,7 +23,8 @@ import {
   parseMemmapLog,
   type MemmapRow,
 } from "../src/re/coverage.ts";
-import { reCoverage } from "../src/tools/re-coverage.ts";
+import { addCoverageCheckpoints, reCoverage } from "../src/tools/re-coverage.ts";
+import { MonitorScript, SessionSchema } from "../src/re/session.ts";
 import { resolveX64sc } from "../src/services/vice-bin.ts";
 import { findToolchains } from "../scripts/lib/toolchains.ts";
 
@@ -235,6 +237,34 @@ describe("classifyCoverage", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The zap honours in_play.after_clock: it skips the in-play PC's earlier execs
+// ---------------------------------------------------------------------------
+
+describe("addCoverageCheckpoints", () => {
+  const trigger = {
+    line: "trace store d019 d019",
+    addr: 0xd019,
+    kind: "store" as const,
+    prePlayCount: 3,
+    perFrame: 4,
+  };
+  it("skips the execs of in_play.pc before in_play.after_clock (ignore, in hex) before the zap", () => {
+    const m = new MonitorScript();
+    addCoverageCheckpoints(m, { line: "trace exec 0846 0846", skip: 26 }, trigger, 2);
+    const text = m.text();
+    expect(text).toMatch(/ignore 1 1a\n/);
+    expect(text).toMatch(/command 1 "memmapzap; disable 1"/);
+    // The show: 3 before play + 2 frames x 4 - 1 = 10 hits ignored.
+    expect(text).toMatch(/ignore 2 a\n/);
+  });
+  it("adds no ignore to the zap when play starts at the first exec", () => {
+    const m = new MonitorScript();
+    addCoverageCheckpoints(m, { line: "trace exec 0846 0846", skip: 0 }, trigger, 2);
+    expect(m.text()).not.toMatch(/ignore 1 /);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // VICE integration test (skipped without windowless x64sc + KickAssembler)
 // ---------------------------------------------------------------------------
 
@@ -242,11 +272,22 @@ const tools = findToolchains();
 const x64sc = resolveX64sc();
 const canRun = x64sc !== null && !x64sc.windowed && tools.kickass !== null && tools.java !== null;
 
+/** Every mkdtemp directory a test makes, removed after the file's tests. */
+const made: string[] = [];
+const tempDir = (prefix: string): string => {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  made.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of made) rmSync(d, { recursive: true, force: true });
+});
+
 describe.skipIf(!canRun)(
   "c64_re_coverage in VICE, on the jmp-indirect fixture PRG (two passes, clock-based)",
   () => {
     function buildPrg(): string {
-      const dir = mkdtempSync(join(tmpdir(), "re-cov-"));
+      const dir = tempDir("re-cov-");
       copyFileSync(join(import.meta.dirname, "fixtures", "re", "jmp-indirect.asm"), join(dir, "t.asm"));
       expect(
         spawnSync(tools.java ?? "java", ["-jar", tools.kickass ?? "", "t.asm", "-o", "t.prg"], {
@@ -257,7 +298,7 @@ describe.skipIf(!canRun)(
     }
 
     it("refuses a PRG with no SYS line", async () => {
-      const dir = mkdtempSync(join(tmpdir(), "re-cov-"));
+      const dir = tempDir("re-cov-");
       const nosys = join(dir, "nosys.prg");
       writeFileSync(nosys, Buffer.from([0x01, 0x08, 0xea, 0xea]));
       const r = await reCoverage({ prg_path: nosys });
@@ -287,5 +328,36 @@ describe.skipIf(!canRun)(
       expect(totalUnknown).toBeGreaterThan(0x8000); // more than half of 64KB is unknown
       expect(r.result.unknowns).toEqual([]);
     }, 120_000);
+
+    it("refuses no-entry when the SYS entry is not reached in the run, not a map from clock 0", async () => {
+      // 200,000 cycles end long before the KERNAL's boot reaches the autostart.
+      const r = await reCoverage({ prg_path: buildPrg(), cycles: 200_000, frames: 2 });
+      expect(r).toMatchObject({ ok: false, reason: "no-entry" });
+      if (!r.ok) expect(r.error).toMatch(/^entry \$080E not reached in 200000 cycles/);
+    }, 60_000);
+
+    it("a session whose in_play.after_clock is late zaps at play, not at the in-play PC's first exec", async () => {
+      const prg = buildPrg();
+      const sha1 = createHash("sha1").update(readFileSync(prg)).digest("hex");
+      const dir = tempDir("re-cov-session-");
+      const manifestPath = join(dir, "manifest.json");
+      writeFileSync(manifestPath, JSON.stringify({ [sha1]: { path: prg, title: "jmp-indirect" } }));
+      const session = SessionSchema.parse({
+        image: { sha1, kind: "prg", title: "jmp-indirect" },
+        machine: { model: "pal" },
+        inject: [],
+        // part1 runs once a frame from the program's start, well before clock 3,000,000.
+        in_play: { check: "exec", pc: "$0846", after_clock: 3_000_000 },
+        limitcycles: 4_000_000,
+      });
+      const r = await reCoverage({ session, frames: 2 }, { manifestPath, shotDir: tempDir("re-cov-shots-") });
+      expect(r.ok, JSON.stringify(r)).toBe(true);
+      if (!r.ok) return;
+      expect(r.run.start_clock).toBeGreaterThanOrEqual(3_000_000);
+      // The show is two frames after play: about 39,312 cycles, not the ~25 frames since part1 first ran.
+      expect(r.result.span_cycles).toBeGreaterThan(0);
+      expect(r.result.span_frames).toBeLessThan(3);
+      expect(r.result.code.some((c) => c.start <= 0x0846 && c.end >= 0x0846)).toBe(true);
+    }, 180_000);
   },
 );

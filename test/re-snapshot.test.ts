@@ -1,9 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { decodeCpuPort, decodeSnapshot, decodeVicState } from "../src/re/vic-state.ts";
 import { SessionSchema, type Session } from "../src/re/session.ts";
 import { reSnapshot } from "../src/tools/re.ts";
@@ -82,13 +82,24 @@ describe("vic-state decode", () => {
   });
 });
 
+/** Every mkdtemp directory a test makes (builds, manifests, RAM dumps, screenshots), removed after the file's tests. */
+const made: string[] = [];
+const tempDir = (prefix: string): string => {
+  const d = mkdtempSync(join(tmpdir(), prefix));
+  made.push(d);
+  return d;
+};
+afterAll(() => {
+  for (const d of made) rmSync(d, { recursive: true, force: true });
+});
+
 const tools = findToolchains();
 const x64sc = resolveX64sc();
 const canRun = x64sc !== null && !x64sc.windowed && tools.kickass !== null && tools.java !== null;
 
 /** Builds the committed irq-chain recipe fresh, the way check:listings and verify:recipes do. */
 function buildIrqChainRecipe(): string {
-  const dir = mkdtempSync(join(tmpdir(), "re-snapshot-irqchain-"));
+  const dir = tempDir("re-snapshot-irqchain-");
   const r = spawnSync(
     process.execPath,
     ["scripts/verify-recipes.ts", "--file", "docs/recipes/kickassembler/irq-chain.md", "--keep", dir],
@@ -116,11 +127,11 @@ function irqChainSession(
 describe.skipIf(!canRun)("c64_re_snapshot in VICE, on the irq-chain recipe PRG", () => {
   const prg = canRun ? buildIrqChainRecipe() : "";
   const sha1 = canRun ? createHash("sha1").update(readFileSync(prg)).digest("hex") : "";
-  const manifestDir = mkdtempSync(join(tmpdir(), "re-snapshot-manifest-"));
+  const manifestDir = tempDir("re-snapshot-manifest-");
   const manifest = join(manifestDir, "manifest.json");
   if (canRun) writeFileSync(manifest, JSON.stringify({ [sha1]: { path: prg, title: "irq-chain" } }));
-  const dumpDir = mkdtempSync(join(tmpdir(), "re-snapshot-dumps-"));
-  const shotDir = mkdtempSync(join(tmpdir(), "re-snapshot-shots-"));
+  const dumpDir = tempDir("re-snapshot-dumps-");
+  const shotDir = tempDir("re-snapshot-shots-");
   const opts = { manifestPath: manifest, shotDir, dumpDir };
 
   it("dumps RAM (65,538 bytes) and I/O at the first hit and decodes bank 0, screen $0400", async () => {
@@ -169,8 +180,8 @@ describe.skipIf(!hasCommando)(
   "c64_re_snapshot on Commando (the maintainer's image; skips without it)",
   () => {
     it("in play: VIC bank 3, screen $E000 (measured separately: sprite pointers at $E3F8)", async () => {
-      const dumpDir = mkdtempSync(join(tmpdir(), "re-snapshot-commando-dumps-"));
-      const shotDir = mkdtempSync(join(tmpdir(), "re-snapshot-commando-shots-"));
+      const dumpDir = tempDir("re-snapshot-commando-dumps-");
+      const shotDir = tempDir("re-snapshot-commando-shots-");
       const r = await reSnapshot(
         { session: "docs/game-design/studies/sessions/commando.json" },
         { shotDir, dumpDir },

@@ -241,7 +241,7 @@ async function traced(
   args: { model: Model; cycles: number; disk_path?: string | undefined },
   build: Build,
   maxLogBytes?: number,
-): Promise<{ hits: Hit[]; start: number; entry: number | null }> {
+): Promise<Traced> {
   const commands = scriptOf(build, readPrg(readFileSync(prg)).sys ?? null).text();
   const { cmd, entry, own } = entryCommand(prg, commands);
   const run = await runBatch({
@@ -256,7 +256,7 @@ async function traced(
     const r = fromEntry(await collect(run.log), entry, own);
     if (!r)
       throw new NoEntry(`entry ${hexUp(entry ?? 0)} not reached in ${args.cycles} cycles; raise cycles`);
-    return { ...r, entry };
+    return { ...r, entry, truncated: run.truncated };
   } finally {
     run.dispose();
   }
@@ -290,6 +290,17 @@ export interface Traced {
   hits: Hit[];
   start: number;
   entry: number | null;
+  /** maxLogBytes stopped the run before its cycle limit: hits after the cut are missing. */
+  truncated: boolean;
+}
+
+/** The unknowns line for a run its log cap stopped early; none when it ran to its cycle limit. */
+export function truncationNotes(t: Traced, what = "trace"): string[] {
+  return t.truncated
+    ? [
+        `${what} stopped early: the monitor log reached its size cap before the cycle limit, so later hits are missing`,
+      ]
+    : [];
 }
 
 /** Where a tool's passes run: a PRG from its entry, or a session from its in-play clock. */
@@ -316,7 +327,7 @@ function prgSource(prg: string, given: SourceArgs): Source {
   return {
     trace: (c, max) => traced(prg, args, c, max),
     info: (t) => info(prg, args, t),
-    unknowns: (t) => (t.entry === null ? [NO_SYS] : []),
+    unknowns: (t) => [...(t.entry === null ? [NO_SYS] : []), ...truncationNotes(t)],
     timing: REGION_TIMING[videoRegion(args.model)],
   };
 }
@@ -334,10 +345,10 @@ function sessionSource(staged: Staged, l: SessionRef, shotDir: string | undefine
       const p = await sessionPass(staged, s, m, { screenshot: shot, maxLogBytes: max });
       if (p.play_clock === null) throw new NotInPlay(notInPlay(s, shot));
       pending.splice(0, pending.length, ...p.unknowns);
-      return { hits: p.hits, start: p.play_clock, entry };
+      return { hits: p.hits, start: p.play_clock, entry, truncated: p.truncated };
     },
     info: (t) => ({ ...info(l.label, args, t), session: name, image }),
-    unknowns: () => [...pending],
+    unknowns: (t) => [...pending, ...truncationNotes(t)],
     timing: REGION_TIMING[videoRegion(s.machine.model)],
   };
 }

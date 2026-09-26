@@ -149,13 +149,17 @@ function chooseTrigger(analysis: {
 // Pass-2 helpers: add checkpoints, run, parse
 // ---------------------------------------------------------------------------
 
-function addCoverageCheckpoints(
+/** The zap (skipping `zap.skip` execs, those before in_play.after_clock) and the show checkpoint; returns the show's number. */
+export function addCoverageCheckpoints(
   m: MonitorScript,
-  zapLine: string,
+  zap: { line: string; skip: number },
   trigger: TriggerInfo,
   frames: number,
 ): number {
-  m.checkpoint(zapLine, (n) => [`command ${n} "memmapzap; disable ${n}"`]);
+  m.checkpoint(zap.line, (n) => [
+    ...(zap.skip > 0 ? [`ignore ${n} ${zap.skip.toString(16)}`] : []),
+    `command ${n} "memmapzap; disable ${n}"`,
+  ]);
   const totalIgnore = trigger.prePlayCount + frames * trigger.perFrame - 1;
   const showCpNum = m.checkpoint(trigger.line, (n) => [
     ...(totalIgnore > 0 ? [`ignore ${n} ${totalIgnore.toString(16)}`] : []),
@@ -221,21 +225,28 @@ async function sessionProbe(
   shot: string;
   trigger: ReturnType<typeof analyzeTrigger>;
   injUnknowns: string[];
+  prePlayHits: number;
 }> {
   const timing = REGION_TIMING[videoRegion(s.machine.model)];
   const m1 = sessionScript(s);
   const ff48CpNum = m1.checkpoint("trace exec ff48 ff48");
   const d019CpNum = m1.checkpoint("trace store d019 d019");
+  const inPlayCpNum = m1.checkpoint(`trace exec ${inPlayHex(s)} ${inPlayHex(s)}`);
   const shot = screenshotPath(`coverage-p1-${name}`, opts.shotDir);
   const p1 = await sessionPass(staged, s, m1, { screenshot: shot });
+  const playClock = p1.play_clock ?? s.limitcycles;
   const trigger = analyzeTrigger(p1.hits, {
-    playClock: p1.play_clock ?? s.limitcycles,
+    playClock,
     frameCycles: timing.cycles_per_frame,
     ff48CpNum,
     d019CpNum,
   });
-  return { play_clock: p1.play_clock, shot, trigger, injUnknowns: p1.unknowns };
+  // Execs of in_play.pc before in_play.after_clock: the zap skips them, so it fires at play_clock.
+  const prePlayHits = p1.hits.filter((h) => h.checkpoint === inPlayCpNum && h.clock < playClock).length;
+  return { play_clock: p1.play_clock, shot, trigger, injUnknowns: p1.unknowns, prePlayHits };
 }
+
+const inPlayHex = (s: Session): string => parseHex(s.in_play.pc).toString(16).padStart(4, "0");
 
 interface SessionRunOpts {
   staged: Staged;
@@ -246,6 +257,8 @@ interface SessionRunOpts {
   trig: TriggerInfo;
   frames: number;
   opts: RunOpts;
+  /** Execs of in_play.pc before play_clock (in_play.after_clock): the zap skips them. */
+  prePlayHits: number;
 }
 
 async function sessionCoverageRun({
@@ -257,11 +270,12 @@ async function sessionCoverageRun({
   trig,
   frames,
   opts,
+  prePlayHits,
 }: SessionRunOpts): Promise<ReResult<Coverage>> {
   const timing = REGION_TIMING[videoRegion(s.machine.model)];
   const m2 = sessionScript(s);
-  const inPlayAddr = parseHex(s.in_play.pc).toString(16).padStart(4, "0");
-  const showCpNum = addCoverageCheckpoints(m2, `trace exec ${inPlayAddr} ${inPlayAddr}`, trig, frames);
+  const zap = { line: `trace exec ${inPlayHex(s)} ${inPlayHex(s)}`, skip: prePlayHits };
+  const showCpNum = addCoverageCheckpoints(m2, zap, trig, frames);
   const covCycles = Math.min(playClock + frames * timing.cycles_per_frame * 2, s.limitcycles);
   const shot2 = screenshotPath(`coverage-p2-${name}`, opts.shotDir);
   const run2 = await runBatch(batchOf(staged, s, m2, { screenshot: shot2, cyclesOverride: covCycles }));
@@ -276,7 +290,9 @@ async function sessionCoverageRun({
       frameCycles: timing.cycles_per_frame,
       pass1Unknowns: [],
     });
-    const entry_hit = all2.find((h) => h.kind === "exec" && h.addr === parseHex(s.in_play.pc));
+    const entry_hit = all2.find(
+      (h) => h.kind === "exec" && h.addr === parseHex(s.in_play.pc) && h.clock >= s.in_play.after_clock,
+    );
     const ri: RunInfo = {
       prg: label,
       model: s.machine.model,
@@ -302,7 +318,12 @@ function sessionCoverage(args: SourceArgs & { frames: number }, opts: RunOpts): 
 
   return withImage(s, opts.manifestPath, async (staged) => {
     try {
-      const { play_clock, shot, trigger, injUnknowns } = await sessionProbe(staged, s, name, opts);
+      const { play_clock, shot, trigger, injUnknowns, prePlayHits } = await sessionProbe(
+        staged,
+        s,
+        name,
+        opts,
+      );
       if (play_clock === null) return notInPlay(s, shot);
       const trig = chooseTrigger(trigger);
       if (!trig)
@@ -320,6 +341,7 @@ function sessionCoverage(args: SourceArgs & { frames: number }, opts: RunOpts): 
         trig,
         frames: args.frames,
         opts,
+        prePlayHits,
       });
       if (result.ok) result.result.unknowns.push(...injUnknowns);
       return result;
@@ -338,7 +360,7 @@ async function prgProbe(
   entry: number,
   model: "pal" | "ntsc",
   cycles: number,
-): Promise<{ entry_clock: number; trigger: ReturnType<typeof analyzeTrigger> }> {
+): Promise<{ entry_clock: number | null; trigger: ReturnType<typeof analyzeTrigger> }> {
   const timing = REGION_TIMING[videoRegion(model)];
   const m1 = new MonitorScript();
   const entryAddr = entry.toString(16).padStart(4, "0");
@@ -349,9 +371,9 @@ async function prgProbe(
   try {
     const hits = await collect(run.log);
     const entryHit = hits.find((h) => h.checkpoint === entryCpNum && h.kind === "exec");
-    const entry_clock = entryHit?.clock ?? 0;
+    const entry_clock = entryHit?.clock ?? null;
     const trigger = analyzeTrigger(hits, {
-      playClock: entry_clock,
+      playClock: entry_clock ?? cycles,
       frameCycles: timing.cycles_per_frame,
       ff48CpNum,
       d019CpNum,
@@ -384,7 +406,12 @@ async function prgCoverageRun({
   const timing = REGION_TIMING[videoRegion(model)];
   const m2 = new MonitorScript();
   const entryAddr = entry.toString(16).padStart(4, "0");
-  const showCpNum = addCoverageCheckpoints(m2, `trace exec ${entryAddr} ${entryAddr}`, trig, frames);
+  const showCpNum = addCoverageCheckpoints(
+    m2,
+    { line: `trace exec ${entryAddr} ${entryAddr}`, skip: 0 },
+    trig,
+    frames,
+  );
   const covCycles = Math.min(entry_clock + frames * timing.cycles_per_frame * 2, cycles);
   const run2 = await runBatch({ prg, monCommands: m2.text(), cycles: covCycles, model });
   try {
@@ -425,6 +452,12 @@ async function prgCoverage(
       reason: "no-entry",
     };
   const { entry_clock, trigger } = await prgProbe(prg, entry, args.model, args.cycles);
+  if (entry_clock === null)
+    return {
+      ok: false,
+      error: `entry $${entry.toString(16).toUpperCase().padStart(4, "0")} not reached in ${args.cycles} cycles; raise cycles`,
+      reason: "no-entry",
+    };
   const trig = chooseTrigger(trigger);
   if (!trig)
     return {
