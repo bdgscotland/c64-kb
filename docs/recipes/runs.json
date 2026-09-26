@@ -1006,6 +1006,18 @@
       "ntsc": "screenshots/sfx-in-player-ntsc.png"
     }
   },
+  "kickassembler/sfx-voice-takeover": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/sfx-voice-takeover.png",
+      "ntsc": "screenshots/sfx-voice-takeover-ntsc.png"
+    }
+  },
   "kickassembler/sprite-dma-cost": {
     "cycles": 8000000,
     "models": [
