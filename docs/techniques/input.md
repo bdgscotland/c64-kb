@@ -163,9 +163,11 @@ degrees a step (0 up, 4 right, 8 down, 12 left). Once per frame:
    with `AND #15`, which wraps it both ways with no compare.
 
 The facing then indexes whatever needs an angle: a 16-entry bullet
-velocity table, a gun sprite frame, or (halved) an eight-direction body
-frame. A 180-degree turn takes 8 frames, a 90-degree turn 4, and the
-facing never lags the stick by more than 8 frames.
+velocity table (its values are in `aimed_shot_octant`,
+`techniques/maths.md`; this page's recipe has only the eight-way walk
+steps), a gun sprite frame, or (halved) an eight-direction body frame.
+A 180-degree turn takes 8 frames, a 90-degree turn 4, and the facing
+never lags the stick by more than 8 frames.
 
 In `recipes/kickassembler/facing-turn-step.md` the frame's work (port
 read, decode, move, turn) took at most 93 cycles, `jsr` and `rts`

@@ -2889,5 +2889,17 @@
       "pal": "screenshots/area-end-gate-wave.png",
       "ntsc": "screenshots/area-end-gate-wave-ntsc.png"
     }
+  },
+  "kickassembler/aimed-shot-octant": {
+    "cycles": 40000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/aimed-shot-octant.png",
+      "ntsc": "screenshots/aimed-shot-octant-ntsc.png"
+    }
   }
 }
