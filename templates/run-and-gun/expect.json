@@ -5,7 +5,7 @@
     { "name": "soldier X, Y; map y on line 55; scroll steps", "type": "text", "row": 4, "col": 1, "text": "X 238 Y 110 WY 500 ST 107" },
     { "name": "frames blocked, frames behind, redraws", "type": "text", "row": 5, "col": 1, "text": "BLK 12 BEHIND 02 RD 13" },
     { "name": "lost frames, late redraws", "type": "text", "row": 7, "col": 1, "text": "LOST 00 AT 000 LATE 00" },
-    { "name": "sprites the multiplexer shows: the soldier and 7 pool objects above its cut (the verdict checks it equals the slots above the cut)", "type": "text", "row": 8, "col": 1, "text": "SHOWN 8" },
+    { "name": "sprites the multiplexer shows: the soldier and 7 pool objects above its cut (the verdict checks it equals the slots above the cut)", "type": "text", "row": 8, "col": 1, "text": "SHOWN 08" },
     { "name": "frame meter, the first 200 frames that ran the game's logic", "type": "meter", "row": 9, "col": 1, "frames": 200 },
 
     { "name": "soldier under the canopy: only his white below line 120 shows (a sprite in front shows from line 112)", "type": "sprite", "colour": 1, "vic_x": 244, "line": 121, "width": 10, "height": 7, "search": { "vic_x": 230, "line": 100, "width": 40, "height": 40 } },

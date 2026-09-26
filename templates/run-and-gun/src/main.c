@@ -41,7 +41,9 @@
 #pragma section( gfxattr, 0 )
 #pragma region( gfxattrreg, 0x9f00, 0xa000, , , { gfxattr } )
 #pragma section( gfxspr, 0 )
-#pragma region( gfxsprreg, 0xa000, 0xc000, , , { gfxspr } )
+#pragma region( gfxsprreg, 0xa000, 0xbe00, , , { gfxspr } )
+#pragma section( gfxwspr, 0 )
+#pragma region( gfxwsprreg, 0xbe00, 0xc000, , , { gfxwspr } )
 
 #pragma data( asmcode )
 __export const char asm_blob[] = {
@@ -62,6 +64,10 @@ __export const char attr_bin[] = {
 #pragma data( gfxspr )
 __export const char sprites_bin[] = {
 #embed "gen/sprites.bin"
+};
+#pragma data( gfxwspr )
+__export const char weapon_sprites_bin[] = {
+#embed "gen/weapon_sprites.bin"
 };
 #pragma data( data )
 
@@ -98,6 +104,9 @@ static const char script[][2] = {
 };
 #define PLAY_FRAMES 100
 #define FREEZE_YS   7
+#elif defined(WEAPONS)
+#define WT_PART 1                       // make weapons: the script (weapons_test.h)
+#include "weapons_test.h"
 #else
 static const char script[][2] = {
     {   2, 0xff }, {   2, 0xef },       // title: fire starts the game
@@ -126,9 +135,37 @@ static char port_read(void)
 }
 #else
 #define METER_HOLD 1
+// Port 2, with JOY_THROW (bit 5) low while SPACE or port-1 fire is down:
+// column 7 selected, $DC01 bit 4 is SPACE's row, and port 1's fire line
+// pulls the same bit low whatever the column (hardware/cia-reference.md).
+// In __asm because Oscar64 moved the C version's $DC01 load after the
+// restoring store to $DC00 (volatile accesses reordered: LDA $DC00, STA #$7F,
+// STA #$FF, LDA $DC01 in build/run-and-gun.asm), so SPACE never threw.
+// Bits 5-7 are set before the fold: they are not stick lines, and under
+// VICE's Joyport I/O simulation device (make drive) $DC00 read $1F, so bit 5
+// read as a throw held for ever and no press ever threw (measured with
+// harness/drive.py's Vice module, port_j at $1F while idle).
+static char port_j;                     // a global: an absolute address for __asm
+
 static char port_read(void)
 {
-    return cia1.pra;
+    __asm {
+        lda $dc00
+        ora #$e0                        // bits 5-7: not stick lines
+        sta port_j
+        lda #$7f
+        sta $dc00                       // column 7 only
+        lda $dc01
+        and #$10                        // row 4: SPACE, or port-1 fire
+        bne pr_up
+        lda port_j
+        and #$df                        // ~JOY_THROW
+        sta port_j
+    pr_up:
+        lda #$ff
+        sta $dc00                       // no column selected: port 2 reads clean
+    }
+    return port_j;
 }
 #endif
 
@@ -143,6 +180,13 @@ static char last_fc, wake_fc;
 static unsigned overruns;
 static char counting;
 static unsigned lost_at;
+#ifdef WEAPONS
+// make weapons: lost frames through the whole script, not only the metered
+// part (overruns stops when the meter holds, METER_HOLD frames in). Exempt is
+// the one wake after the meter's last frame is recorded: that call also
+// finds the median (harness work, longer than a frame).
+static unsigned lost_all, lost_all_at, mf_prev;
+#endif
 
 static void wait_frame(void)
 {
@@ -155,6 +199,14 @@ static void wait_frame(void)
     char fc = K_FRAME_CNT;
     char lost = (char)(fc - last_fc) - 1;
     last_fc = wake_fc = fc;
+#ifdef WEAPONS
+    char exempt = mf_prev < METER_HOLD && meter_frames >= METER_HOLD;
+    mf_prev = meter_frames;
+    if (state == ST_PLAY && play_frames > 1 && lost && !exempt) {
+        if (!lost_all) lost_all_at = play_frames;
+        lost_all += lost;
+    }
+#endif
 #if FRAME_METER
     // The frame that records the meter's last frame also finds the median
     // (harness work, outside the brackets, longer than a frame): the count
@@ -432,7 +484,11 @@ static char slots_above_cut(void)
     return n;
 }
 
-#ifdef MAPEND
+#ifdef WEAPONS
+#undef WT_PART
+#define WT_PART 2                       // make weapons: its verdict (weapons_test.h)
+#include "weapons_test.h"
+#elif defined(MAPEND)
 static char first_fail(void)
 {
     char n = 1;
@@ -555,17 +611,20 @@ static void verdict(void)
     put_dec(s + 7 * 40 + 6, overruns, 2);
     put_dec(s + 7 * 40 + 12, lost_at, 3);
     put_dec(s + 7 * 40 + 21, rd_late, 2);
-    put_text(s, 8, 1, "SHOWN 0 PRE 000 LF 000");
-    put_dec(s + 8 * 40 + 7, K_MUX_SHOWN, 1);
-    put_dec(s + 8 * 40 + 13, pre_end, 3);
-    put_dec(s + 8 * 40 + 20, light_end, 3);
+    put_text(s, 8, 1, "SHOWN 00 PRE 000 LF 000");
+    put_dec(s + 8 * 40 + 7, K_MUX_SHOWN, 2);
+    put_dec(s + 8 * 40 + 14, pre_end, 3);
+    put_dec(s + 8 * 40 + 21, light_end, 3);
     text_colour(3, 1, 17, TEXT_CRAM);
     text_colour(4, 1, 25, TEXT_CRAM);
     text_colour(5, 1, 22, TEXT_CRAM);
     text_colour(6, 1, 24, TEXT_CRAM);
     text_colour(7, 1, 22, TEXT_CRAM);
-    text_colour(8, 1, 22, TEXT_CRAM);
+    text_colour(8, 1, 23, TEXT_CRAM);
     text_colour(9, 1, 20, TEXT_CRAM);
+#ifdef WEAPONS
+    weapons_print();
+#endif
 }
 #endif
 

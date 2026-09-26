@@ -15,6 +15,7 @@ void text_colour(char row, char col, char n, char c);
 void playfield_colour(void);            // rows 0-20 back to PF_CRAM (after text)
 void panel_draw(void);                  // the labels and the numbers
 void panel_update(void);                // the numbers (score, lives, grenades)
+void panel_grenades(void);              // the grenade count only (weapons.c, on a throw)
 
 #pragma compile("display.c")
 

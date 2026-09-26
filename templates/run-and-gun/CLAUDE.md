@@ -18,11 +18,12 @@ A vertical run-and-gun (archetype `vertical_run_and_gun`): a soldier on foot
 walks up a jungle map that scrolls only while he pushes past the middle of
 the screen, over a black band and a three-row score panel. Trees, rocks and
 sandbags stop him; canopies draw over him. This is the first slice: the
-scroll, the redraw, the band, the multiplexer with parked slots, and the
-soldier, and the enemies (`objects.c`: spawn list, rifleman, runner,
-grenadier, their shots and grenades; `make enemies` proves them). Weapons,
-collisions, game flow and audio are stubs whose interfaces are in
-`PLAN.md`, "Modules". `README.md` has the file map and how
+scroll, the redraw, the band, the multiplexer with parked slots, the
+soldier, the enemies (`objects.c`: spawn list, rifleman, runner, grenadier,
+their shots and grenades; `make enemies` proves them) and his weapons
+(`src/weapons.c/h`: shots, grenades, hit boxes; `make weapons` plays and
+grades them). Collisions, game flow and audio are stubs whose interfaces are
+in `PLAN.md`, "Modules". `README.md` has the file map and how
 to extend it. Start a program from it with
 `npm run new-project -- run-and-gun <dir>` in c64-kb.
 
