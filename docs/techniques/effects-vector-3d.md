@@ -1770,7 +1770,7 @@ screenshot x 49): every visible normal line at eight cycle counts on PAL
 and six on NTSC, sprites moving over the road. `tools/roadcheck.py`
 redraws all 96 lines of the still from the machine's own tables, sets,
 screen and registers and matches the shots pixel for pixel on both
-models; the left edge moves at most 3 pixels between neighbouring lines
+models; the left edge moves at most 2 pixels between neighbouring lines
 in that still.
 
 ### Cycle budget
@@ -1799,6 +1799,11 @@ on NTSC (5.03), with no lost game step, the game's step and IRQs at
   times a race. The starter's first IRQ is on line 101.
 - Colour tables indexed by Y must be page-aligned, or the kernel's loads
   take a cycle more on some lines.
+- In 40 columns the first 0-7 pixels of a line shifted by XSCROLL show
+  the background colour: invisible while the road is inside the window,
+  a sawtooth over the road and kerb once a bend brings them to the
+  window's edge (seen at top speed in play). Run the screen in 38 columns
+  (`d016_unmasked_rmw_clobbers_csel_mcm` is the other way to lose CSEL).
 
 ### Recipes
 

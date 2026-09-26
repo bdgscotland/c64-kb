@@ -814,6 +814,10 @@ second, PAL and NTSC.
 - The road leans half as far as a camera fixed on the centre line would
   make it: full lean sheared every row by up to 10 pixels with the car
   off-centre.
+- 38 columns everywhere: in 40 columns XSCROLL's shifted-in pixels showed
+  the background as a sawtooth wherever a bend brought the road to the
+  screen's edge (seen at top speed on the first play). The panel's text
+  keeps to columns 1-37; the meter is at columns 18-37.
 - The tune is original. The maintainer asked to "port the music too"; a
   commercial game's music cannot ship, so step 4 writes a new tune in the
   same spirit.

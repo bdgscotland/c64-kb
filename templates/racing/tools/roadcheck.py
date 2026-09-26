@@ -13,7 +13,8 @@ position through the colour tables, as the road's blocks look them up), the
 screen and colour RAM, the character sets under I/O and the KERNAL (bank 3),
 the VIC-II's registers and the three sprites. From those alone it draws lines
 107-202 as the VIC-II would: multicolour characters from the row's set,
-shifted right by the line's XSCROLL, over the line's grass, road band and
+shifted right by the line's XSCROLL, in 38 columns (the border covers the
+seven and nine pixels at the sides), over the line's grass, road band and
 kerb colours (a register keeps its value until a block stores it: the
 badline and the row's second line keep the bands above them), sprites 0-2
 in front (a sprite whose Y register is y shows on lines y + 1 to y + 21),
@@ -179,13 +180,14 @@ def colours(snap):
 
 
 def draw(snap):
-    """{line: [320 colour indices]} for lines 107-202, VIC X 24-343."""
+    """({line: [320 colour indices]}, {line: grass colour}) for lines 107-202, VIC X 24-343."""
     vic, scr, colram = snap["vic"], snap["screen"], snap["colour"]
     cols = colours(snap)
-    out = {}
+    out, bgs = {}, {}
     for i in range(ROAD_LINES):
         line = ROAD_TOP + i
         bg, bg1, bg2 = cols[i]
+        bgs[line] = bg
         xs = snap["d016"][i] & 7
         row, gl = (line - 51) >> 3, (line - 51) & 7
         cs = snap["sets"][snap["d018"][row - 7]]
@@ -200,6 +202,7 @@ def draw(snap):
                 pix += [v, v]
         pix = [bg] * xs + pix[:320 - xs]
         out[line] = pix
+    border = vic[0x20] & 15
     # sprites 0-2, sprite 0 in front
     en, msb, mc = vic[0x15], vic[0x10], vic[0x1C]
     mc0, mc1 = vic[0x25] & 15, vic[0x26] & 15
@@ -225,7 +228,11 @@ def draw(snap):
                         x = sx + b * 8 + p * 2 + kk - 24
                         if 0 <= x < 320:
                             out[line][x] = v
-    return out
+    # 38 columns: the border covers VIC X 24-30 and 335-343, sprites too
+    for pix in out.values():
+        pix[0:7] = [border] * 7
+        pix[311:320] = [border] * 9
+    return out, bgs
 
 
 def compare(shot, drawn):
@@ -239,15 +246,17 @@ def compare(shot, drawn):
     return bad
 
 
-def edge_steps(drawn):
+def edge_steps(drawn, bgs):
     """The largest move of the left road edge between neighbouring lines, in
-    pixels, over lines whose edge is inside the window (the acceptance's
-    'no visible stair-steps')."""
+    pixels: the first pixel from the left that is not the line's grass, over
+    lines whose edge is inside the window (the acceptance's 'no visible
+    stair-steps'; a sprite over the edge counts as the edge)."""
     xs = {}
     for line, pix in drawn.items():
-        bg = pix[0]
-        for x in range(1, 320):
-            if pix[x] != bg and pix[x] is not None:
+        if pix[7] != bgs[line]:
+            continue                    # the edge is off the window's left
+        for x in range(8, 311):
+            if pix[x] != bgs[line]:
                 xs[line] = x
                 break
     worst = 0
@@ -274,7 +283,7 @@ def main():
     for model in args.models.split(","):
         png = shots[model]
         snap = snapshot(args, model)
-        drawn = draw(snap)
+        drawn, bgs = draw(snap)
         bad = compare(check.Shot(png, model), drawn)
         xs = [snap["d016"][i] & 7 for i in range(ROAD_LINES)]
         steps = sum(1 for i in range(1, ROAD_LINES) if xs[i] != xs[i - 1])
@@ -288,7 +297,7 @@ def main():
         else:
             print(f"PASS {model.upper():5} all {ROAD_LINES} road lines match their $D016, $D018 and band bytes, "
                   f"sprites 0-2 drawn over them ({steps} XSCROLL changes, {sets} character sets, "
-                  f"largest left-edge step {edge_steps(drawn)} px)")
+                  f"largest left-edge step {edge_steps(drawn, bgs)} px)")
     if args.expect == "pass":
         print(f"roadcheck: {'FAIL' if failed else 'PASS'}")
         return 1 if failed else 0

@@ -43,8 +43,12 @@
 .const ZN         = 24          // world units from the camera to line 202's road
 .const W0         = 136         // the road's half-width in pixels at line 202
 
-.const D016_ROAD  = $18         // multicolour, 40 columns, XSCROLL 0
-.const D016_HUD   = $08         // hires, 40 columns
+// 38 columns everywhere (CSEL 0): with XSCROLL the first 0-7 pixels of a
+// line show the background colour, a sawtooth where the road reaches the
+// window's edge on a tight bend (seen at speed, 2026-09-26). The 38-column
+// border hides them (c64-kb soft_scroll_h).
+.const D016_ROAD  = $10         // multicolour, 38 columns, XSCROLL 0
+.const D016_HUD   = $00         // hires, 38 columns
 .const D018_HUD   = $2a         // HUD screen $C800, characters $E800 (the ROM font)
 .const SCREEN_A   = $c000
 .const SCREEN_B   = $c400

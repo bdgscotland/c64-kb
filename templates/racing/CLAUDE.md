@@ -112,7 +112,7 @@ make run              # windowed VICE, for a human
   VICE monitor), taken from a c64-kb page (say which), arithmetic, or not
   measured. Never call something verified that was not run.
 - Frame cost comes from the meter: CIA2 timer A, printed as
-  `F<frames> W<worst> T<typical>` at row 24, columns 20 to 39, in AUTOPILOT
+  `F<frames> W<worst> T<typical>` at row 24, columns 18 to 37, in AUTOPILOT
   builds. It records the first `hold` frames: make that the autopilot
   script's play frames. Typical is the median of those frames, the KB's
   `cycles_per_frame_typical`. Keep grading, logging and printing outside the

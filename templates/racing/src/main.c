@@ -158,7 +158,7 @@ static void video_init(void)
     vic.spr_enable = 0;
     cia2.pra = cia2.pra & 0xfc;         // VIC bank 3: $C000-$FFFF
     vic.ctrl1 = 0x1b;                   // display on, 25 rows, YSCROLL 3
-    vic.ctrl2 = 0x18;
+    vic.ctrl2 = 0x10;                   // 38 columns (engine.asm D016_ROAD)
     vic.memptr = 0x0c;                  // screen A, road set 3 (the sky rows)
     vic.color_border = VCOL_BLACK;
     vic.color_back = 14;
@@ -214,7 +214,7 @@ int main(void)
     vic.intr_ctrl = 0xff;
     vic.intr_enable = 1;
 
-    meter_init((unsigned)HUDPAGE, 24, 20, VCOL_WHITE, PLAY_HOLD);
+    meter_init((unsigned)HUDPAGE, 24, 18, VCOL_WHITE, PLAY_HOLD);   // columns 18-37: 38-column mode cuts 0 and 38
 #if FRAME_METER
     cia2.icr = 0x02;                    // timer B's NMI masked
     cia2.crb = 0x00;

@@ -1,15 +1,15 @@
 {
   "checks": [
     { "name": "own verdict (border)", "type": "verdict" },
-    { "name": "verdict line", "type": "text", "row": 24, "col": 0, "text": "RESULT 01 PASS" },
+    { "name": "verdict line", "type": "text", "row": 24, "col": 1, "text": "RESULT 01 PASS" },
     { "name": "the race finished, first", "type": "text", "row": 22, "col": 13, "text": "FINISHED 1ST" },
     { "name": "panel: the last lap, the position", "type": "text", "row": 20, "col": 1, "text": "LAP 2/2" },
     { "name": "panel: position", "type": "text", "row": 20, "col": 28, "text": "POS 1/4" },
     { "name": "lap times, 50 frames a second (pinned from the run; the program checks them against its own count)", "type": "text", "row": 21, "col": 14, "text": "L1 0:37.5   L2 0:32.7", "models": ["pal"] },
     { "name": "lap times, 60 frames a second: the same frame counts", "type": "text", "row": 21, "col": 14, "text": "L1 0:31.2   L2 0:27.3", "models": ["ntsc"] },
-    { "name": "hill: the still's horizon is line 124 (hoff 16, the crest over the kink): sky on it", "type": "rect", "colour": 14, "vic_x": 24, "line": 124, "width": 320, "height": 1 },
+    { "name": "hill: the still's horizon is line 124 (hoff 16, the crest over the kink): sky on it", "type": "rect", "colour": 14, "vic_x": 31, "line": 124, "width": 304, "height": 1 },
     { "name": "hill: line 125 is the first road line: the road's grey at X 31, four pixels of it at the crest", "type": "rect", "colour": 12, "vic_x": 31, "line": 125, "width": 4, "height": 1 },
-    { "name": "hill: grass beside it on line 125", "type": "rect", "colour": 13, "vic_x": 40, "line": 125, "width": 300, "height": 1 },
+    { "name": "hill: grass beside it on line 125", "type": "rect", "colour": 13, "vic_x": 40, "line": 125, "width": 295, "height": 1 },
     { "name": "rumble strip, white band: left edge on line 140 at X 48", "type": "rect", "colour": 1, "vic_x": 48, "line": 140, "width": 4, "height": 1 },
     { "name": "rumble strip, white band: right edge on line 140 at X 108", "type": "rect", "colour": 1, "vic_x": 108, "line": 140, "width": 4, "height": 1 },
     { "name": "rumble strip, red band: left edge on line 150 at X 53", "type": "rect", "colour": 2, "vic_x": 53, "line": 150, "width": 6, "height": 1 },
@@ -25,11 +25,11 @@
     { "name": "curve, per line inside a row: line 175 at X 47", "type": "rect", "colour": 1, "vic_x": 47, "line": 175, "width": 2, "height": 1 },
     { "name": "curve, per line inside a row: line 178 at X 44", "type": "rect", "colour": 1, "vic_x": 44, "line": 178, "width": 2, "height": 1 },
     { "name": "curve: right edge on line 178 at X 246", "type": "rect", "colour": 1, "vic_x": 246, "line": 178, "width": 14, "height": 1 },
-    { "name": "road: left edge on line 200 (the player 20 pixels right of the centre line)", "type": "rect", "colour": 1, "vic_x": 28, "line": 200, "width": 4, "height": 1 },
+    { "name": "road: left edge on line 200 (the player 20 pixels right of the centre line; the 38-column border hides X 24-30)", "type": "rect", "colour": 1, "vic_x": 31, "line": 200, "width": 1, "height": 1 },
     { "name": "road: right edge on line 200", "type": "rect", "colour": 1, "vic_x": 296, "line": 200, "width": 20, "height": 1 },
     { "name": "road surface left of the centre line, line 200", "type": "rect", "colour": 11, "vic_x": 32, "line": 200, "width": 128, "height": 1 },
     { "name": "centre line, line 200 (solid white, colour RAM)", "type": "rect", "colour": 1, "vic_x": 160, "line": 200, "width": 8, "height": 1 },
-    { "name": "the panel's first line, 203: hires, the panel's colour across the window (its $D016 lands before the badline, #86)", "type": "rect", "colour": 11, "vic_x": 24, "line": 203, "width": 320, "height": 1 },
+    { "name": "the panel's first line, 203: hires, the panel's colour across the window (its $D016 lands before the badline, #86)", "type": "rect", "colour": 11, "vic_x": 31, "line": 203, "width": 304, "height": 1 },
     {
       "name": "the player's car, picture 5 (24 x 16), at the screen's centre: its light-red lights on line 189",
       "type": "sprite", "colour": 10, "vic_x": 174, "line": 189, "width": 20, "height": 2
@@ -43,8 +43,8 @@
       "type": "sprite", "colour": 7, "vic_x": 87, "line": 135, "width": 4, "height": 3,
       "search": { "vic_x": 60, "line": 128, "width": 60, "height": 20 }
     },
-    { "name": "the road, lines 107-202, the same on both models (every split lands on the same pixel)", "type": "same", "area": { "vic_x": 24, "line": 107, "width": 320, "height": 96 } },
+    { "name": "the road, lines 107-202, the same on both models (every split lands on the same pixel)", "type": "same", "area": { "vic_x": 31, "line": 107, "width": 304, "height": 96 } },
     { "name": "the sky and hills, rows 0-6, the same on both models", "type": "same", "cells": [0, 0, 6, 39] },
-    { "name": "frame meter: the game's step and the IRQs, 255 race frames from race frame 200", "type": "meter", "row": 24, "col": 20, "frames": 255 }
+    { "name": "frame meter: the game's step and the IRQs, 255 race frames from race frame 200", "type": "meter", "row": 24, "col": 18, "frames": 255 }
   ]
 }
