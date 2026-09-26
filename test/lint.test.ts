@@ -3,6 +3,11 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { lintSource, lintSourceResult, detectLanguage } from "../src/tools/lint.ts";
+import {
+  lintStudyExpression,
+  isStudiedPage,
+  parseStudiedFromLine,
+} from "../src/tools/lint/study-expression.ts";
 
 // Two builds of the same platformer, written on 2026-09-22 by agents
 // working from this knowledge base and from nothing, copied here so the
@@ -492,5 +497,153 @@ describe("d015_merged_across_states", () => {
     const start = page.indexOf("## sprite_registers_persist_across_state_change");
     const section = page.slice(start, page.indexOf("\n## ", start + 10));
     expect(rule(section, "asm").length).toBeGreaterThan(0);
+  });
+});
+
+// ── study_expression lint rule ────────────────────────────────────────────────
+
+// A minimal studied-page frontmatter + header used by all study_expression tests.
+const STUDIED_HEADER = `---\nkind: studied\n---\n\n# Study: Test Game\n\n`;
+
+// A studied-page header with a Studied from line (sha1 + session).
+const TEST_SHA1 = "aabbccddaabbccddaabbccddaabbccddaabbccdd";
+const STUDIED_WITH_REF =
+  STUDIED_HEADER +
+  `**Studied from:** Test Game (2000, A. Author, Publisher); image sha1=${TEST_SHA1}; session studies/sessions/test.json\n\n`;
+
+// Synthetic PRG bytes for image-match tests: 32 bytes, value = index.
+const SYNTH_IMAGE = Buffer.from(Array.from({ length: 32 }, (_, i) => i));
+
+describe("isStudiedPage", () => {
+  it("returns true when frontmatter has kind: studied", () => {
+    expect(isStudiedPage("---\nkind: studied\n---\n\n# Title\n")).toBe(true);
+  });
+
+  it("returns false for a non-studied page", () => {
+    expect(isStudiedPage("---\ntool: kickassembler\n---\n\n# Title\n")).toBe(false);
+    expect(isStudiedPage("# No frontmatter at all\n")).toBe(false);
+  });
+});
+
+describe("parseStudiedFromLine", () => {
+  it("extracts sha1 and session path from a well-formed line", () => {
+    const r = parseStudiedFromLine(STUDIED_WITH_REF);
+    expect(r?.sha1).toBe(TEST_SHA1);
+    expect(r?.session).toBe("studies/sessions/test.json");
+  });
+
+  it("returns null when no Studied from line is present", () => {
+    expect(parseStudiedFromLine(STUDIED_HEADER)).toBeNull();
+  });
+});
+
+describe("lintStudyExpression — basic gates", () => {
+  it("is a no-op on a page that is not kind:studied", () => {
+    const page = "---\ntool: kickassembler\n---\n\n```asm\n        lda #$01\n        sta $d015\n```\n";
+    expect(lintStudyExpression(page)).toEqual([]);
+  });
+
+  it("passes a studied page with no code and no long hex runs", () => {
+    const page =
+      STUDIED_HEADER + "The IRQ fires at $41C5 on raster line 30. $D018=$80 during play. $01=$36.\n";
+    expect(lintStudyExpression(page)).toEqual([]);
+  });
+});
+
+describe("lintStudyExpression — fenced assembly block", () => {
+  it("flags a fenced block with 2+ mnemonic lines as definite", () => {
+    const page =
+      STUDIED_HEADER + "Some prose.\n\n```asm\n        lda #$36\n        sta $01\n        rts\n```\n";
+    const findings = lintStudyExpression(page);
+    expect(findings.length).toBeGreaterThan(0);
+    expect(findings[0]?.rule).toBe("study_expression");
+    expect(findings[0]?.certainty).toBe("definite");
+    expect(findings[0]?.message).toContain("mnemonic");
+  });
+
+  it("is quiet on a fenced block with 0–1 mnemonic lines (not assembly)", () => {
+    // A shell command line that happens to contain one mnemonic-like word
+    const page = STUDIED_HEADER + "```\nx64sc -default -autostart game.prg\n```\n";
+    expect(lintStudyExpression(page)).toEqual([]);
+  });
+
+  it("flags an unlabelled fenced block that contains disassembly", () => {
+    const page =
+      STUDIED_HEADER + "```\n0850  78        sei\n0851  a9 36     lda #$36\n0853  85 01     sta $01\n```\n";
+    const findings = lintStudyExpression(page);
+    expect(findings.some((f) => f.rule === "study_expression" && f.message.includes("mnemonic"))).toBe(true);
+  });
+});
+
+describe("lintStudyExpression — hex run length", () => {
+  it("flags a run of exactly 16 $XX bytes as definite (always refused)", () => {
+    const run = Array.from({ length: 16 }, (_, i) => `$${i.toString(16).padStart(2, "0")}`).join(" ");
+    const page = STUDIED_HEADER + `Raw bytes: ${run}\n`;
+    const findings = lintStudyExpression(page);
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.rule).toBe("study_expression");
+    expect(findings[0]?.message).toContain("16");
+  });
+
+  it("is quiet on a run of 15 $XX bytes (below the always-refuse threshold)", () => {
+    const run = Array.from({ length: 15 }, (_, i) => `$${i.toString(16).padStart(2, "0")}`).join(" ");
+    const page = STUDIED_HEADER + `Raw bytes: ${run}\n`;
+    expect(lintStudyExpression(page)).toEqual([]);
+  });
+
+  it("does not mistake a 4-digit address like $C000 for a hex byte run", () => {
+    const page =
+      STUDIED_HEADER +
+      "Addresses: $C000 $C800 $D000 $D800 $E000 $F000 $A000 $B000 $8000 $9000 $6000 $7000 $4000 $5000 $2000 $3000\n";
+    // All 4-digit, should not trigger the 16-byte run check
+    expect(lintStudyExpression(page)).toEqual([]);
+  });
+
+  it("does not flag register values that are not in a consecutive run", () => {
+    // $94, $36, $80, $86 each appear once, separated by prose
+    const page = STUDIED_HEADER + "$DD00=$94 in play. $01=$36. $D018=$80 in area 0. $D018=$86 in area 3.\n";
+    expect(lintStudyExpression(page)).toEqual([]);
+  });
+});
+
+describe("lintStudyExpression — image-match (synthetic image)", () => {
+  it("flags a run of 8 bytes found verbatim in the image", () => {
+    // Bytes 0..7 from SYNTH_IMAGE
+    const run = Array.from({ length: 8 }, (_, i) => `$${i.toString(16).padStart(2, "0")}`).join(" ");
+    const page = STUDIED_HEADER + `Sequence: ${run}\n`;
+    const findings = lintStudyExpression(page, SYNTH_IMAGE);
+    expect(findings.length).toBe(1);
+    expect(findings[0]?.rule).toBe("study_expression");
+    expect(findings[0]?.message).toContain("game binary");
+  });
+
+  it("is quiet on a run of 8 bytes that do NOT appear in the image", () => {
+    // Bytes 0xe0..0xe7, not in SYNTH_IMAGE (which only has 0x00-0x1f)
+    const run = Array.from({ length: 8 }, (_, i) => `$${(0xe0 + i).toString(16)}`).join(" ");
+    const page = STUDIED_HEADER + `Sequence: ${run}\n`;
+    expect(lintStudyExpression(page, SYNTH_IMAGE)).toEqual([]);
+  });
+
+  it("is quiet on a run of 7 bytes found in the image (below 8-byte threshold)", () => {
+    // Only 7 bytes, below the image-match threshold
+    const run = Array.from({ length: 7 }, (_, i) => `$${i.toString(16).padStart(2, "0")}`).join(" ");
+    const page = STUDIED_HEADER + `Sequence: ${run}\n`;
+    expect(lintStudyExpression(page, SYNTH_IMAGE)).toEqual([]);
+  });
+
+  it("skips the image-match check when no image is supplied", () => {
+    // 8 bytes that would be in any image — but no image is supplied
+    const run = Array.from({ length: 8 }, (_, i) => `$${i.toString(16).padStart(2, "0")}`).join(" ");
+    const page = STUDIED_HEADER + `Sequence: ${run}\n`;
+    expect(lintStudyExpression(page)).toEqual([]);
+    expect(lintStudyExpression(page, null)).toEqual([]);
+  });
+});
+
+describe("lintStudyExpression — commando.md passes", () => {
+  it("finds no violations in the committed commando.md", () => {
+    const commando = fs.readFileSync(path.join(here, "../docs/game-design/studies/commando.md"), "utf-8");
+    // No image supplied: only checks fences and 16+ byte runs.
+    expect(lintStudyExpression(commando)).toEqual([]);
   });
 });

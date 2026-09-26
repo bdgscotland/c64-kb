@@ -49,6 +49,12 @@ import {
   type Fence,
 } from "./lib/markdown.ts";
 import { findToolchains } from "./lib/toolchains.ts";
+import {
+  isStudiedPage,
+  lintStudyExpression,
+  parseStudiedFromLine,
+} from "../src/tools/lint/study-expression.ts";
+import { resolveImage } from "../src/re/image.ts";
 
 const ROOT = new URL("..", import.meta.url).pathname;
 const DOCS = join(ROOT, "docs");
@@ -372,6 +378,78 @@ if (recipesSeen === 0 && !onlyRel) {
   console.log("FAIL no recipe pages found under docs/recipes (frontmatter filter broken?)");
   failures++;
 }
+
+// ---------------------------------------------------------------------------
+// study_expression lint — docs/game-design/studies/
+//
+// Checks every kind:studied page for fenced assembly blocks and long hex
+// runs. When data/games/manifest.json is present (local only; never in CI),
+// also checks 8+ byte runs against the game's binary. Skips cleanly when
+// the manifest or image is unavailable.
+// ---------------------------------------------------------------------------
+
+/** D64 file name from the session JSON, or undefined when absent or unreadable. */
+function sessionImageFile(sessionPath: string): string | undefined {
+  if (!existsSync(sessionPath)) return undefined;
+  try {
+    const s = JSON.parse(readFileSync(sessionPath, "utf8")) as { image?: { file?: string } };
+    return s.image?.file;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Resolve the game binary for a studied page, or return null when unavailable. */
+async function studyImageBytes(
+  ref: { sha1: string; session: string },
+  label: string,
+): Promise<Buffer | null> {
+  // Session paths in Studied from lines are relative to docs/game-design/.
+  const file = sessionImageFile(join(ROOT, "docs", "game-design", ref.session));
+  const imageRef = file !== undefined ? { sha1: ref.sha1, file } : { sha1: ref.sha1 };
+  const resolved = await resolveImage(imageRef, join(ROOT, "data/games/manifest.json"));
+  if (resolved.ok) {
+    const bytes = readFileSync(resolved.prg);
+    resolved.dispose();
+    console.log(`     [study] image resolved for ${label}`);
+    return bytes;
+  }
+  if (resolved.reason !== "no-manifest" && resolved.reason !== "unknown-sha1") {
+    console.log(`     [study] image unavailable for ${label}: ${resolved.error}`);
+  }
+  return null;
+}
+
+/** Run study_expression on one markdown file; returns 1 on failure, 0 on pass. */
+async function checkOnePage(md: string): Promise<number> {
+  const text = readFileSync(md, "utf8");
+  if (!isStudiedPage(text)) return 0;
+  const label = relative(ROOT, md);
+  const ref = parseStudiedFromLine(text);
+  const imageBytes = ref ? await studyImageBytes(ref, label) : null;
+  const findings = lintStudyExpression(text, imageBytes);
+  if (findings.length === 0) {
+    built++;
+    console.log(`ok   ${label} (study_expression${imageBytes ? ", image-match" : ""})`);
+    return 0;
+  }
+  failures++;
+  for (const f of findings) {
+    console.log(`FAIL ${label} line ${String(f.line)}: [${f.rule}] ${f.message}`);
+  }
+  return 1;
+}
+
+async function checkStudyPages(): Promise<void> {
+  const STUDIES = join(ROOT, "docs", "game-design", "studies");
+  if (!existsSync(STUDIES)) return;
+  for (const md of walk(STUDIES).filter(inScope)) {
+    if (!md.endsWith(".md")) continue;
+    await checkOnePage(md);
+  }
+}
+
+await checkStudyPages();
 
 // ---------------------------------------------------------------------------
 console.log(
