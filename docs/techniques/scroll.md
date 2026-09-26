@@ -531,6 +531,146 @@ to `char_scroll_buffer_v`, not to the split.
 
 ---
 
+## threshold_scroll_v — Player-driven one-way vertical scroll past a threshold line
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** D011
+**Uses kernal:** (none)
+**Requires:** soft_scroll_v
+**Cost:** cycles_per_frame=340
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-threshold-scroll-v (worst tick of 132 frames: step applied, three objects moved, `$D011` and four sprite Y registers written, next step decided; in the lower border, no badline inside; the coarse redraw is not included)
+**Claims:** none
+**Claims basis:** derived-listing
+
+The technique's own work is a decision and RAM: the step byte, the
+player's Y and the objects' Y table. The YSCROLL store belongs to
+`soft_scroll_v`, which owns `vic_yscroll`; the sprite registers belong to
+whatever displays the objects (the recipe's own `claims:`, or a
+multiplexer's).
+
+### Why
+
+A game on foot that moves up a long map needs the view to advance when
+the player advances, and only then. Scrolling at a constant rate (an
+autoscroller) takes the pace away from the player. Following the player
+in both directions needs a two-way coarse step and lets the player walk
+back to ground already cleared. A threshold line gives the player the
+lower part of the screen to move in and turns any push past the line
+into scroll.
+
+### How
+
+Each frame, in this order:
+
+1. **Apply last frame's step.** If the step is 1, add 1 to the fine
+   scroll (0-7). When it wraps to 0, decrement the map row counter and
+   make the coarse step: the screen now shows the map from one row
+   higher. Add the step to the Y of every ground object, never the
+   player's.
+2. **Write the display** below the last visible line: YSCROLL into
+   `$D011` and every sprite Y, in the same frame, so the field and the
+   objects move on the same displayed frame.
+3. **Decide the next step from input.** Step = 0. If up is held and the
+   player's Y is below the line (a larger Y), move the player up. If up
+   is held at the line and the map row is not 0, step = 1 and the player
+   stays. At map row 0, the player may walk on up to a top limit.
+4. **Switch off an object that leaves.** An object whose Y passes the
+   bottom of the display is freed; a sprite Y is 8 bits and wraps.
+
+There is no reverse step: down never scrolls back, so the coarse step
+only ever brings in a new top row.
+
+### Why it works
+
+The map row counter and the fine scroll together are the camera: screen
+row k shows map row `row + k`, displaced by YSCROLL pixels. Adding the
+same step to an object's Y that the field moves keeps the object on the
+same map cell. In the recipe's run on VICE x64sc 3.10, PAL and NTSC, a
+10x10 outline sprite drawn one pixel above and left of a marker cell was
+still one line above the marker in 19 PAL and 13 NTSC screenshots taken
+across the walk, the 48 scroll frames and the walk after them, and on
+the final frame (outline lines 143-152, marker lines 144-151). The
+player's sprite stayed on lines 145-160 (Y 144) through every scroll
+sample, and moved again only after the map ended.
+
+The step decided on frame N is applied on frame N+1. In the recipe the
+player reaches the line on frame 64, the step is set that frame, and the
+field first moves on frame 65. The scroll ran for 48 frames, 8 per map
+row over 6 rows, and the row counter reached 0 on frame 112, printed by
+the program itself on both models.
+
+### Cycle budget
+
+The decision is a few compares; the object loop is one add per object.
+The recipe times one whole tick with CIA 2 timer A, less an empty call:
+at most 340 cycles on PAL and 334 on NTSC over 132 frames, including the
+`$D011` store and four sprite Y stores. The 6-cycle difference between
+the models was not traced.
+
+The coarse step is not this technique's cost, but it sets the frame. The
+recipe redraws all 25 rows from a raw 40-byte-per-row map (a copy loop
+unrolled two ways) after the tick. It starts on line 251 and ends on
+line 180 of the next frame on PAL and line 226 on NTSC (measured by the
+program, `$D012` after the copy). Screen row 24 is first shown on line 240
+at YSCROLL 0 (48 + 8 × 24, arithmetic), so the copy finishes 60 lines
+ahead of the beam on PAL and 14 on NTSC. An earlier draft of the recipe,
+with a one-byte loop, ended on NTSC line 246, which put rows 22-24 behind
+the beam on that frame (arithmetic from the end line; that build was not
+shot on the redraw frame).
+
+### When not to use it
+
+- The player must be able to go back: use a two-way scroll, with a
+  coarse step in both directions.
+- The pace is the design, as in a shoot-em-up: scroll at a fixed rate
+  with `soft_scroll_v` and `char_scroll_buffer_v`.
+- The map scrolls in X as well: `eight_way_scroll_double_buffer`.
+
+### Pitfalls
+
+- **Objects written in another frame than YSCROLL slip by a pixel.**
+  Write YSCROLL and every sprite Y in the same window below the display
+  (the recipe does; the slip itself was not run here).
+- **An object that scrolls off the bottom comes back at the top.** A
+  sprite Y is 8 bits: the recipe's third object would reach Y 214 + 48 =
+  262, which wraps to 6 (arithmetic). The recipe frees it at Y 248, below
+  its 24-row display (lines 55-246, measured).
+- **The coarse step races the beam.** The recipe's full redraw runs
+  from just after line 251 to line 180 of the next frame on PAL, about
+  15,000 cycles; start it just below the display and check where it
+  ends (above).
+  Double buffering the screen with a `$D018` switch removes the race.
+- **Spawns and collision must use the map row counter.** An object
+  placed from the map at row r appears at `(r − row) × 8` plus the fine
+  scroll plus the top offset; the map cell under a sprite is found from
+  the same counter.
+- **Limit the threshold.** The space above the line is the only warning
+  the player gets of what comes down.
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (PAL C64C). While up
+is held the player walks until his sprite Y is $A3; he moves while it is
+$A4 or more. From then on the map scrolls under him at 1 pixel a frame,
+with no speed variation. A step byte, $FF or 0, is recomputed every frame
+by the player routine from the stick. The object update subtracts it
+from the Y of the 15 other slots, not the player's, so enemies and
+pickups move 1 pixel a frame with the ground; scenery is characters in
+the map. A map row counter counts down to 0, the top of the area; the
+scroll then stops and the player may walk on up to Y $6E. Down never
+scrolls back. The coarse step, every eighth frame, is a full redraw of
+the 21-row playfield from the map, 15,714 cycles including interrupts,
+and the game skips its other logic on that frame. Enemy spawns are keyed
+to the map row counter.
+
+### Recipes
+
+- `recipes/kickassembler/threshold-scroll-v.md`: a scripted walk up to a threshold, 48 frames of scroll with three ground objects locked to their cells, one freed below the display, the stop at the map's end, and the measured tick and redraw end line printed on screen, PAL and NTSC.
+
+---
+
 ## infinite_scroll_h — Combine soft + buffer for continuous horizontal scroll
 
 **Complexity:** medium

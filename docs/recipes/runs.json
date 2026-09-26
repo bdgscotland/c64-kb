@@ -2666,5 +2666,17 @@
       "pal": "screenshots/speedcode-road.png",
       "ntsc": "screenshots/speedcode-road-ntsc.png"
     }
+  },
+  "kickassembler/threshold-scroll-v": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/threshold-scroll-v.png",
+      "ntsc": "screenshots/threshold-scroll-v-ntsc.png"
+    }
   }
 }
