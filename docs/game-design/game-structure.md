@@ -216,7 +216,7 @@ Related: `game-design-patterns.md`, `../techniques/logic.md`,
 
 **Kind:** composition
 **Applies to:** vertical_shmup, horizontal_shmup, single_screen_platformer, scrolling_platformer, top_down_adventure, action_puzzle, beat_em_up
-**Realised by:** screen_wipe, colour_fade, colour_cycling, tile_map_render, charset_copy_rom_to_ram, kickassembler/screen-wipe, kickassembler/colour-fade, oscar64/tile-map-render, oscar64/level-rle-decoder, flip_screen_rooms, oscar64/flip-screen-rooms
+**Realised by:** screen_wipe, colour_fade, colour_cycling, tile_map_render, charset_copy_rom_to_ram, kickassembler/screen-wipe, kickassembler/colour-fade, oscar64/tile-map-render, oscar64/level-rle-decoder, flip_screen_rooms, oscar64/flip-screen-rooms, checkpoint_respawn, kickassembler/checkpoint-respawn
 **Sources:** John and Steve Rowlands, Mayhem in Monsterland diary in Commodore Format, 1992 to 1993; Andrew Braybrook, Morpheus diary in Zzap!64, 1987
 
 **Checks:**
@@ -274,6 +274,13 @@ PAL frames, so it blanks the display for two frames on PAL and three on
 NTSC and redraws behind the blank (this sentence said "inside one vertical
 blank" until that measurement). Morpheus puts a docking sequence where Get
 Ready goes.
+
+A death in a scrolling level runs a shorter form of the same reset: the
+level stays loaded, the scroll goes back to the nearest checkpoint row
+behind the player, the object pool is freed, the visible window is
+re-spawned from the event list and the consumables are topped up
+(`checkpoint_respawn` in `../techniques/logic.md`). Lives are the one
+counter it lowers.
 
 Related: `../techniques/transitions.md`, `../techniques/scroll.md`,
 `../techniques/memory-banking.md`.

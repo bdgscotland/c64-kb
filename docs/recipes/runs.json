@@ -2827,5 +2827,17 @@
       "pal": "screenshots/facing-turn-step.png",
       "ntsc": "screenshots/facing-turn-step-ntsc.png"
     }
+  },
+  "kickassembler/checkpoint-respawn": {
+    "cycles": 4000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/checkpoint-respawn.png",
+      "ntsc": "screenshots/checkpoint-respawn-ntsc.png"
+    }
   }
 }

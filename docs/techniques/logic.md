@@ -1039,6 +1039,129 @@ upper reference; a shift loop in assembly costs less (not measured here).
 
 ---
 
+## checkpoint_respawn — Checkpoint rows per area: after a death restart at the nearest checkpoint behind, clear the enemies, refill the consumables
+
+**Complexity:** low
+**Region:** both
+**Uses registers:** (none)
+**Uses kernal:** (none)
+**Requires:** object_pool
+**Cost:** cycles_per_frame=743
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-checkpoint-respawn (worst of three respawns, one call after a death: restart row from 5 checkpoints, 8-slot pool freed, a 26-event list scanned from its start, 4 events pre-spawned, grenades topped up; CIA2 timers, screen blanked; the map redraw at the restart row is not included)
+**Claims:** none
+**Claims basis:** derived-listing
+
+**Why.** A scrolling level that restarts from its first row after every
+death makes the player replay minutes to reach the hard part again. One
+that restarts where the player died puts them back among the bullets that
+killed them. A checkpoint table is the middle course: a few rows per area
+that the player falls back to, with the screen emptied and the
+consumables made good. It costs a handful of bytes per area and one call
+per death.
+
+**How.** The recipe's level counts its map row down from 160 as the
+player advances, so a row behind the player is a larger number.
+
+1. **The checkpoint table.** Per area, a short ascending list of rows; its
+   last entry is the area's start row. The recipe's is 20, 56, 92, 128,
+   160.
+2. **Pick the restart row.** The first entry greater than or equal to the
+   current row. That is the nearest checkpoint behind the player, or the
+   row the player is on when it is a checkpoint. The recipe's deaths at
+   rows 110, 40 and 20 restarted at 128, 56 and 20. With a row that counts
+   up, take the last entry less than or equal to the row instead.
+3. **Clear the object pool.** Free every slot: enemies, their shots,
+   explosions, pickups (`object_pool`).
+4. **Re-spawn the visible window.** The spawn list is sorted by row and
+   fires an event when its row becomes the current row (`wave_director`,
+   `actor_activation_window`). At the restart row, the events already on
+   screen fired long ago. Scan the list from its start: skip events below
+   the window (row > restart + window), spawn every event with a row in
+   [restart, restart + window], and leave the cursor on the first event
+   with a row below the restart row. The recipe's window is 22 rows. After
+   the death at 110 it spawned the events at rows 147, 141, 136 and 130,
+   and the next event to fire was 124.
+5. **Top up the consumables.** Raise the grenade count to its start value
+   if it is lower; never lower it. The recipe's counts went 2 to 5, 4 to
+   5, and 7 stayed 7.
+6. **Reset the per-restart counters** the level uses: the death state, the
+   player's position, and any quota the area keeps (a gate wave count).
+   Score and lives are not reset; the death took the life.
+
+**Why it works.** The spawn list is already the level's only record of
+what lives where, so the restart needs no saved copy of the pool: the
+pre-spawn scan rebuilds the screen from the list, as it looked when the
+restart row first came into view. Everything between the restart row and
+the death row is replayed, because the cursor sits before it again.
+Everything behind the restart row stays gone, because the scan skips it.
+
+**Cycle budget.** Measured in VICE x64sc 3.10 with CIA2 timers A and B on
+the recipe, screen blanked, identical on PAL and NTSC: 549, 743 and 740
+cycles for the three respawns. The cost grows with the events skipped:
+the scan starts at event 0 every time, and the death at 40 skipped 14 of
+the 26. A long list can keep a second column in the checkpoint table, the
+index of the first event inside each checkpoint's window, and start the
+scan there (not measured here). Redrawing the visible map at the restart
+row costs far more than the scan; a game runs it behind the death
+sequence or a blank screen.
+
+**When not to use it.**
+
+- **A flip-screen game.** The room is the checkpoint: restart the room
+  with its actors (`flip_screen_rooms`).
+- **A score-attack shooter that continues where the player died.** It
+  keeps the scroll going and gives a few seconds of invulnerability
+  instead of sending the player back.
+- **Levels the player can walk back into.** What the player changed must
+  outlive the restart too: keep it in `world_state_bits`, and have the
+  pre-spawn skip events whose bit is set.
+
+**Pitfalls.**
+
+- **The wrong direction.** With a row that counts down, "behind" is the
+  larger number; taking the last entry less than or equal to the row
+  sends the player ahead, past the stretch that killed them.
+- **The cursor left where the player died.** The events between the
+  restart row and the death row never fire again, so the replayed stretch
+  is empty. Setting the cursor to the restart row without the pre-spawn
+  scan leaves the first screen empty instead.
+- **A pool that is not cleared.** A bullet in flight at the death is still
+  there on the first frame of the restart. With no invulnerability it
+  kills the player again at once.
+- **Resetting a consumable instead of topping it up.** Setting grenades to
+  5 takes away the extras the player picked up; the recipe's third death
+  keeps 7.
+- **A table with no entry at or behind the death row.** The scan runs off
+  the end. Make the area's start row the last entry, as the recipe does;
+  it also falls back to the last entry if the scan fails.
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (rung 1; the
+teardown of the game's flow and scroll). A hit by an enemy object sets
+the death state to 1, and deadly terrain sets it to 2. The death runs 80
+frames (1,549,165 cycles from the hit to the respawn, 78.8 frames), and
+the world keeps moving meanwhile. The map row counts down toward the area
+end. Each area has a 5-entry ascending checkpoint list; area 0's is rows
+19, 61, 97, 131 and 175, where 175 is the area's first row. The restart
+row is the first entry greater than or equal to the current row: a death
+at row 140 restarted at 175, one at 65 at 97, one at row 0 at 19. All 16
+object records are cleared, and the events with rows in [row, row + 22]
+are pre-spawned at their screen positions. Grenades are set to 5 if
+fewer. The gate soldier count goes back to 20, and the enemy fire rate is
+set from the area's table. The respawn pass takes about 60,000 cycles
+over 3 frames, the game's only multi-frame pass. There is no
+invulnerability after a respawn: read from the code (the collision check
+runs from the first frame), not measured; clearing the pool does the same
+job.
+
+### Recipes
+
+- `recipes/kickassembler/checkpoint-respawn.md` — three deaths on a 160-row level, restart rows, the pool before and after, the next event, grenades topped up, and the respawn's cycles, checked against a Python model; PAL and NTSC
+
+---
+
 ## password_encoding — A game state as a short password: bit packing, checksum, scramble and a safe alphabet
 
 **Complexity:** low
