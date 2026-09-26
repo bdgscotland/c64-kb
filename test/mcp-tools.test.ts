@@ -434,20 +434,23 @@ describe("RE tool replies carry the whole result", () => {
     });
   });
 
-  it("c64_re_coverage: code, data and written_only ranges are in structured content", () => {
+  it("c64_re_coverage: code, data, written_only, unknown, and span are in structured content", () => {
     const result = {
-      code: [
-        { start: 0x080e, end: 0x0848, kinds: ["x" as const] },
-        { start: 0x0840, end: 0x0843, kinds: ["r" as const, "x" as const] },
-      ],
+      code: [{ start: 0x080e, end: 0x0848, kinds: ["x" as const] }],
       data: [{ start: 0x0314, end: 0x0315, kinds: ["r" as const, "w" as const] }],
       written_only: [{ start: 0xd019, end: 0xd019, kinds: ["w" as const] }],
+      unknown: [{ start: 0x0000, end: 0x080d, kinds: [] as ("x" | "r" | "w")[] }],
+      show_clock: 3_000_362,
+      span_cycles: 29_841,
+      span_frames: 1.52,
       unknowns: [],
     };
     const r = coverageReply({ ok: true, run, result });
+    expect(r.text).toMatch(/show at clock 3000362/);
     expect(r.text).toMatch(/code:\n {2}\$080E-\$0848/);
     expect(r.text).toMatch(/data:\n {2}\$0314-\$0315/);
     expect(r.text).toMatch(/written_only:\n {2}\$D019-\$D019/);
+    expect(r.text).toMatch(/unknown:\n {2}\$0000-\$080D/);
     const parsed = z.object(CoverageOutput).safeParse(r.structured);
     expect(parsed.success, JSON.stringify(parsed.error?.issues)).toBe(true);
     expect(r.structured).toEqual({ run, ...result });

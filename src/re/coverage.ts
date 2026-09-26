@@ -1,21 +1,23 @@
 /**
  * Coverage map: what the CPU executed, read, or wrote during a game pass.
  * Uses VICE's memmapzap (at the in-play or SYS-entry PC) and memmapshow
- * (after N writes to $D019, the raster-IRQ acknowledge register, from the
- * same starting point).
- *
- * For a session, the D019 writes that happen before play (during the title
- * and KERNAL boot) are counted in a first pass so the second pass's ignore
- * count places the show N writes into game play. For a PRG, the ignore
- * count is applied from the start of the run (a small fixed-count of writes
- * happens during KERNAL boot and setup before the first IRQ write).
+ * (after N writes to a per-frame address from the in-play clock, using a
+ * clock-computed ignore count from a first pass).
  *
  * The memmapshow section in the monitor log has one row per address touched
  * since the last memmapzap. Each row lists access flags for the I/O, ROM,
- * and RAM banks. Only the RAM column is classified here (code = executed,
- * data = read but not executed, written_only = written but not read or
- * executed). Addresses with no access do not appear; they are untouched
- * (unknown, not "data").
+ * and RAM banks. Only the RAM column is classified here. Executed opcode
+ * bytes are extended to cover the full instruction length using a RAM dump
+ * saved at the show moment.
+ *
+ * Measured on VICE x64sc 3.10 (PAL, -default, windowless):
+ *   addr: IO  ROM RAM
+ *   0876: --- --- --x (uninitialized exec)
+ * VICE marks `x` on the opcode byte only; operand bytes show as `r--` or
+ * not at all. The `(uninitialized exec/read)` suffix means the CPU accessed
+ * the byte before any CPU write (PRG bytes injected by -autostartprgmode 1
+ * carry it). The `(dummy)` suffix marks the 6502's dummy reads during IRQ
+ * stack pushes. Both suffixes are ignored.
  */
 import { readFileSync } from "node:fs";
 
@@ -27,16 +29,24 @@ interface CoverageRange {
 }
 
 export interface Coverage {
-  /** Ranges with at least one exec access. */
+  /** Ranges where the CPU executed instructions (opcode + operands extended). */
   code: CoverageRange[];
-  /** Ranges read but never executed. */
+  /** Ranges read but never executed (read-only data). */
   data: CoverageRange[];
   /** Ranges written but neither read nor executed. */
   written_only: CoverageRange[];
+  /** Ranges in $0000-$FFFF not accessed at all (untouched RAM). */
+  unknown: CoverageRange[];
+  /** CPU clock of the memmapshow checkpoint; 0 if the show did not fire. */
+  show_clock: number;
+  /** Cycles from the in-play clock to show_clock. */
+  span_cycles: number;
+  /** Frames from the in-play clock to show_clock (PAL or NTSC). */
+  span_frames: number;
   unknowns: string[];
 }
 
-interface MemmapRow {
+export interface MemmapRow {
   addr: number;
   io: string;
   rom: string;
@@ -50,12 +60,7 @@ const ROW_RE = /^([0-9a-f]{4}):\s+([-xrw]{3})\s+([-xrw]{3})\s+([-xrw]{3})/i;
  * Parses the memmapshow section from a VICE monitor log. Returns one row
  * per address touched; addresses with no access flags don't appear in the
  * section and are not returned. The section begins with the header line
- * `addr: IO  ROM RAM` and ends at the first non-matching line.
- * Measured on VICE x64sc 3.10 (PAL, windowless, -default): each row is
- * `addr: IO ROM RAM` where flags are `r`, `w`, `x` or `-`; an optional
- * `(uninitialized read)` or `(uninitialized exec)` suffix means the CPU
- * accessed the byte before any CPU write (PRG bytes injected by
- * -autostartprgmode 1 carry it).
+ * `addr: IO  ROM RAM` and ends at the first non-matching line or EOF.
  */
 export function parseMemmapLog(text: string): MemmapRow[] {
   const rows: MemmapRow[] = [];
@@ -83,6 +88,61 @@ export function parseMemmapFile(logPath: string): MemmapRow[] {
   return parseMemmapLog(readFileSync(logPath, "utf8"));
 }
 
+// ---------------------------------------------------------------------------
+// Instruction-length table: 6510 (= 6502 + I/O port at $00/$01).
+// Default 1 for illegal opcodes. Source: 6502 datasheet.
+// ---------------------------------------------------------------------------
+
+const INSTR_LEN: Uint8Array = (() => {
+  const t = new Uint8Array(256).fill(1);
+  const two = [
+    0x01, 0x05, 0x06, 0x09, 0x10, 0x11, 0x15, 0x16, 0x21, 0x24, 0x25, 0x26, 0x29, 0x30, 0x31, 0x35, 0x36,
+    0x41, 0x45, 0x46, 0x49, 0x50, 0x51, 0x55, 0x56, 0x61, 0x65, 0x66, 0x69, 0x70, 0x71, 0x75, 0x76, 0x81,
+    0x84, 0x85, 0x86, 0x90, 0x91, 0x94, 0x95, 0x96, 0xa0, 0xa1, 0xa2, 0xa4, 0xa5, 0xa6, 0xa9, 0xb0, 0xb1,
+    0xb4, 0xb5, 0xb6, 0xc0, 0xc1, 0xc4, 0xc5, 0xc6, 0xc9, 0xd0, 0xd1, 0xd5, 0xd6, 0xe0, 0xe1, 0xe4, 0xe5,
+    0xe6, 0xe9, 0xf0, 0xf1, 0xf5, 0xf6,
+  ];
+  const three = [
+    0x0d, 0x0e, 0x19, 0x1d, 0x1e, 0x20, 0x2c, 0x2d, 0x2e, 0x39, 0x3d, 0x3e, 0x4c, 0x4d, 0x4e, 0x59, 0x5d,
+    0x5e, 0x6c, 0x6d, 0x6e, 0x79, 0x7d, 0x7e, 0x8c, 0x8d, 0x8e, 0x99, 0x9d, 0xac, 0xad, 0xae, 0xb9, 0xbc,
+    0xbd, 0xbe, 0xcc, 0xcd, 0xce, 0xd9, 0xdd, 0xde, 0xec, 0xed, 0xee, 0xf9, 0xfd, 0xfe,
+  ];
+  for (const op of two) t[op] = 2;
+  for (const op of three) t[op] = 3;
+  return t;
+})();
+
+/** Length of the 6510 instruction with the given opcode (1, 2, or 3 bytes). */
+export function instrLenOf(opcode: number): number {
+  return INSTR_LEN[opcode] ?? 1;
+}
+
+/**
+ * Extends each executed address to cover the full instruction length using
+ * opcode bytes from a RAM dump. The dump is a VICE `save` PRG file:
+ * 2-byte load-address header ($0000 LE) followed by 49152 bytes for
+ * `save "f" 0 0000 bfff`. Returns the union of opcode addresses and all
+ * operand bytes within the dump's $0000-$BFFF range.
+ *
+ * For addresses above $BFFF (charset, screen, sprites under KERNAL ROM):
+ * the dump does not cover them; those executed addresses contribute only
+ * themselves (no extension). Illegal opcodes default to length 1.
+ */
+export function extendByInstrLen(execAddrs: number[], dump: Uint8Array): Set<number> {
+  const DUMP_MAX = 0xbfff;
+  const code = new Set<number>();
+  for (const addr of execAddrs) {
+    code.add(addr);
+    if (addr <= DUMP_MAX) {
+      const offset = addr + 2; // skip 2-byte PRG header
+      const opcode = dump[offset] ?? 0;
+      const len = instrLenOf(opcode);
+      for (let i = 1; i < len; i++) code.add(addr + i);
+    }
+  }
+  return code;
+}
+
 /** The access kinds in a 3-char flag string ("---", "r-x", "rw-", etc.). */
 function kindsOf(flags: string): ("x" | "r" | "w")[] {
   const k: ("x" | "r" | "w")[] = [];
@@ -92,85 +152,69 @@ function kindsOf(flags: string): ("x" | "r" | "w")[] {
   return k;
 }
 
-/** Groups consecutive addresses that have identical kinds into ranges. */
-function groupRanges(rows: MemmapRow[]): CoverageRange[] {
-  const out: CoverageRange[] = [];
-  let cur: CoverageRange | undefined;
-  for (const row of rows) {
-    const kinds = kindsOf(row.ram);
-    if (kinds.length === 0) continue;
+/** Groups a sorted, deduped list of addresses into consecutive ranges with kinds from addrKinds. */
+function groupByAddr(
+  addrs: Iterable<number>,
+  addrKinds: (addr: number) => ("x" | "r" | "w")[],
+): { start: number; end: number; kinds: ("x" | "r" | "w")[] }[] {
+  const sorted = [...new Set<number>(addrs)].sort((a, b) => a - b);
+  const out: { start: number; end: number; kinds: ("x" | "r" | "w")[] }[] = [];
+  for (const addr of sorted) {
+    const kinds = addrKinds(addr);
     const key = kinds.join("");
-    if (cur?.end === row.addr - 1 && cur.kinds.join("") === key) {
-      cur.end = row.addr;
+    const last = out[out.length - 1];
+    if (last?.end === addr - 1 && last.kinds.join("") === key) {
+      last.end = addr;
     } else {
-      cur = { start: row.addr, end: row.addr, kinds };
-      out.push(cur);
+      out.push({ start: addr, end: addr, kinds });
     }
   }
   return out;
 }
 
 /**
- * Classifies coverage ranges from parsed memmapshow rows. Only the RAM
- * bank column is classified (I/O and ROM accesses are not returned here).
- * Addresses never accessed (not in the rows) are untouched; we call them
- * unknown, never "data".
+ * Classifies coverage ranges from parsed memmapshow rows and a set of
+ * code addresses (opcode + operand bytes from extendByInstrLen).
+ *
+ * - code: any address in codeSet (executed opcode or extended operand)
+ * - data: RAM read, not in codeSet
+ * - written_only: RAM written, not read, not in codeSet
+ * - unknown: $0000-$FFFF not in any of the above
+ *
+ * "unknown" means untouched RAM; it is never called "data".
  */
-export function classifyCoverage(rows: MemmapRow[]): Omit<Coverage, "unknowns"> {
-  const ranges = groupRanges(rows);
-  return {
-    code: ranges.filter((r) => r.kinds.includes("x")),
-    data: ranges.filter((r) => r.kinds.includes("r") && !r.kinds.includes("x")),
-    written_only: ranges.filter(
-      (r) => r.kinds.includes("w") && !r.kinds.includes("r") && !r.kinds.includes("x"),
-    ),
+export function classifyCoverage(
+  rows: MemmapRow[],
+  codeSet: Set<number>,
+): Omit<Coverage, "show_clock" | "span_cycles" | "span_frames" | "unknowns"> {
+  const rowByAddr = new Map<number, MemmapRow>();
+  for (const row of rows) rowByAddr.set(row.addr, row);
+
+  const dataAddrs: number[] = [];
+  const writtenAddrs: number[] = [];
+
+  for (const row of rows) {
+    if (codeSet.has(row.addr)) continue;
+    const k = kindsOf(row.ram);
+    if (k.includes("r")) dataAddrs.push(row.addr);
+    else if (k.includes("w")) writtenAddrs.push(row.addr);
+  }
+
+  const codeKinds = (addr: number): ("x" | "r" | "w")[] => {
+    const row = rowByAddr.get(addr);
+    return row ? kindsOf(row.ram) : ["x"];
   };
-}
 
-/**
- * The monitor commands for a PRG-path coverage run. Checkpoint 1 fires at
- * the SYS entry PC and zaps the map; checkpoint 2 fires on the
- * (frames)-th store to $D019 and shows it. Both disable themselves.
- * Checkpoints are numbered 1 and 2 (the session's own checkpoints are
- * absent for a plain PRG run).
- *
- * frames is the total number of $D019 writes from the start of the run
- * before the show fires. A small fixed count of writes occurs during KERNAL
- * boot and setup before the first IRQ handler write; the default 3 skips
- * those for the irq-chain recipe PRG (KERNAL: 1, setup: 1, first IRQ: 3rd).
- */
-export function coverageCommandsPrg(sysAddr: string, frames: number): string {
-  const hex4 = (n: number) => n.toString(16).padStart(4, "0");
-  const addr = hex4(parseInt(sysAddr.startsWith("$") ? sysAddr.slice(1) : sysAddr, 16));
-  const ignoreHex = (frames - 1).toString(16);
-  const lines = [
-    `trace exec ${addr} ${addr}`,
-    `command 1 "memmapzap; disable 1"`,
-    `trace store d019 d019`,
-    ...(frames > 1 ? [`ignore 2 ${ignoreHex}`] : []),
-    `command 2 "memmapshow; disable 2"`,
-  ];
-  return lines.map((l) => l + "\n").join("");
-}
+  const code = groupByAddr(codeSet, codeKinds);
+  const data = groupByAddr(dataAddrs, (addr) => kindsOf(rowByAddr.get(addr)?.ram ?? "---"));
+  const written_only = groupByAddr(writtenAddrs, (addr) => kindsOf(rowByAddr.get(addr)?.ram ?? "---"));
 
-/**
- * The monitor commands for the show half of a session coverage run. The
- * checkpoint is built here (outside MonitorScript) and needs to be inserted
- * after the session's own checkpoints and the zap checkpoint, so it gets
- * the right number. Returns the raw lines to pass to MonitorScript.add
- * after m.checkpoint() numbers the show line.
- *
- * totalIgnore = (D019 writes before play_clock in the first pass) + frames - 1.
- * A zero ignore is valid (fire on the next hit).
- */
-export function coverageShowIgnore(prePlayD019Count: number, frames: number): number {
-  return prePlayD019Count + frames - 1;
-}
+  const touched = new Set<number>([...codeSet, ...dataAddrs, ...writtenAddrs]);
+  const unknownAddrs: number[] = [];
+  for (let addr = 0; addr <= 0xffff; addr++) {
+    if (!touched.has(addr)) unknownAddrs.push(addr);
+  }
+  const unknown = groupByAddr(unknownAddrs, () => []);
 
-/** A D019 store hit (kind === "store", addr === 0xd019) before play_clock. */
-export function countPrePlayD019(
-  hits: { kind: string; addr: number; clock: number }[],
-  playClock: number,
-): number {
-  return hits.filter((h) => h.kind === "store" && h.addr === 0xd019 && h.clock < playClock).length;
+  return { code, data, written_only, unknown };
 }

@@ -1,49 +1,54 @@
 /**
  * c64_re_coverage: CPU coverage map for a PRG or session. Zaps the VICE
- * memory map at the start of play, lets the game run until the N-th write
- * to $D019 (the raster-IRQ acknowledge register), then shows the map.
- * Classifies the RAM bank into code (executed), data (read, not executed),
- * written_only (written, not read or executed); untouched addresses are
- * omitted (unknown, not "data").
+ * memory map at the start of play, runs the game until clock ≥ play_clock
+ * + frames × cycles_per_frame, then shows the map.
  *
- * For a session, a first pass counts $D019 writes before play_clock so the
- * second pass's ignore count places the show N writes into game play. For a
- * PRG, the ignore count runs from the start of the run.
+ * Clock-based show timing: pass 1 counts the per-frame rate of $FF48 execs
+ * (KERNAL IRQ dispatcher, for $0314-based IRQ) or $D019 stores (raster IRQ
+ * acknowledge, for $FFFE-based IRQ), and the number of those hits before
+ * play_clock. Pass 2 uses ignore = (pre_play_count + frames × per_frame −
+ * 1) to fire the show at the right moment. At the show checkpoint, a RAM
+ * dump ($0000-$BFFF) is saved; each executed opcode is extended to cover
+ * the full instruction length using the opcode byte from that dump.
+ *
+ * Uses sessionPass/batchOf/notInPlay from re-session.ts (which handle
+ * injections, in-play clock, and disposal). MonitorScript is used for both
+ * session and PRG paths; no hand-numbered checkpoints.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { z } from "zod";
 import { REGION_TIMING, videoRegion } from "../domain/timing.ts";
-import {
-  classifyCoverage,
-  countPrePlayD019,
-  coverageCommandsPrg,
-  coverageShowIgnore,
-  parseMemmapFile,
-  type Coverage,
-} from "../re/coverage.ts";
+import { classifyCoverage, extendByInstrLen, parseMemmapFile, type Coverage } from "../re/coverage.ts";
 import { readPrg } from "../re/prg.ts";
-import { parseHex, sessionScript, type Session } from "../re/session.ts";
+import { parseHex, sessionScript, MonitorScript, type Session } from "../re/session.ts";
 import { runBatch } from "../services/vice-batch.ts";
 import { resolveX64sc } from "../services/vice-bin.ts";
 import {
-  collect,
-  refusal,
   allowedPrg,
+  collect,
+  conflict,
+  refusal,
   type ReResult,
   type RunInfo,
   type SourceArgs,
-  conflict,
 } from "./re.ts";
 import {
+  batchOf,
+  notInPlay,
   screenshotPath,
   sessionOf,
+  sessionPass,
   withImage,
   SESSIONS_DIR,
   type RunOpts,
   type Staged,
 } from "./re-session.ts";
+import type { Hit } from "../re/monlog.ts";
 
 export type { Coverage } from "../re/coverage.ts";
+
+const DUMP_FILE = "dump.prg";
 
 export const CoverageInput = {
   session: z.string().optional().describe(`A session file (under ${SESSIONS_DIR}/); or give prg_path`),
@@ -54,9 +59,7 @@ export const CoverageInput = {
   model: z
     .enum(["pal", "ntsc"])
     .optional()
-    .describe(
-      "pal = VICE -default (C64C: 8565, 8580, 8521); ntsc = -model ntsc. Default pal; with a session, omit or match",
-    ),
+    .describe("pal = VICE -default (C64C: 8565, 8580, 8521); ntsc = -model ntsc"),
   cycles: z
     .number()
     .int()
@@ -69,20 +72,346 @@ export const CoverageInput = {
     .int()
     .min(1)
     .max(1_000_000)
-    .default(3)
+    .default(300)
     .describe(
-      "Number of $D019 writes to wait for from the in-play point before showing the map. " +
-        "Default 3 skips KERNAL + setup writes and fires on the first IRQ handler write (PRG). " +
-        "For a session, pre-play writes are auto-counted and excluded.",
+      "Frames of game play to cover (show fires ≈ frames × cycles_per_frame after play_clock). " +
+        "Default 300 (about 6 s PAL). Measured by the $FF48 exec or $D019 store rate from pass 1.",
     ),
 };
 
-/**
- * PRG-path coverage: single pass. The monitor commands include the zap at
- * the SYS entry and the show after `frames` total $D019 writes from run
- * start. Reads the memmapshow section from the log before the work
- * directory is removed.
- */
+// ---------------------------------------------------------------------------
+// Pass-1 analysis: per-frame trigger rate and pre-play count
+// ---------------------------------------------------------------------------
+
+interface TriggerInfo {
+  line: string; // monitor trace line for the show checkpoint
+  addr: number; // $ff48 or $d019
+  kind: "exec" | "store";
+  prePlayCount: number;
+  perFrame: number;
+}
+
+interface TriggerProbeNums {
+  playClock: number;
+  frameCycles: number;
+  ff48CpNum: number;
+  d019CpNum: number;
+}
+
+function analyzeTrigger(
+  hits: Hit[],
+  { playClock, frameCycles, ff48CpNum, d019CpNum }: TriggerProbeNums,
+): { ff48: { pre: number; rate: number }; d019: { pre: number; rate: number } } {
+  const end = playClock + frameCycles;
+  let ff48Pre = 0,
+    ff48Rate = 0,
+    d019Pre = 0,
+    d019Rate = 0;
+  for (const h of hits) {
+    if (h.checkpoint === ff48CpNum) {
+      if (h.clock < playClock) ff48Pre++;
+      else if (h.clock < end) ff48Rate++;
+    }
+    if (h.checkpoint === d019CpNum) {
+      if (h.clock < playClock) d019Pre++;
+      else if (h.clock < end) d019Rate++;
+    }
+  }
+  return { ff48: { pre: ff48Pre, rate: ff48Rate }, d019: { pre: d019Pre, rate: d019Rate } };
+}
+
+function chooseTrigger(analysis: {
+  ff48: { pre: number; rate: number };
+  d019: { pre: number; rate: number };
+}): TriggerInfo | null {
+  if (analysis.ff48.rate > 0) {
+    return {
+      line: "trace exec ff48 ff48",
+      addr: 0xff48,
+      kind: "exec",
+      prePlayCount: analysis.ff48.pre,
+      perFrame: analysis.ff48.rate,
+    };
+  }
+  if (analysis.d019.rate > 0) {
+    return {
+      line: "trace store d019 d019",
+      addr: 0xd019,
+      kind: "store",
+      prePlayCount: analysis.d019.pre,
+      perFrame: analysis.d019.rate,
+    };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Pass-2 helpers: add checkpoints, run, parse
+// ---------------------------------------------------------------------------
+
+function addCoverageCheckpoints(
+  m: MonitorScript,
+  zapLine: string,
+  trigger: TriggerInfo,
+  frames: number,
+): number {
+  m.checkpoint(zapLine, (n) => [`command ${n} "memmapzap; disable ${n}"`]);
+  const totalIgnore = trigger.prePlayCount + frames * trigger.perFrame - 1;
+  const showCpNum = m.checkpoint(trigger.line, (n) => [
+    ...(totalIgnore > 0 ? [`ignore ${n} ${totalIgnore.toString(16)}`] : []),
+    `command ${n} "memmapshow; bank ram; save \\"${DUMP_FILE}\\" 0 0000 bfff; disable ${n}"`,
+  ]);
+  return showCpNum;
+}
+
+interface BuildCoverageOpts {
+  hits: Hit[];
+  work: string;
+  logPath: string;
+  showCpNum: number;
+  playClock: number;
+  frameCycles: number;
+  pass1Unknowns: string[];
+}
+
+function buildCoverage({
+  hits,
+  work,
+  logPath,
+  showCpNum,
+  playClock,
+  frameCycles,
+  pass1Unknowns,
+}: BuildCoverageOpts): Coverage {
+  const rows = parseMemmapFile(logPath);
+  const showHit = hits.find((h) => h.checkpoint === showCpNum);
+  const show_clock = showHit?.clock ?? 0;
+  const span_cycles = show_clock > 0 ? show_clock - playClock : 0;
+  const span_frames = span_cycles / frameCycles;
+
+  const dumpPath = path.join(work, DUMP_FILE);
+  const dump = existsSync(dumpPath) ? readFileSync(dumpPath) : new Uint8Array(0);
+  const execAddrs = rows.filter((r) => r.ram[2] === "x").map((r) => r.addr);
+  const codeSet = dump.length > 0 ? extendByInstrLen(execAddrs, dump) : new Set(execAddrs);
+
+  const unknowns: string[] = [...pass1Unknowns];
+  if (rows.length === 0)
+    unknowns.push("memmapshow did not fire: the show trigger never reached its target count");
+
+  return {
+    ...classifyCoverage(rows, codeSet),
+    show_clock,
+    span_cycles,
+    span_frames,
+    unknowns,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Session coverage (two passes)
+// ---------------------------------------------------------------------------
+
+async function sessionProbe(
+  staged: Staged,
+  s: Session,
+  name: string,
+  opts: RunOpts,
+): Promise<{
+  play_clock: number | null;
+  shot: string;
+  trigger: ReturnType<typeof analyzeTrigger>;
+  injUnknowns: string[];
+}> {
+  const timing = REGION_TIMING[videoRegion(s.machine.model)];
+  const m1 = sessionScript(s);
+  const ff48CpNum = m1.checkpoint("trace exec ff48 ff48");
+  const d019CpNum = m1.checkpoint("trace store d019 d019");
+  const shot = screenshotPath(`coverage-p1-${name}`, opts.shotDir);
+  const p1 = await sessionPass(staged, s, m1, shot);
+  const trigger = analyzeTrigger(p1.hits, {
+    playClock: p1.play_clock ?? s.limitcycles,
+    frameCycles: timing.cycles_per_frame,
+    ff48CpNum,
+    d019CpNum,
+  });
+  return { play_clock: p1.play_clock, shot, trigger, injUnknowns: p1.unknowns };
+}
+
+interface SessionRunOpts {
+  staged: Staged;
+  s: Session;
+  name: string;
+  label: string;
+  playClock: number;
+  trig: TriggerInfo;
+  frames: number;
+  opts: RunOpts;
+}
+
+async function sessionCoverageRun({
+  staged,
+  s,
+  name,
+  label,
+  playClock,
+  trig,
+  frames,
+  opts,
+}: SessionRunOpts): Promise<ReResult<Coverage>> {
+  const timing = REGION_TIMING[videoRegion(s.machine.model)];
+  const m2 = sessionScript(s);
+  const inPlayAddr = parseHex(s.in_play.pc).toString(16).padStart(4, "0");
+  const showCpNum = addCoverageCheckpoints(m2, `trace exec ${inPlayAddr} ${inPlayAddr}`, trig, frames);
+  const covCycles = Math.min(playClock + frames * timing.cycles_per_frame * 2, s.limitcycles);
+  const shot2 = screenshotPath(`coverage-p2-${name}`, opts.shotDir);
+  const run2 = await runBatch(batchOf(staged, s, m2, { screenshot: shot2, cyclesOverride: covCycles }));
+  try {
+    const all2 = await collect(run2.log);
+    const coverage = buildCoverage({
+      hits: m2.toolHits(all2),
+      work: run2.work,
+      logPath: run2.log,
+      showCpNum,
+      playClock,
+      frameCycles: timing.cycles_per_frame,
+      pass1Unknowns: [],
+    });
+    const entry_hit = all2.find((h) => h.kind === "exec" && h.addr === parseHex(s.in_play.pc));
+    const ri: RunInfo = {
+      prg: label,
+      model: s.machine.model,
+      cycles: covCycles,
+      entry: null,
+      start_clock: entry_hit?.clock ?? playClock,
+      vice: resolveX64sc()?.path ?? "",
+      session: name,
+      image: staged.image,
+    };
+    return { ok: true, run: ri, result: coverage };
+  } finally {
+    run2.dispose();
+  }
+}
+
+function sessionCoverage(args: SourceArgs & { frames: number }, opts: RunOpts): Promise<ReResult<Coverage>> {
+  const l = sessionOf(args.session ?? "", "coverage");
+  if (!l.ok) return Promise.resolve(l);
+  const bad = conflict(args, l.session);
+  if (bad) return Promise.resolve({ ok: false, error: bad, reason: "input" as const });
+  const { session: s, name, label } = l;
+
+  return withImage(s, opts.manifestPath, async (staged) => {
+    try {
+      const { play_clock, shot, trigger, injUnknowns } = await sessionProbe(staged, s, name, opts);
+      if (play_clock === null) return notInPlay(s, shot);
+      const trig = chooseTrigger(trigger);
+      if (!trig)
+        return {
+          ok: false,
+          reason: "input" as const,
+          error: "no per-frame trigger found: $FF48 and $D019 both have rate 0 in the first play frame",
+        };
+      const result = await sessionCoverageRun({
+        staged,
+        s,
+        name,
+        label,
+        playClock: play_clock,
+        trig,
+        frames: args.frames,
+        opts,
+      });
+      if (result.ok) result.result.unknowns.push(...injUnknowns);
+      return result;
+    } catch (e) {
+      return refusal(e);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// PRG coverage (two passes)
+// ---------------------------------------------------------------------------
+
+async function prgProbe(
+  prg: string,
+  entry: number,
+  model: "pal" | "ntsc",
+  cycles: number,
+): Promise<{ entry_clock: number; trigger: ReturnType<typeof analyzeTrigger> }> {
+  const timing = REGION_TIMING[videoRegion(model)];
+  const m1 = new MonitorScript();
+  const entryAddr = entry.toString(16).padStart(4, "0");
+  const entryCpNum = m1.checkpoint(`trace exec ${entryAddr} ${entryAddr}`);
+  const ff48CpNum = m1.checkpoint("trace exec ff48 ff48");
+  const d019CpNum = m1.checkpoint("trace store d019 d019");
+  const run = await runBatch({ prg, monCommands: m1.text(), cycles, model });
+  try {
+    const hits = await collect(run.log);
+    const entryHit = hits.find((h) => h.checkpoint === entryCpNum && h.kind === "exec");
+    const entry_clock = entryHit?.clock ?? 0;
+    const trigger = analyzeTrigger(hits, {
+      playClock: entry_clock,
+      frameCycles: timing.cycles_per_frame,
+      ff48CpNum,
+      d019CpNum,
+    });
+    return { entry_clock, trigger };
+  } finally {
+    run.dispose();
+  }
+}
+
+interface PrgRunOpts {
+  prg: string;
+  entry: number;
+  entry_clock: number;
+  trig: TriggerInfo;
+  frames: number;
+  model: "pal" | "ntsc";
+  cycles: number;
+}
+
+async function prgCoverageRun({
+  prg,
+  entry,
+  entry_clock,
+  trig,
+  frames,
+  model,
+  cycles,
+}: PrgRunOpts): Promise<ReResult<Coverage>> {
+  const timing = REGION_TIMING[videoRegion(model)];
+  const m2 = new MonitorScript();
+  const entryAddr = entry.toString(16).padStart(4, "0");
+  const showCpNum = addCoverageCheckpoints(m2, `trace exec ${entryAddr} ${entryAddr}`, trig, frames);
+  const covCycles = Math.min(entry_clock + frames * timing.cycles_per_frame * 2, cycles);
+  const run2 = await runBatch({ prg, monCommands: m2.text(), cycles: covCycles, model });
+  try {
+    const all2 = await collect(run2.log);
+    const coverage = buildCoverage({
+      hits: m2.toolHits(all2),
+      work: run2.work,
+      logPath: run2.log,
+      showCpNum,
+      playClock: entry_clock,
+      frameCycles: timing.cycles_per_frame,
+      pass1Unknowns: [],
+    });
+    const ri: RunInfo = {
+      prg,
+      model,
+      cycles: covCycles,
+      entry,
+      start_clock: entry_clock,
+      vice: resolveX64sc()?.path ?? "",
+    };
+    return { ok: true, run: ri, result: coverage };
+  } finally {
+    run2.dispose();
+  }
+}
+
 async function prgCoverage(
   prg: string,
   args: { model: "pal" | "ntsc"; cycles: number; frames: number },
@@ -95,166 +424,40 @@ async function prgCoverage(
       error: "the PRG has no BASIC SYS line; coverage requires a known entry PC",
       reason: "no-entry",
     };
-  const sysHex = entry.toString(16).padStart(4, "0");
-  const commands = coverageCommandsPrg(sysHex, args.frames);
-  const run = await runBatch({ prg, monCommands: commands, cycles: args.cycles, model: args.model });
-  try {
-    const hits = await collect(run.log);
-    const rows = parseMemmapFile(run.log);
-    const entry_hit = hits.find((h) => h.kind === "exec" && h.addr === entry);
-    const unknowns: string[] = [];
-    if (rows.length === 0)
-      unknowns.push(
-        `memmapshow did not fire: $D019 was not written ${args.frames} times in ${args.cycles} cycles`,
-      );
-    const ri: RunInfo = {
-      prg,
-      model: args.model,
-      cycles: args.cycles,
-      entry,
-      start_clock: entry_hit?.clock ?? 0,
-      vice: resolveX64sc()?.path ?? "",
+  const { entry_clock, trigger } = await prgProbe(prg, entry, args.model, args.cycles);
+  const trig = chooseTrigger(trigger);
+  if (!trig)
+    return {
+      ok: false,
+      reason: "input" as const,
+      error: "no per-frame trigger found: $FF48 and $D019 both have rate 0 in the first entry frame",
     };
-    return { ok: true, run: ri, result: { ...classifyCoverage(rows), unknowns } };
-  } finally {
-    run.dispose();
-  }
-}
-
-/** Pass 1: count $D019 writes before play_clock (for the session show-offset). */
-async function countD019BeforePlay(
-  staged: Staged,
-  s: Session,
-  shot: string,
-): Promise<{ play_clock: number | null; prePlayD019: number }> {
-  const m1 = sessionScript(s);
-  m1.add("trace store d019 d019\n");
-  const run1 = await runBatch({
-    prg: staged.prg,
-    monCommands: m1.text(),
-    cycles: s.limitcycles,
-    model: s.machine.model,
-    ...(staged.disk !== undefined ? { disk: staged.disk } : {}),
-    args: ["-exitscreenshot", shot],
-  });
-  try {
-    const all1 = await collect(run1.log);
-    const inPlayPc = parseHex(s.in_play.pc);
-    let play_clock: number | null = null;
-    for (const h of all1) {
-      if (h.kind === "exec" && h.addr === inPlayPc && h.clock >= s.in_play.after_clock) {
-        play_clock = h.clock;
-        break;
-      }
-    }
-    const prePlayD019 = play_clock !== null ? countPrePlayD019(all1, play_clock) : 0;
-    return { play_clock, prePlayD019 };
-  } finally {
-    run1.dispose();
-  }
-}
-
-interface CoveragePassOpts {
-  staged: Staged;
-  s: Session;
-  label: string;
-  name: string;
-  totalIgnore: number;
-  covCycles: number;
-  shot: string;
-}
-
-/** Pass 2: coverage run with zap at in_play.pc and show after totalIgnore+1 $D019 writes. */
-async function coveragePass({
-  staged,
-  s,
-  label,
-  name,
-  totalIgnore,
-  covCycles,
-  shot,
-}: CoveragePassOpts): Promise<ReResult<Coverage>> {
-  const inPlayAddr = parseHex(s.in_play.pc).toString(16).padStart(4, "0");
-  const m2 = sessionScript(s);
-  m2.checkpoint(`trace exec ${inPlayAddr} ${inPlayAddr}`, (n) => [`command ${n} "memmapzap; disable ${n}"`]);
-  m2.checkpoint(`trace store d019 d019`, (n) => [
-    ...(totalIgnore > 0 ? [`ignore ${n} ${totalIgnore.toString(16)}`] : []),
-    `command ${n} "memmapshow; disable ${n}"`,
-  ]);
-  const run2 = await runBatch({
-    prg: staged.prg,
-    monCommands: m2.text(),
-    cycles: covCycles,
-    model: s.machine.model,
-    ...(staged.disk !== undefined ? { disk: staged.disk } : {}),
-    args: ["-exitscreenshot", shot],
-  });
-  try {
-    const all2 = await collect(run2.log);
-    const rows = parseMemmapFile(run2.log);
-    const unknowns: string[] = [];
-    if (rows.length === 0)
-      unknowns.push(
-        `memmapshow did not fire: $D019 was not written ${totalIgnore + 1} times total ` +
-          `within ${covCycles} cycles; check whether the game uses raster IRQ ($D019 acknowledge)`,
-      );
-    const entry_hit = all2.find((h) => h.kind === "exec" && h.addr === parseHex(s.in_play.pc));
-    const ri: RunInfo = {
-      prg: label,
-      model: s.machine.model,
-      cycles: covCycles,
-      entry: null,
-      start_clock: entry_hit?.clock ?? 0,
-      vice: resolveX64sc()?.path ?? "",
-      session: name,
-      image: staged.image,
-    };
-    return { ok: true, run: ri, result: { ...classifyCoverage(rows), unknowns } };
-  } finally {
-    run2.dispose();
-  }
-}
-
-/** Session coverage: two passes. */
-function sessionCoverage(args: SourceArgs & { frames: number }, opts: RunOpts): Promise<ReResult<Coverage>> {
-  const l = sessionOf(args.session ?? "", "coverage");
-  if (!l.ok) return Promise.resolve(l);
-  const bad = conflict(args, l.session);
-  if (bad) return Promise.resolve({ ok: false, error: bad, reason: "input" as const });
-  const { session: s, name, label } = l;
-  const timing = REGION_TIMING[videoRegion(s.machine.model)];
-
-  return withImage(s, opts.manifestPath, async (staged) => {
-    try {
-      const shot1 = screenshotPath(`coverage-p1-${name}`, opts.shotDir);
-      const { play_clock, prePlayD019 } = await countD019BeforePlay(staged, s, shot1);
-      if (play_clock === null)
-        return {
-          ok: false,
-          reason: "not-in-play" as const,
-          error: `in_play not reached in ${s.limitcycles} cycles`,
-          clock: s.limitcycles,
-          screenshot: shot1,
-        };
-      const totalIgnore = coverageShowIgnore(prePlayD019, args.frames);
-      const covCycles = Math.min(play_clock + args.frames * timing.cycles_per_frame * 10, s.limitcycles);
-      const shot2 = screenshotPath(`coverage-p2-${name}`, opts.shotDir);
-      return await coveragePass({ staged, s, label, name, totalIgnore, covCycles, shot: shot2 });
-    } catch (e) {
-      return refusal(e);
-    }
+  return prgCoverageRun({
+    prg,
+    entry,
+    entry_clock,
+    trig,
+    frames: args.frames,
+    model: args.model,
+    cycles: args.cycles,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 /**
- * CPU coverage map: zap at play start, show after N $D019 writes (raster
- * IRQ acknowledge). Exactly one of prg_path and session.
+ * CPU coverage map: two-pass approach. Pass 1 finds play_clock and the
+ * per-frame rate of $FF48 (KERNAL IRQ dispatcher) or $D019 (raster IRQ
+ * acknowledge). Pass 2 zaps at play start and shows after clock ≈ play_clock
+ * + frames × cycles_per_frame. Exactly one of prg_path and session.
  */
 export function reCoverage(
   args: SourceArgs & { frames?: number },
   opts: RunOpts = {},
 ): Promise<ReResult<Coverage>> {
-  const frames = args.frames ?? 3;
+  const frames = args.frames ?? 300;
   if ((args.prg_path === undefined) === (args.session === undefined))
     return Promise.resolve({
       ok: false,
@@ -273,5 +476,5 @@ export function reCoverage(
     model: args.model ?? "pal",
     cycles: args.cycles ?? 8_000_000,
     frames,
-  }).catch((e: unknown) => refusal(e));
+  }).catch((e: unknown) => refusal(e) as ReResult<Coverage>);
 }

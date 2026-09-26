@@ -406,20 +406,37 @@ const range = z.object({
 
 export const CoverageOutput = {
   run,
-  code: z.array(range).describe("Address ranges where the CPU executed instructions"),
+  code: z
+    .array(range)
+    .describe("Address ranges where the CPU executed instructions (opcode + operands extended)"),
   data: z.array(range).describe("Address ranges read but never executed (read-only data)"),
   written_only: z.array(range).describe("Address ranges written but neither read nor executed"),
+  unknown: z.array(range).describe("Address ranges in $0000-$FFFF not accessed at all (untouched RAM)"),
+  show_clock: z.number().int().describe("CPU clock of the memmapshow checkpoint; 0 if the show did not fire"),
+  span_cycles: z.number().int().describe("Cycles from the in-play clock to show_clock"),
+  span_frames: z.number().describe("Frames from the in-play clock to show_clock (PAL or NTSC)"),
   unknowns: z.array(z.string()),
 };
 
-const hexRange = (r: Coverage["code"][number]) => `${hex(r.start)}-${hex(r.end)} [${r.kinds.join("")}]`;
+const hexRange = (r: Coverage["code"][number]) =>
+  `${hex(r.start)}-${hex(r.end)} [${r.kinds.join("") || "---"}]`;
 
 export function coverageReply(r: ReResult<Coverage>): ToolReply {
   return reply(r, (c) => {
     const section = (name: string, ranges: Coverage["code"]) =>
       ranges.length ? `${name}:\n  ${ranges.map(hexRange).join("\n  ")}` : `${name}: none`;
+    const span =
+      c.show_clock > 0
+        ? `show at clock ${c.show_clock} (${c.span_cycles} cycles, ${c.span_frames.toFixed(1)} frames)\n`
+        : "";
     return (
-      [section("code", c.code), section("data", c.data), section("written_only", c.written_only)].join("\n") +
+      span +
+      [
+        section("code", c.code),
+        section("data", c.data),
+        section("written_only", c.written_only),
+        section("unknown", c.unknown),
+      ].join("\n") +
       unknownsText(c.unknowns)
     );
   });
@@ -428,14 +445,12 @@ export function coverageReply(r: ReResult<Coverage>): ToolReply {
 export const reCoverageTool = defineTool({
   name: "c64_re_coverage",
   title: "CPU coverage map from a game session in VICE",
-  description: `Run a .prg or a session headless in VICE x64sc, zap the CPU memory map at the in-play checkpoint (the SYS entry for a PRG, or in_play.pc for a session), let the game run until $D019 (raster IRQ acknowledge) is written N times, then dump the map. Classifies every address the CPU touched since the zap into code (executed), data (read, not executed), or written_only. Untouched addresses are not listed (they are unknown, not data).
-
-$D019 is written by the game's raster IRQ handler on every interrupt. For a PRG, the default frames=3 skips the KERNAL boot write and the setup write, firing on the first IRQ handler write. For a session, the pre-play $D019 writes (title screen and KERNAL) are counted in a first pass so frames counts from in-play start.
+  description: `Run a .prg or a session headless in VICE x64sc. Two passes: pass 1 finds the in-play clock and measures how often $FF48 (KERNAL IRQ dispatcher) or $D019 (raster IRQ acknowledge) fires per frame. Pass 2 zaps the CPU memory map at the in-play checkpoint and shows it after clock ≈ play_clock + frames × cycles_per_frame, placing the show by clock, not by a fixed count of writes. Classifies every RAM address the CPU touched since the zap into code (executed opcode + operand bytes extended by instruction length), data (read, not code), or written_only. Untouched addresses are reported as unknown. Saves a $0000-$BFFF RAM dump at the show moment to extend code ranges.
 
 Needs the windowless x64sc (\`npm run vice:headless\`).
 
-Inputs: prg_path or session, model pal|ntsc, cycles, frames (default 3).
-Output (structured): run {prg, model, cycles, entry, start_clock, vice, session?, image?}, code [{start, end, kinds}], data [{start, end, kinds}], written_only [{start, end, kinds}], unknowns.`,
+Inputs: prg_path or session, model pal|ntsc, cycles, frames (default 300 ≈ 6 s PAL).
+Output (structured): run, code [{start,end,kinds}], data, written_only, unknown, show_clock, span_cycles, span_frames, unknowns.`,
   inputSchema: CoverageInput,
   outputSchema: CoverageOutput,
   annotations: READ_ONLY,
