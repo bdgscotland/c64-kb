@@ -13,7 +13,7 @@ holds addresses, raster lines, cycle counts and layouts, never the game's
 code, graphics, music or map bytes.
 
 Rungs follow the repository's ladder (CLAUDE.md rule 3): (1) run here in
-VICE; (2) two independent instruments or documents agree; (3) arithmetic
+VICE; (2) two documents agree and neither cites the other; (3) arithmetic
 from stated values; (4) unverifiable here, such as a published interview.
 A claim read from the game's code or tables in a RAM dump, but not
 watched happening in a run, says "(from the game's code, not seen
@@ -39,7 +39,8 @@ Butler's published Zzap!64 interview as quoted in
 `game-design/production-planning.md`. The game's RAM holds no credit
 string. The two Measured frame lines are one phase split by frame kind:
 the grammar has one `play` phase, so each line's source names its kind. The title `Commando` matches the
-Production that `vertical_shmup`'s reference titles create.
+Production that `vertical_shmup` and `vertical_run_and_gun` both list
+among their reference titles.
 
 `vertical_run_and_gun` was written from this study, so its fingerprint
 holds every technique Commando was measured to use in play except the
@@ -251,7 +252,7 @@ with the same image can replay them from the session file.
 
 | Claim | Rung | Where measured | Observations |
 |---|---|---|---|
-| Five-part chain, handlers and lines | 2 | `c64_re_irq_chain` on the session (1,264 play frames, no input: $4389 on lines 177-192; $4137 once at 224, the first frame of play) and a separate monitor trace (750 frames still, 750 walking: $4389 on 161-198) agree | commando#irq-1-#irq-7, #frame-2, #frame-5 |
+| Five-part chain, handlers and lines | 1 | `c64_re_irq_chain` on the session (1,264 play frames, no input: $4389 on lines 177-192; $4137 once at 224, the first frame of play) and a separate monitor trace (750 frames still, 750 walking: $4389 on 161-198) agree; an earlier version gave rung 2, but both are runs here | commando#irq-1-#irq-7, #frame-2, #frame-5 |
 | Bank 3, screen $E000, `$01` = $36 at play start | 1 | `c64_re_snapshot` at the session's `in_play` ($0FEB, clock 35,080,026) | commando#snap-1 |
 | `$01` never written in play; `$DD00` written once, $94 | 1 | store traces, 1,910 play frames | commando#mem-1, #mem-2 |
 | Area charsets, HUD charset, `$D018` per band | 1 | `$D018` store trace in area 0; area 3 by setting `$04F3`; HUD row rendered with each charset | commando#mem-3, #area3-1 |
