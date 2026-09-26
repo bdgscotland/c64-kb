@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { Hit } from "../src/re/monlog.ts";
 import {
+  entryFromHits,
+  entryWindow,
   findStubs,
   firstProgramDispatch,
   groupWriters,
@@ -333,6 +335,63 @@ describe("observations and stages", () => {
   it("every stub carries id, basis and rung", () => {
     const stubs = findStubs(basicPrg(0x0801, 10, 2217, "X"), 0x0801);
     expect(stubs[0]).toMatchObject({ id: "s0", basis: "measured-vice", rung: 1 });
+  });
+});
+
+describe("entry_pc is never read from an incomplete trace", () => {
+  const stageWriters = groupWriters([
+    st(0x0820, 0x0105, 10),
+    st(0x0105, 0x0801, 1_000_000),
+    st(0x0105, 0x0802, 2_000_000),
+  ]).writers;
+  const complete = { truncated: false, hitCapped: false, endClock: 3_000_000 };
+  const FRAME = 19_656;
+
+  it("a complete store trace gives the window after the last stage's last store", () => {
+    expect(entryWindow(stageWriters, complete, FRAME)).toEqual({ from: 2_000_000, stage: 1 });
+  });
+
+  it("no stage: no window and nothing unknown", () => {
+    expect(entryWindow(groupWriters([st(0x2000, 0x8000, 10)]).writers, complete, FRAME)).toBeNull();
+  });
+
+  it("a store trace stopped by the byte cap gives no entry, and says why", () => {
+    const r = entryWindow(stageWriters, { ...complete, truncated: true }, FRAME);
+    expect(r).toEqual({
+      unknown: "entry_pc unknown: the store trace was stopped early, so stage 1 may not have finished",
+    });
+  });
+
+  it("a store trace stopped by the hit cap gives no entry", () => {
+    expect(entryWindow(stageWriters, { ...complete, hitCapped: true }, FRAME)).toMatchObject({
+      unknown: expect.stringContaining("stopped early") as string,
+    });
+  });
+
+  it("a stage still storing within a frame of the trace's end gives no entry", () => {
+    const r = entryWindow(stageWriters, { ...complete, endClock: 2_010_000 }, FRAME);
+    expect(r).toEqual({
+      unknown:
+        "entry_pc unknown: stage 1 stored at clock 2000000, within a frame of the trace's end (2010000)",
+    });
+  });
+
+  it("the entry pass gives the first exec after the window", async () => {
+    const hits = [ex(0x0900, 1_999_000), ex(0x0850, 2_000_050), ex(0x0853, 2_000_060)];
+    expect(await entryFromHits(hits, { from: 2_000_000, stage: 1 }, false)).toEqual({ pc: 0x0850 });
+  });
+
+  it("a truncated entry pass gives no entry, even when a hit was read", async () => {
+    const hits = [ex(0x0850, 2_000_050)];
+    expect(await entryFromHits(hits, { from: 2_000_000, stage: 1 }, true)).toEqual({
+      unknown: "entry_pc unknown: the entry pass was stopped early",
+    });
+  });
+
+  it("an entry pass with no exec after the window names the ranges it looked in", async () => {
+    expect(await entryFromHits([ex(0x0900, 10)], { from: 2_000_000, stage: 1 }, false)).toMatchObject({
+      unknown: expect.stringContaining("$0200-$9FFF") as string,
+    });
   });
 });
 

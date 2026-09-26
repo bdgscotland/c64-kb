@@ -479,3 +479,56 @@ export function firstProgramDispatch(
   }
   return { clock: null, unknowns };
 }
+
+// --- entry_pc: only from a complete trace -----------------------------------
+
+/** How the store trace ended: stopped by the byte cap, by the parse's hit cap, and the clock it was run to. */
+export interface TraceEnd {
+  truncated: boolean;
+  hitCapped: boolean;
+  endClock: number;
+}
+
+export type EntryWindow = { from: number; stage: number } | { unknown: string };
+
+/**
+ * Where to look for entry_pc: after the last stage's last store. Null when
+ * there is no stage. An unknown when the store trace was stopped early (a
+ * stage cut off mid-depack would give a false "last store") or when the
+ * last stage stored within a frame of the trace's end (it may still be
+ * running). An earlier version took the last store of whatever trace it
+ * had, truncated or not.
+ */
+export function entryWindow(writers: Writer[], trace: TraceEnd, frameCycles: number): EntryWindow | null {
+  const last = writers.filter((w) => w.stage !== null).at(-1);
+  if (last?.stage == null) return null;
+  if (trace.truncated || trace.hitCapped)
+    return {
+      unknown: `entry_pc unknown: the store trace was stopped early, so stage ${last.stage} may not have finished`,
+    };
+  if (last.last_clock + frameCycles > trace.endClock)
+    return {
+      unknown: `entry_pc unknown: stage ${last.stage} stored at clock ${last.last_clock}, within a frame of the trace's end (${trace.endClock})`,
+    };
+  return { from: last.last_clock, stage: last.stage };
+}
+
+/** Where the entry pass looks: RAM outside the stack page and the ROM and I/O windows, which keeps its log small. */
+const ENTRY_RANGES = "$0200-$9FFF and $C000-$CFFF";
+
+/**
+ * The first exec hit after the window, from the entry pass. A pass stopped
+ * by the byte cap gives an unknown even when a hit was read before the
+ * stop: nothing is reported from an incomplete trace.
+ */
+export async function entryFromHits(
+  hits: Iterable<Hit> | AsyncIterable<Hit>,
+  window: { from: number; stage: number },
+  truncated: boolean,
+): Promise<{ pc: number } | { unknown: string }> {
+  if (truncated) return { unknown: "entry_pc unknown: the entry pass was stopped early" };
+  for await (const h of hits) if (h.kind === "exec" && h.clock > window.from) return { pc: h.pc };
+  return {
+    unknown: `entry_pc unknown: no PC in ${ENTRY_RANGES} ran within a frame after stage ${window.stage}'s last store (clock ${window.from}); an entry in $A000-$BFFF, $D000-$DFFF or $E000-$FFFF RAM is not traced`,
+  };
+}

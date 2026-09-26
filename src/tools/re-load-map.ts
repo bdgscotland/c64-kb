@@ -17,7 +17,16 @@ import {
   storeCommands,
   type IrqChain,
 } from "../re/irq-chain.ts";
-import { findStubs, firstProgramDispatch, WriterAggregator, type Stub, type Writer } from "../re/load-map.ts";
+import {
+  entryFromHits,
+  entryWindow,
+  findStubs,
+  firstProgramDispatch,
+  WriterAggregator,
+  type Stub,
+  type TraceEnd,
+  type Writer,
+} from "../re/load-map.ts";
 import { readHits, type Hit } from "../re/monlog.ts";
 import { readPrg } from "../re/prg.ts";
 import { sessionScript } from "../re/session.ts";
@@ -189,8 +198,12 @@ async function chainFromPowerOn(
   return { chain: analyseIrqChain(b, src.timing, 0), hits: b };
 }
 
-/** The store-0000-ffff trace, streamed and grouped into writers without holding the log. */
-async function writersOf(src: LoadMapSource, capCycles: number, unknowns: string[]): Promise<Writer[]> {
+/** The store-0000-ffff trace, streamed and grouped into writers without holding the log; how it ended, for entry_pc. */
+async function writersOf(
+  src: LoadMapSource,
+  capCycles: number,
+  unknowns: string[],
+): Promise<{ writers: Writer[]; end: TraceEnd }> {
   const big = await src.run("trace store 0000 ffff\n", capCycles);
   try {
     if (big.truncated) unknowns.push(truncatedNote("store trace", capCycles));
@@ -205,24 +218,35 @@ async function writersOf(src: LoadMapSource, capCycles: number, unknowns: string
       unknowns.push(
         `${agg.unresolved} stores needed $01 while it was not known (a PC in a ROM window, or a target in $D000-$DFFF): their code generation or I/O-or-RAM target is unresolved; ram_under_io is null on the writers with such a target`,
       );
-    return agg.finish();
+    const end = { truncated: big.truncated, hitCapped: agg.capped !== null, endClock: capCycles };
+    return { writers: agg.finish(), end };
   } finally {
     big.dispose();
   }
 }
 
-/** The first PC run in RAM after the last stage's last store: where the depacked program starts. */
-async function entryPcOf(src: LoadMapSource, writers: Writer[], unknowns: string[]): Promise<number | null> {
-  const last = writers.filter((w) => w.stage !== null).at(-1);
-  if (!last) return null;
-  const cycles = Math.min(src.fullCycles, last.last_clock + src.timing.cycles_per_frame);
+/** The first PC run in RAM after the last stage's last store: where the depacked program starts. Null from an incomplete trace. */
+async function entryPcOf(
+  src: LoadMapSource,
+  writers: Writer[],
+  end: TraceEnd,
+  unknowns: string[],
+): Promise<number | null> {
+  const window = entryWindow(writers, end, src.timing.cycles_per_frame);
+  if (window === null) return null;
+  if ("unknown" in window) {
+    unknowns.push(window.unknown);
+    return null;
+  }
+  const cycles = Math.min(src.fullCycles, window.from + src.timing.cycles_per_frame);
   const p = await src.run(ENTRY_COMMANDS, cycles);
   try {
-    for await (const h of readHits(p.log))
-      if (p.keep(h) && h.kind === "exec" && h.clock > last.last_clock) return h.pc;
-    unknowns.push(
-      `no PC in $0200-$9FFF or $C000-$CFFF ran within a frame after stage ${last.stage}'s last store (clock ${last.last_clock}): entry_pc unknown`,
-    );
+    const hits = (async function* () {
+      for await (const h of readHits(p.log)) if (p.keep(h)) yield h;
+    })();
+    const r = await entryFromHits(hits, window, p.truncated);
+    if ("pc" in r) return r.pc;
+    unknowns.push(r.unknown);
     return null;
   } finally {
     p.dispose();
@@ -244,8 +268,8 @@ async function runLoadMap(src: LoadMapSource): Promise<ReResult<LoadMapResult>> 
     src.fullCycles,
     (dispatch.clock ?? src.fullCycles) + src.timing.cycles_per_frame,
   );
-  const writers = await writersOf(src, capCycles, unknowns);
-  const entry_pc = await entryPcOf(src, writers, unknowns);
+  const { writers, end } = await writersOf(src, capCycles, unknowns);
+  const entry_pc = await entryPcOf(src, writers, end, unknowns);
   return {
     ok: true,
     run: src.runInfo,
