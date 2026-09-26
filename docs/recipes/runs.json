@@ -2803,5 +2803,17 @@
     "shots": {
       "pal": "screenshots/row-map-redraw-torn.png"
     }
+  },
+  "kickassembler/char-attribute-flags": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/char-attribute-flags.png",
+      "ntsc": "screenshots/char-attribute-flags-ntsc.png"
+    }
   }
 }
