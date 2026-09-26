@@ -40,10 +40,12 @@ The KERNAL is banked out and both interrupts go through `$FFFE`
 // not hide it.
 // Build: java -jar KickAss.jar invalid-mode-band.asm -o invalid-mode-band.prg
 // Variants: add :ys=0 to :ys=7 for the playfield YSCROLL (default 3), and
-// :band=0 to leave ECM+BMM off and see what the band hides.
+// :band=0 to leave ECM+BMM off and see what the band hides. :irq=214 enters
+// the split after line 213, as a late chained entry would.
 
 BasicUpstart2(start)
 
+.function cv(n, d) { .return cmdLineVars.containsKey(n) ? cmdLineVars.get(n).asNumber() : d }
 .var YS   = cmdLineVars.containsKey("ys") ? cmdLineVars.get("ys").asNumber() : 3
 .var BAND = cmdLineVars.containsKey("band") ? cmdLineVars.get("band").asNumber() : 1
 
@@ -52,7 +54,7 @@ BasicUpstart2(start)
 .const SPRDATA    = $0340      // sprite block 13
 .const PF_ROWS    = 21         // rows 0-20 are playfield; row 20 ends under the band
 .const PANEL_ROW  = 21         // first panel row: its badline is line 223
-.const SPLIT_IRQ  = 211        // the split handler is entered here and polls for 213
+.const SPLIT_IRQ  = cv("irq", 211) // the split handler is entered here and polls for 213
 .const BOTTOM_IRQ = 250        // below the 24-row window (bottom border from 247)
 .const PF_D011    = $10 | YS   // DEN, RSEL=0 (24 rows), text, playfield YSCROLL
 .const BAND_ON    = BAND != 0 ? $60 : $00   // ECM + BMM
@@ -67,7 +69,6 @@ BasicUpstart2(start)
 // Delay counts: dex/bpl runs count+1 passes, 5 cycles a pass and 4 on the
 // way out. Set in VICE so that each store lands inside its window (the page
 // lists the windows).
-.function cv(n, d) { .return cmdLineVars.containsKey(n) ? cmdLineVars.get(n).asNumber() : d }
 .var D213  = cv("d213", 9)
 .var D213B = cv("d213b", 1)
 .var D215  = cv("d215", 3)
@@ -161,6 +162,10 @@ spr:    sta SPRDATA,x
 // The split. Each $D011 store has a window of at least 15 cycles (PAL) in
 // which it shows nothing: the right border of the line before, or the band.
 // A plain $D012 poll (one read every 7 cycles) lands well inside each one.
+// Each poll waits while $D012 is below its line, not until it equals it:
+// the same 7 cycles a pass and the same exit cycle, but a handler entered
+// after the line (chained behind a multiplexer's late zone, or :irq=214)
+// falls through instead of spinning to the line in the next frame.
 split_irq:
         pha
         txa
@@ -173,9 +178,9 @@ split_irq:
         tay
         lda delay213,x
         tax
-        lda #213
+        lda #212
 w213:   cmp $d012
-        bne w213
+        bcs w213                // wait while $D012 <= 212
 d213:   dex                     // 5 cycles a pass, 4 on the way out
         bpl d213
         sty $d011               // right border of line 213: the band starts on 214
@@ -184,9 +189,9 @@ d213:   dex                     // 5 cycles a pass, 4 on the way out
         lda #PANEL_BG
         sta $d021               // panel background: in the band
         ldy #PANEL_D011 | BAND_ON
-        lda #215
+        lda #214
 w215:   cmp $d012
-        bne w215
+        bcs w215                // wait while $D012 <= 214
         ldx #D215
 d215:   dex
         bpl d215
@@ -194,9 +199,9 @@ d215:   dex
                                 // badline check: no line from 216 to 222 matches,
                                 // and the next badline is 223
         ldy #PANEL_D011
-        lda #222
+        lda #221
 w222:   cmp $d012
-        bne w222
+        bcs w222                // wait while $D012 <= 221
         ldx #D222
 d222:   dex
         bpl d222
@@ -262,6 +267,7 @@ java -jar KickAss.jar invalid-mode-band.asm -o invalid-mode-band.prg
 java -jar KickAss.jar invalid-mode-band.asm :ys=0 -o invalid-mode-band-ys0.prg
 java -jar KickAss.jar invalid-mode-band.asm :ys=7 -o invalid-mode-band-ys7.prg
 java -jar KickAss.jar invalid-mode-band.asm :ys=0 :band=0 -o invalid-mode-band-noband.prg
+java -jar KickAss.jar invalid-mode-band.asm :irq=214 -o invalid-mode-band-late.prg
 ```
 
 The PRG is 569 bytes, loaded at $0801-$0A37.
@@ -303,7 +309,41 @@ works"). That is what the band hides. The panel still starts on line 223.
 
 Pinned in `runs.json`: the default build (YSCROLL 3) on PAL and NTSC as
 `screenshots/invalid-mode-band.png` and `-ntsc.png`, `@ys0` and `@ys7` on
-both models, and `@noband` on PAL.
+both models, `@noband` on PAL, and `@late` (below) on both.
+
+### A late entry (`:irq=214`)
+
+A game chains this handler after other raster work. FIREBASE
+(`templates/run-and-gun`, `src/mux.asm`) jumps into it from its
+multiplexer's late guard when the last sprite zone ends past line 208
+(`SPLIT_IRQ - MARGIN`), so the handler can start later than line 211. If it
+starts after 213, the first poll's line has gone. `:irq=214` makes that
+happen every frame. Each poll waits
+while `$D012` is at or below the line before its own (`LDA #212 / CMP
+$D012 / BCS`), so a late entry falls through. Measured in VICE x64sc 3.10,
+PAL and NTSC, four exit screenshots one frame apart (8,000,000 cycles and
+the next three frames), PIL down column x 100:
+
+| Poll | Every frame shows |
+|---|---|
+| `BCS` while below, this listing, `:irq=214` | band from line 215 (x 264 on PAL, x 236 on NTSC) to 222, whole from 216; panel from 223, identical to the default build's; all four frames alike |
+| `BNE` until equal, a probe build (not this listing), `:irq=214` | frames 1 and 3: band 214-222, as the default build. Frames 0 and 2: no black line at all, and lines 211-235 differ from the default build: the panel is shifted and drawn in the playfield's upper-case charset on its blue |
+
+The equality poll never sees 213 in the frame it was entered, so it
+spins until line 213 of the next frame with interrupts held: nearly a
+whole frame of CPU, and no band in the frame it missed. It then returns
+at about line 224 and acknowledges the line-214 interrupt that came
+while it spun, so the next entry is two frames on, and the band shows one
+frame in two. The same pitfall, met through a dispatcher, is
+`raster_poll_equality_misses_under_dispatch_latency` in
+`pitfalls/raster-and-badline.md`.
+
+The `BCS` poll costs what the `BNE` poll did: 4 + 3 cycles a pass and
+2 on the way out (instruction table, rung 3), and all seven pinned
+screenshots of the default and `@ys`/`@noband` builds stayed pixel-identical
+when the listing changed from one to the other. A late entry still costs
+one torn line; it no longer costs a frame. An earlier version of this
+listing polled with `CMP $D012 / BNE`.
 
 ### The store windows
 

@@ -439,7 +439,9 @@ put1:   tay                     // A (0-15) as one hex digit at PANEL+X
 
 // The band split, as in invalid-mode-band: ECM+BMM on in line 213's right
 // border, YSCROLL 7 on line 215, text mode back in line 222's right border.
-// It ticks the frame counter on its way out, on line 224.
+// It ticks the frame counter on its way out, on line 224. Each poll waits
+// while $D012 is below its line, so an entry after the line (chained behind
+// a multiplexer) falls through instead of spinning a frame.
 split_irq:
         pha
         txa
@@ -452,26 +454,26 @@ split_irq:
         tay
         lda delay213,x
         tax
-        lda #213
+        lda #212
 w213:   cmp $d012
-        bne w213
+        bcs w213                // wait while $D012 <= 212
 d213:   dex
         bpl d213
         sty $d011               // the band starts on line 214
         lda #PANEL_BG
         sta $d021               // panel background, inside the band
         ldy #PANEL_D011 | BAND_ON
-        lda #215
+        lda #214
 w215:   cmp $d012
-        bne w215
+        bcs w215                // wait while $D012 <= 214
         ldx #D215
 d215:   dex
         bpl d215
         sty $d011               // YSCROLL 7: the next badline is 223
         ldy #PANEL_D011
-        lda #222
+        lda #221
 w222:   cmp $d012
-        bne w222
+        bcs w222                // wait while $D012 <= 221
         ldx #D222
 d222:   dex
         bpl d222
@@ -665,6 +667,13 @@ on NTSC, so every row was seen from the half-redrawn screen.
 The same check on the `:wait=10` build, 80 exits every 39 lines from
 8,000,000, finds the missing column, at line 152, in eight consecutive exits
 (8,127,764 to 8,144,963, one frame) and in none of the other 72.
+
+The band split polls `LDA #212 / CMP $D012 / BCS`, waiting while the beam
+is above line 213, and likewise for 215 and 222. An earlier version polled
+`CMP $D012 / BNE` for the exact line, which spins until the next frame when
+the handler is entered after that line; `recipes/kickassembler/invalid-mode-band.md`,
+"A late entry", measured both forms. The five pinned screenshots above
+stayed pixel-identical across the change.
 
 ## Why this works
 

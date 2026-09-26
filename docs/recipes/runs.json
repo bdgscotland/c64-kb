@@ -2759,6 +2759,21 @@
       "pal": "screenshots/invalid-mode-band-noband.png"
     }
   },
+  "kickassembler/invalid-mode-band@late": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "build": [
+      ":irq=214"
+    ],
+    "shots": {
+      "pal": "screenshots/invalid-mode-band-late.png",
+      "ntsc": "screenshots/invalid-mode-band-late-ntsc.png"
+    }
+  },
   "kickassembler/row-map-redraw": {
     "cycles": 8000000,
     "models": [

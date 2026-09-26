@@ -1804,6 +1804,17 @@ in the band, turn them off or point them at an empty sprite block there.
   belongs in the right border, not in the panel's first line.
 - A delay loop spanning a badline is 40 cycles longer. Poll `$D012` for the
   line, then delay, and give the badline phase its own count.
+- **A late entry and an equality poll lose a frame.** Chained after a
+  multiplexer, the handler can start after the line it polls for. `CMP
+  $D012 / BNE` then spins to that line in the next frame with interrupts
+  held. Poll while below it: `LDA #line-1 / CMP $D012 / BCS`, the same 7
+  cycles a pass and the same exit. Measured in the recipe's `:irq=214`
+  build (VICE x64sc 3.10, PAL and NTSC, four frames): with `BCS` the band
+  starts on line 215, torn at x 264 (PAL) or 236 (NTSC), and shows in every
+  frame; a `BNE` probe build shows no band in every other frame. An earlier
+  version of the recipe polled with `BNE`
+  (`raster_poll_equality_misses_under_dispatch_latency` in
+  `pitfalls/raster-and-badline.md`).
 
 ### In Commando (1985)
 
