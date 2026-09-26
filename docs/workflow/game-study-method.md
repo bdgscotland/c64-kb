@@ -197,14 +197,16 @@ VIC bank 3, screen $E000, `$01` = $36 at the play-start PC. The dump
 (64 KB after a two-byte header) stays in `data/re/`; it is what the
 subsystem agents disassemble for their own reading (`da65 --start-addr
 0` on the dump without its header). `--after-hits N` dumps at a later
-pass of the play PC. The observations record `ram_sha1` 783da690… for
-the same clock; this run gave f0f49fda…. The two dumps differ in one
-byte, $07EA ($FB against $FF); `re-load-map` shows only the KERNAL's
-RAM test storing there before the game's first interrupt. VICE's `-default` sets `RAMInitRandomChance=10`, a random flip
-of power-on RAM bits with a per-run seed: four runs of the irq-chain
-recipe gave two different RAM images by the same clock, and four with
-`-raminitrandomchance 0` gave one. Until the tools pass that flag,
-compare decoded fields between runs, not RAM hashes.
+pass of the play PC. The observations record `ram_sha1` f0f49fda… for
+clock 35,080,026; two runs with the fixed seed agree. VICE's `-default`
+sets `RAMInitRandomChance=10`, a random flip of power-on RAM bits with a
+per-run seed: before `runBatch` passed `-raminitrandomchance 0`, two runs
+at this clock differed at $07EA ($FB against $FF), and an earlier
+observation recorded 783da690…. `runBatch` now passes that flag, so
+`c64_re_snapshot` RAM hashes are reproducible across runs. An earlier
+version of this paragraph said "until the tools pass that flag, compare
+decoded fields between runs, not RAM hashes"; the flag was added after that
+was measured.
 
 ## 5. IRQ chain and pointer dispatch
 

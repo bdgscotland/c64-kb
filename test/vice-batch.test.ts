@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -129,4 +129,44 @@ describe.skipIf(!canRun)("runBatch in VICE", () => {
     expect(first).not.toBeNull();
     expect(second).toBe(first);
   }, 60_000);
+
+  /**
+   * VICE -default sets RAMInitRandomChance=10: power-on RAM bits are flipped
+   * with a per-run random seed, so two runs at the same clock can differ in
+   * one or more bytes (measured: two c64_re_snapshot runs at clock 35,080,026
+   * differed at $07EA: $FB vs $FF; four default irq-chain recipe runs gave
+   * two distinct RAM images). runBatch passes -raminitrandomchance 0, which
+   * forces a fixed seed, making RAM byte-for-byte identical across runs.
+   */
+  it("-raminitrandomchance 0 makes power-on RAM identical across two runs at the same checkpoint", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vice-batch-ram-det-"));
+    writeFileSync(join(dir, "t.asm"), "BasicUpstart2(start)\nstart: lda #$2a\n    sta $d012\n    jmp *\n");
+    const asm = spawnSync(tools.java ?? "java", ["-jar", tools.kickass ?? "", "t.asm", "-o", "t.prg"], {
+      cwd: dir,
+    });
+    expect(asm.status).toBe(0);
+    // Checkpoint 1 fires on the first sta $d012; save all RAM then disable.
+    const monCommands =
+      'trace store d012 d012\ncommand 1 "bank ram; save \\"ram.bin\\" 0 0000 ffff; disable 1"\n';
+    const dumpOf = async (): Promise<Buffer> => {
+      const r = await runBatch({
+        prg: join(dir, "t.prg"),
+        monCommands,
+        cycles: 4_000_000,
+        model: "pal",
+      });
+      try {
+        const p = join(r.work, "ram.bin");
+        return existsSync(p) ? readFileSync(p) : Buffer.alloc(0);
+      } finally {
+        r.dispose();
+      }
+    };
+    const a = await dumpOf();
+    const b = await dumpOf();
+    expect(a.length).toBe(65538); // 2-byte load-address header + 64 KB
+    expect(b.length).toBe(65538);
+    expect(a.equals(b)).toBe(true);
+    rmSync(dir, { recursive: true, force: true });
+  }, 120_000);
 });

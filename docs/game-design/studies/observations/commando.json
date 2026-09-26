@@ -17,7 +17,7 @@
       "tool": "c64_re_irq_chain",
       "basis": "measured-vice",
       "rung": 1,
-      "run": "session to play, 60,000,000 cycles, no input",
+      "run": "run limit 60,000,000 cycles; post-play window from play start at 35,080,026 cycles; no input",
       "what": "one IRQ handler, reached through $0314",
       "handler": "$4134",
       "via": [
@@ -173,8 +173,8 @@
       "d018_read": "$85",
       "cpu_port_00": "$2F",
       "cpu_port_01": "$36",
-      "ram_sha1": "783da690832c956d708b68a71bdfc2d232d42dad",
-      "note": "the dump's $D018 read shows bit 0 as 1; the value is read at the title's exit, before the play chain's line-30 part"
+      "ram_sha1": "f0f49fdab30454a4f90bf9b26073188f052b931e",
+      "note": "the dump's $D018 read shows bit 0 as 1; the value is read at the title's exit, before the play chain's line-30 part; earlier runs without -raminitrandomchance 0 gave 783da690832c956d708b68a71bdfc2d232d42dad (differed at $07EA: $FF vs $FB), which was a VICE power-on RAM randomisation artefact; the hash is now stable"
     },
     {
       "id": "commando#load-1",

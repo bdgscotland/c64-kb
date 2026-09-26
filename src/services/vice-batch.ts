@@ -64,7 +64,23 @@ const SCHEMAS = "/opt/homebrew/share/glib-2.0/schemas";
 const TIMEOUT_MS = 600_000;
 
 function viceArgs(run: BatchRun, log: string): string[] {
-  const args = ["-default", "+autostart-delay-random", "-warp", "+sound", "-autostartprgmode", "1"];
+  // +autostart-delay-random: cold autostarts land on the same raster line.
+  // -raminitrandomchance 0: VICE -default sets RAMInitRandomChance=10, which
+  // flips power-on RAM bits with a per-run random seed; two c64_re_snapshot
+  // runs at clock 35,080,026 differed at $07EA ($FB vs $FF), and four default
+  // irq-chain recipe runs gave two distinct RAM images. Four runs with this
+  // flag gave one. Passing it here makes every runBatch caller's RAM
+  // byte-for-byte reproducible.
+  const args = [
+    "-default",
+    "+autostart-delay-random",
+    "-raminitrandomchance",
+    "0",
+    "-warp",
+    "+sound",
+    "-autostartprgmode",
+    "1",
+  ];
   if (run.model === "ntsc") args.push("-model", "ntsc");
   if (run.disk) args.push("-8", "d.d64");
   args.push(...(run.args ?? []));
