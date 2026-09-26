@@ -22,11 +22,13 @@ One driver, called once per frame, plays a three-voice tune and its sound
 effects. An effect takes voices 1 and 2 together. The music keeps voice 3,
 and it keeps stepping voices 1 and 2 through their patterns without writing
 the SID, so the tune stays in time. There is no priority: the last request
-wins. An effect ends by closing both gates, and each stolen voice stays
-silent until its next note. A script requests effect A on frame 31, effect
-B on frame 91, and effect A again on frame 107, which cuts B. The program
-logs the running effect on each of 160 frames, checks the log, and times
-every play call with CIA1 timer A. It writes each frame number to `$02FF`,
+wins. An effect ends by closing both gates, and each stolen voice gets no
+music until its next note (it is silent sooner only if the effect's
+sustain is 0 or its release has run out). A script requests effect A on
+frame 31, effect B on frame 91, and effect A again on frame 107, which
+cuts B. The program logs the running effect on each of 160 frames, checks
+the log, and times every play call with CIA1 timer A. It writes each frame
+number to `$02FF`, and 0 after frame 160,
 so a VICE store trace of `$D400`-`$D414` can be cut into frames: the trace
 is the proof of which code wrote which voice. The technique is
 `sfx_voice_takeover` in `techniques/music-sid.md`; `sfx-in-player.md` is the
@@ -41,7 +43,7 @@ costlier variant with priority and hand-back.
 // writing the SID, so the tune stays in time. A write flag is recomputed
 // after each voice and the voices run 3, 2, 1, so voice 3 always writes.
 // No priority: the last request wins. An effect ends by closing both gates;
-// a stolen voice stays silent until its next note. An effect is a table
+// a stolen voice gets no music until its next note. An effect is a table
 // entry: a 14-byte image of $D400-$D40D plus a note sweep (start, end,
 // frames per step, direction, voice-2 interval, flags).
 // A script requests effects on fixed frames. The program logs the running
@@ -186,7 +188,7 @@ mndone:
     beq alldone
     jmp frameloop
 alldone:
-    jsr report
+    jmp stopmark            // at the end, so no code or table moves
 idle:                       // the music keeps playing; the screen is final
     jsr waitline
     jsr play
@@ -676,6 +678,12 @@ fxflags: .byte 0
 fxc1:    .byte 0
 fxc2:    .byte 0
 log:     .fill NFRAMES, 0
+
+stopmark:                   // frames 1-160 done: MARK = 0, so the idle
+    lda #0                  // loop's plays fall outside the store trace
+    sta MARK
+    jsr report
+    jmp idle
 ```
 
 ## Build
@@ -737,7 +745,8 @@ from the script (`explog`).
 8,000,000 cycles, with `--keep-log`; a Python script cut the log into
 frames at each store to `$02FF` and named each SID store's writer by its
 PC from the symbol file: `M` for the music (`voice`), `E` for the effect
-engine (`fxengine`). A second build with the three script frames set to 0,
+engine (`fxengine`). Stores after `$02FF` returns to 0 (the idle loop)
+are left out. A second build with the three script frames set to 0,
 so no effect is ever requested (not this listing; same symbols), was
 traced the same way. Frames 1 to 160:
 
@@ -745,8 +754,8 @@ traced the same way. Frames 1 to 160:
 |---|---|
 | Music stores to `$D400`-`$D40D` on frames 32-55 and 92-131 | 0 |
 | Effect stores | 183, all on frames 31-131, none to voice 3 |
-| Voice 3 music stores, this build against the build with no requests | 343 and 343, identical in frame, register and value |
-| Voices 1-2 music stores outside frames 32-55 and 92-131, both builds | 746 and 746, identical |
+| Voice 3 music stores, this build against the build with no requests | 216 and 216, identical in frame, register and value |
+| Voices 1-2 music stores outside frames 32-55 and 92-131, both builds | 381 and 381, identical |
 | First voice 1 and voice 2 note starts after frame 55 | frame 61 in both builds, same frequencies |
 | First voice 1 and voice 2 note starts after frame 131 | frame 133 in both builds, same frequencies |
 

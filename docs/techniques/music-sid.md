@@ -1601,7 +1601,7 @@ runs. 1,200 cycles is 6.1 % of a PAL frame of 19,656 and
 **Region:** both
 **Uses registers:** D400, D401, D402, D403, D404, D405, D406, D407, D408, D409, D40A, D40B, D40C, D40D, D40E, D40F, D410, D411, D412, D413, D414, D418
 **Requires:** sid_play_routine_pattern, sid_voice_setup
-**Alternative to:** sfx_in_player (no priority, no hand-back and no shadow copy, so an effect costs less; an effect takes two voices and leaves the tune one, and a stolen voice is silent until its next note)
+**Alternative to:** sfx_in_player (no priority, no hand-back and no shadow copy, so an effect costs less; an effect takes two voices and leaves the tune one, and a stolen voice gets no music until its next note)
 **Cost:** cycles_per_frame=342, cycles_per_frame_typical=66
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-sfx-voice-takeover (an effect's start frame and a step frame, each against the same frame of a build with no requests)
@@ -1644,8 +1644,9 @@ anyway.
 The voice loop runs voice 3, then 2, then 1, and after each voice the flag
 is recomputed: "write" if no effect runs, "skip" if one does. Voice 3 is
 processed while the flag still says "write", so it always carries the
-tune; voices 2 and 1 see "skip" while an effect runs. The recipe's loop is
-five instructions of flag work per voice:
+tune; voices 2 and 1 see "skip" while an effect runs. The flag work is
+three instructions per voice; `dex` and `bpl` are the loop a player has
+anyway:
 
 ```asm
 pl0:
@@ -1680,20 +1681,24 @@ it, whatever is running. The last request wins.
 frame the music may write voices 1 and 2 again, and each writes a whole
 note (frequency, pulse width, AD, SR, gate) when its next note starts. A
 note that was sounding when the effect began does not come back.
+Closing a gate starts the release; it does not mute the voice. A stolen
+voice is silent before its next note only if the effect's sustain is 0 or
+its release has run out.
 
 ### Measured in the recipe
 
 From a store trace of `$D400`-`$D414` over frames 1 to 160, with each
-frame numbered by a store to `$02FF`, and a second build of the same
-listing with no requests (rung 1, VICE x64sc 3.10, PAL; the NTSC run
+frame numbered by a store to `$02FF` (0 after frame 160, so the idle
+loop's plays are left out), and a second build of the same listing with
+no requests (rung 1, VICE x64sc 3.10, PAL; the NTSC run
 prints the same figures):
 
 - No music store reached `$D400`-`$D40D` on frames 32 to 55 or 92 to 131,
   the frames an effect held the voices. The effect code made 183 stores,
   all on frames 31 to 131, none to voice 3.
-- Voice 3's 343 music stores are identical, frame, register and value, in
+- Voice 3's 216 music stores are identical, frame, register and value, in
   the two builds.
-- Outside the stolen frames, voices 1 and 2 got the same 746 music stores
+- Outside the stolen frames, voices 1 and 2 got the same 381 music stores
   in both builds. After effect A ends on frame 55, voice 1's pulse sweep
   writes again on frame 56 and both voices' next notes start on frame 61,
   the frame and frequency of the build without effects. After the second
@@ -1728,7 +1733,7 @@ The whole driver's worst frame, 864 cycles, is 4.4 % of a PAL frame of
 | Voices per effect | two, always voices 1 and 2 | one: fixed per effect, named by the caller, or round-robin |
 | Tune during an effect | voice 3 alone | two voices |
 | Priority | none: the last request wins | pending number, higher wins, equal restarts |
-| Hand-back | none: gates closed, voice silent until its next note | the instrument re-applied on the hand-back frame |
+| Hand-back | none: gates closed, no music on the voice until its next note | the instrument re-applied on the hand-back frame |
 | SID writes | direct, from the driver | a 25-byte shadow copied every frame, 351 cycles |
 | Effect cost in its recipe | 342 to start, 66 to 98 a step | 142 over the worst music frame, plus the 351-cycle copy every frame |
 | Effect data | 20 bytes for any length (a sweep) | 3 bytes plus 2 a frame |
@@ -1751,8 +1756,11 @@ needs two voices through an effect.
   effect A on frame 107 cuts effect B after 16 of its 32 frames. Where
   that matters, add a priority compare in the request (a few
   instructions), as `sfx_in_player` does.
-- **A stolen voice is silent until its next note.** In the recipe voice 1
-  is silent from frame 55 until its next note on frame 61. With long held
+- **A stolen voice gets no music until its next note.** In the recipe
+  voice 1 gets no note from frame 55 until frame 61. It is silent in that
+  gap because effect A's sustain is 0; an effect with sustain and a long
+  release rings on through the release (effect B, SR `$F9`, would; the
+  script cuts it, so that case was not run). With long held
   notes the gap can be a bar or more; then use a hand-back.
 - **Two gate edges in one frame.** The start writes control `$00`, then
   the image with the gate set: 91 cycles apart in the recipe's trace. The
@@ -1760,8 +1768,10 @@ needs two voices through an effect.
   new AD/SR write near a gate edge meets `sid_adsr_bug_8580`
   (`pitfalls/sid.md`); the recipe does no hard restart.
 - **On the start frame the music writes first.** The music's stores to
-  voices 1 and 2 on that frame land before the effect's image. The SID
-  keeps the last write, so they do nothing, but a trace shows them.
+  voices 1 and 2 on that frame land before the effect's image. The
+  image's values are what the registers hold after the call, but a music
+  control store with the gate set (`$41` on frame 31) is still a gate edge
+  the envelope acts on: see "Two gate edges in one frame".
 - **The effect does not own `$D415`-`$D418`.** A tune that routes voice 1
   or 2 through the filter hands that routing to the effect. The recipe,
   like Commando, uses no filter.
