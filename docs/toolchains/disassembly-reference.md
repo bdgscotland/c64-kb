@@ -37,7 +37,7 @@ of this paragraph said nothing here came from a commercial program.
 The images used:
 
 ```text
-$ shasum kernal-901227-03.bin kickassembler-irq-chain.prg
+$ shasum kernal-901227-03.bin kickassembler-irq-chain.prg kickassembler-cracktro-template.prg
 1d503e56df85a62fee696e7618dc5b4e781df1bb  kernal-901227-03.bin
 026535741c224e80c2dd1d85ad54866a6c2382f6  kickassembler-irq-chain.prg
 87f2e8d0e80206ca7322b3425b09201b6e827ae0  kickassembler-cracktro-template.prg
@@ -614,8 +614,9 @@ and have each raster part write the next part's address into that
 pointer and re-arm `$D012`. A break on the `$0314` handler then shows one
 address for every part. `re-irq-chain` follows the pointer: when the
 handler's first instruction is `JMP (ind)` it adds `pointer` and one
-`dispatch` entry per target. On the Commando session (60,000,000 cycles
-from play start, no input), cut:
+`dispatch` entry per target. On the Commando session (the run ends at the session's
+`-limitcycles` 60,000,000; play starts at clock 35,080,026, so the chain
+is traced over the last 24,919,974 cycles; no input), cut:
 
 ```text
 $ node src/cli.ts re-irq-chain session:docs/game-design/studies/sessions/commando.json

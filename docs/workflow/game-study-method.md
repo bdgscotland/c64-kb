@@ -198,7 +198,12 @@ VIC bank 3, screen $E000, `$01` = $36 at the play-start PC. The dump
 subsystem agents disassemble for their own reading (`da65 --start-addr
 0` on the dump without its header). `--after-hits N` dumps at a later
 pass of the play PC. The observations record `ram_sha1` 783da690… for
-the same clock; this run gave f0f49fda…. The cause was not traced here:
+the same clock; this run gave f0f49fda…. The two dumps differ in one
+byte, $07EA ($FB against $FF); `re-load-map` shows only the KERNAL's
+RAM test storing there before the game's first interrupt. VICE's `-default` sets `RAMInitRandomChance=10`, a random flip
+of power-on RAM bits with a per-run seed: four runs of the irq-chain
+recipe gave two different RAM images by the same clock, and four with
+`-raminitrandomchance 0` gave one. Until the tools pass that flag,
 compare decoded fields between runs, not RAM hashes.
 
 ## 5. IRQ chain and pointer dispatch
