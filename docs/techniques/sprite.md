@@ -525,7 +525,9 @@ same way.
    entry is tested; `$D015` stays `$FF`.
 4. **Choose the parking Y** so parked entries sort where no real sprite
    needs a hardware sprite. At Y 0 they sort first, draw their blank shape
-   in the top border, and let the first reuse group fire early.
+   in the top border, and let the first reuse group fire early. With
+   `sprite_multiplex_game`'s build instead of fixed groups, park below the
+   build's cut (Variations).
 5. **Unpark by writing every field in the same frame.** Pointer, X and Y
    together; a slot whose Y is copied a frame after its X shows for one
    frame at the parking Y (Commando does this, below).
@@ -576,6 +578,24 @@ own frames, whose objects move only in X, are 1,167 + 977 = 2,144. The
 DMA of parked slots comes on top of both. An earlier version of this page gave
 1,170 on the Cost line, which left out the sort, and said a parked entry
 takes nothing but a hardware sprite, which left out its DMA.
+
+### Variations
+
+- **Park below a building multiplexer's cut.** `sprite_multiplex_game`
+  walks the sorted list and copies each accepted slot into a table. Give
+  that walk a cut, the lowest Y the game shows, and have it stop at the
+  first sorted Y past the cut; write `$D015` from the number accepted.
+  Park at a Y past the cut. Parked slots then sort last and the walk stops
+  at the first of them: no hardware sprite, no 50-cycle write, and no
+  sprite DMA, because their hardware sprites are off. The sort still
+  compares them. The recipe's build has neither the cut nor the `$D015`
+  mask (it enables all eight); without them a parked Y is an ordinary
+  sprite to the build. FIREBASE (`templates/run-and-gun/src/mux.asm`)
+  parks at Y 255 with the cut at Y 187. Measured in VICE x64sc 3.10, PAL,
+  through the harness's `drive.py` 60 frames after the title's fire press:
+  11 of the 16 slots held Y 255, `mux_shown` read 5 and `$D015` read `$1F`,
+  five sprites on. Parked at Y 0 in fixed groups, each of those 11 would be
+  fetched: 105 cycles a frame of DMA for one on PAL, 358 for six (above).
 
 ### When not to use it
 
