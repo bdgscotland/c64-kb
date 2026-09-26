@@ -954,10 +954,15 @@ numbers.
 | KickAssembler double-dabble, decimal mode (listing below) | 65535 and 59999 | 875 |
 | Oscar64 C subtract-powers, `fmt_dec_sub` | 65535 | 957 |
 | Oscar64 C subtract-powers, `fmt_dec_sub` | 59999, worst case | 1,361 |
-| Oscar64 C double-dabble, nibble adjust, `fmt_dec_dab` | 65535 | 2,537 |
+| Oscar64 C double-dabble, nibble adjust, `fmt_dec_dab` | 65535 | 2,558 |
 | Oscar64 C hex byte, `fmt_hex8` | $FF | 74 |
+| Oscar64 C 8-bit subtract-powers, `fmt_dec8` | 199, worst case | 161 |
+| Oscar64 C six digits from three BCD bytes, `fmt_bcd3` | any | 205 |
+| Oscar64 C six digits of an `unsigned long` by `% 10`, `fmt_dec_long` | 999999 | 7,866 |
 
-The last few cycles depend on code placement: the same double-dabble
+The C double-dabble read 2,537 before the recipe gained its 8-bit, BCD
+and 32-bit routes; the move to 2,558 is code placement. The last few
+cycles depend on code placement: the KickAssembler double-dabble
 read 860 in an earlier build where its inner loop did not cross a page,
 and 875 after a 12-byte insertion moved it (fifteen taken branches at
 one extra cycle each, rung 3). A first version of the harness that
@@ -971,7 +976,8 @@ all 65,536 values (the `PASS` lines in the recipe).
 **Which to use where.**
 
 - Score kept in BCD (the routines above): no conversion at all. Unpack
-  nibbles, add `$30`, write. The cheapest route.
+  nibbles, add `$30`, write. The cheapest route: six digits in 205 cycles
+  from C (`fmt_bcd3`, measured), against 1,361 for five binary digits.
 - 16-bit binary in assembly: double-dabble with `SED` (`dab_u16` below).
   Fixed 875 cycles, no tables, 106 bytes with the unpack (the
   subtract-powers routine below is 90 with its tables; both from the
@@ -982,8 +988,13 @@ all 65,536 values (the `PASS` lines in the recipe).
 - 16-bit binary from Oscar64 C: subtract-powers. The C double-dabble is
   2.6 times slower. If the fixed cost matters, call the assembly
   double-dabble through `__asm`.
-- 8-bit binary: subtract-powers with two powers, or a 256-entry table of
-  packed BCD if the 256 bytes are spare (not measured here).
+- 8-bit binary: subtract-powers with two powers, 161 cycles at worst from
+  C (`fmt_dec8`, measured), or a 256-entry table of packed BCD if the 256
+  bytes are spare (the table not measured here). An earlier version of
+  this line gave no figure for either.
+- Never `unsigned long` with `% 10` from C: one 32-bit divide a digit,
+  7,866 cycles for six digits (`fmt_dec_long`, measured), 38 times the
+  BCD route.
 - Budget: 1,000 cycles is about 16 PAL raster lines (63 cycles per line,
   rung 3). Fine once per frame in VBlank for one or two fields, and fine
   on a score-change event. Do not convert inside a raster IRQ with a

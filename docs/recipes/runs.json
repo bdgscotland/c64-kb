@@ -89,7 +89,7 @@
     }
   },
   "oscar64/print-number": {
-    "cycles": 400000000,
+    "cycles": 500000000,
     "models": [
       "pal",
       "ntsc"
