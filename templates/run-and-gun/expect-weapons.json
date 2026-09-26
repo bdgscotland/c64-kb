@@ -13,6 +13,7 @@
     { "name": "the 16 hit tests pass (edges, across x 256, corner below 0)", "type": "text", "row": 13, "col": 1, "text": "BOX 16", "dy": 4 },
     { "name": "... each test's result", "type": "text", "row": 14, "col": 1, "text": "MHHMMHHMHHHMMHHM", "dy": 4 },
     { "name": "slot 1 (the shot) at X 236 Y 060; slot 4 (the blast) at X 236 Y 066, white phase", "type": "text", "row": 16, "col": 1, "text": "S1 236 060 S4 236 066 01", "dy": 4 },
+    { "name": "lost frames over the whole script to play frame 540 (not only the 200 metered); the 6 collision-accessor checks", "type": "text", "row": 17, "col": 1, "text": "ALL 00 AT 000 ACC 6", "dy": 4 },
     { "name": "the shot's yellow dot: VIC x 246-249, lines 69-72", "type": "sprite", "colour": 7, "vic_x": 246, "line": 69, "width": 4, "height": 4, "search": { "vic_x": 232, "line": 55, "width": 60, "height": 45 } },
     { "name": "the blast's white: VIC x 236-257, lines 70-85 (its top pixel, line 69, is under the shot)", "type": "sprite", "colour": 1, "vic_x": 236, "line": 70, "width": 22, "height": 16, "search": { "vic_x": 232, "line": 55, "width": 60, "height": 45 } },
     { "name": "panel: no grenades left", "type": "text", "row": 23, "col": 24, "text": "GRENADES 00", "dy": 4 },

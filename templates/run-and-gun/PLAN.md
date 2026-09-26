@@ -15,8 +15,9 @@ and he passes under tree canopies, which draw over him. A three-row panel
 under a black band holds SCORE, LIVES and GRENADES. PAL and NTSC.
 
 This slice is the skeleton: the scroll, the redraw, the band and panel, the
-multiplexer with parked slots, and the soldier. Enemies, weapons, collisions,
-game flow and audio come next, each in its own module (below, "Modules").
+multiplexer with parked slots, the soldier, and his weapons (below,
+"Weapons"). Enemies, collisions, game flow and audio come next, each in its
+own module (below, "Modules").
 
 ## Briefing
 
@@ -674,12 +675,23 @@ Rules (weapons.h has the constants):
   body centre, two frames' travel ahead, along `soldier_facing` at the
   press, from `vel_x/vel_y[16]` = round(20 sin a), -round(20 cos a) in
   quarter pixels: 5 pixels a frame straight, 4.9 on the in-between facings
-  (arithmetic). It lives 20 frames (100 pixels) and ends early on an
+  (arithmetic). It is drawn at ages 0-19, 10 to 105 pixels from the body
+  centre straight (arithmetic; an earlier version said a range of 100
+  pixels), and ends early on an
   `A_BLOCK` cell (outside the map is `A_BLOCK`) or above sprite Y 30 or
   below 187. Position in map quarter pixels, so a shot keeps to the ground
   as the view scrolls.
 - **Throw.** SPACE or port-1 fire (main.c `port_read`: `$DC00` = `$7F`,
   `$DC01` bit 4, then `$DC00` = `$FF`) folded into joy bit 5, active low.
+  `port_read` is `__asm`: Oscar64 compiled the C version's volatile
+  accesses as `LDA $DC00`, `STA $DC00` #$7F, `STA $DC00` #$FF, `LDA $DC01`
+  (build/run-and-gun.asm), so `$DC01` was read with no column selected and
+  SPACE could never throw; port-1 fire hid it, since it pulls bit 4 low
+  whatever the column. Bits 5-7 of `$DC00` are set before the fold: under
+  VICE's Joyport I/O simulation device (`make drive`) `$DC00` read `$1F`,
+  so bit 5 read as a throw held for ever and no press threw. The `__asm`
+  body is about 47 cycles a frame with the call (arithmetic from the
+  opcodes); only the normal build runs it, the autopilot builds replace it.
   One throw per press, when `grenades` > 0 (checked first) and slot 4 is
   free. The grenade flies straight up the map 2 pixels a frame for 30
   frames over everything, drawn small, medium, large, medium, small (5
@@ -705,28 +717,29 @@ Measured, VICE x64sc 3.10, PAL C64C and `-model ntsc`:
 
 | What | PAL | NTSC | Instrument |
 |---|---|---|---|
-| `weapons_update`, worst frame (3 shots flying and a blast) | 1,779 | 1,779 | CIA1 timer B around its body (`-dWEAPONS=1`); it runs right after the line-250 wake, where no IRQ comes with 8 or fewer sprites |
+| `weapons_update`, worst frame (3 shots flying and a blast) | 1,780 | 1,780 | CIA1 timer B around its body (`-dWEAPONS=1`); it runs right after the line-250 wake, where no IRQ comes with 8 or fewer sprites |
 | `weapons_update` with nothing flying | +123 over the slice | +123 | `make shot check` meter: worst 3,172 / typical 3,094 PAL, 3,197 / 3,116 NTSC, against 3,049 / 2,971 and 3,071 / 2,994 before |
-| Logic frame, worst / typical, `make weapons` | 4,871 / 3,094 | 4,979 / 3,116 | the harness meter, first 200 logic frames (every shot and throw of the script's first part) |
-| Redraw, most cycles, `make weapons` | 14,511 | 14,657 | CIA1 timer B (main.c `do_redraw`), against 14,101 and 14,317 with the soldier alone |
+| Logic frame, worst / typical, `make weapons` | 4,870 / 3,093 | 5,024 / 3,115 | the harness meter, first 200 logic frames (every shot and throw of the script's first part) |
+| Redraw, most cycles, `make weapons` | 14,509 | 14,662 | CIA1 timer B (main.c `do_redraw`), against 14,101 and 14,317 with the soldier alone |
 | Redraw's smallest lead, `make weapons` | 65 lines | 21 lines | verdict row 6, against 73 and 27 with the soldier alone |
-| Logic before a redraw ends, lines after 250 | 75 | 74 | limit 286 (PAL), 237 (NTSC) |
-| The frame after a redraw ends on line | 165 | 208 | limit 250 |
-| Lost frames, late redraws | 0 | 0 | verdict row 7 |
+| Logic before a redraw ends, lines after 250 | 76 | 75 | limit 286 (PAL), 237 (NTSC) |
+| The frame after a redraw ends on line | 166 | 210 | limit 250 |
+| Lost frames, late redraws, the first 200 logic frames | 0 | 0 | verdict row 7 |
+| Lost frames, play frames 2-539 (the scrolling part with shots and a blast in flight included) | 0 | 0 | verdict row 17, `lost_all`: wait_frame's count, not stopped by the meter hold; the one wake after the meter's median is exempt (it loses 3 frames: measured with the exemption removed, `ALL 03 AT 201`) |
 | `box_hit`, one call through a `__noinline` wrapper, pointer arguments | 275 | 275 | CIA1 timer B, IRQs off, line 16, the empty bracket subtracted |
 | `box_has`, the same | 93 | 93 | the same |
 | `panel_update` (score as unsigned long, lives, grenades) | 12,694 | | CIA1 timer B, IRQs off; why a throw calls `panel_grenades` instead |
 
 The weapons add no interrupt work. What they cost the redraw is sprite
 DMA: with up to four more sprites on the playfield during a copy, the
-NTSC lead fell from 27 to 21 lines (about 340 cycles, the redraw's own
+NTSC lead fell from 27 to 21 lines (about 345 cycles, the redraw's own
 figure). The enemies and the music now share about 21 NTSC lines, not 27.
 A collision pass over 3 shots and 11 pool objects with `box_hit` would
 be about 33 x 275 = 9,000 cycles (arithmetic): use `box_has` on a point,
 or test inline on local copies, and measure it.
 
 `make weapons` (`-dWEAPONS=1`, src/weapons_test.h: script and verdict,
-graded by expect-weapons.json, 34 of 34 on PAL and NTSC). Each expected
+graded by expect-weapons.json, 36 of 36 on PAL and NTSC). Each expected
 figure, from the map and the script (play frame n is script entry n + 3):
 
 - Shot 0, frame 5, facing 0: the body centre is map (156, 723) (view
@@ -758,14 +771,29 @@ figure, from the map and the script (play frame n is script entry n + 3):
   - 60 - 10 + 16 = 66. Its blast has run 539 - 504 - 30 - 2 light frames
   = 3 frames: the white phase. On screen: the shot's yellow dot at VIC x
   246-249, lines 69-72; the blast's white at x 236-257, lines 70-85.
+- The collision accessors at the freeze (verdict row 17, `ACC 6`): the
+  live shot's `weapons_bullet_box(0)` is its slot's point minus 12 + 2 in
+  X and minus 44 + 2 in Y plus `scroll_wy`; bullets 1 and 2 have no box;
+  `weapons_blast_box` is slot 4's point minus 12 + 11 and 44 + 9 plus
+  `scroll_wy`, 24 x 20; after `weapons_bullet_spent(0)` bullet 0 has no box
+  and its slot is parked (X 356, Y 255), and spending it again changes
+  nothing. With the bullet box one pixel left and `weapons_bullet_spent` a
+  no-op, the verdict read `ACC 2` and failed. The row-16 slot values are
+  taken before the spend.
 - `make weaponsfault` (`-dWEAPONS_FAULT=1`: fire on the level, an
   autofire): red border, `SH 33`, `F 000000`; check.py fails it.
 
 In the normal build, `make drive` with fire held for 36 frames after a tap
 showed slot 1 at Y 145 then 125 (5 a frame) and parked again, slot 2 never
-used: one shot per press on the real `$DC00`. The throw key was not
-driven: `harness/drive.py` presses port 2 only, so SPACE and port-1 fire
-are proven through joy bit 5 in the autopilot build, not on the CIA.
+used: one shot per press on the real `$DC00`. Port-1 fire was driven
+through drive.py's `Vice` class with `-controlport1device 37` and the
+monitor's joyport command on port 0: two 3-frame presses on the normal
+build took the panel from `GRENADES 05` to 04, then 03. SPACE was not
+measured: no instrument here presses a key in the matrix (the monitor's
+keyboard feed and `-keybuf` fill the KERNAL queue, which this game never
+reads). Its path rests on the emitted order in build/run-and-gun.asm
+(`LDA #$7F`, `STA $DC00`, `LDA $DC01`, `AND #$10`, then `LDA #$FF`,
+`STA $DC00`).
 
 ## Decisions and open questions
 

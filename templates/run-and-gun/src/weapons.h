@@ -29,7 +29,8 @@
 #define JOY_THROW      0x20     // joy bit 5, active low: not a $DC00 line (main.c port_read)
 
 #define BULLET_SPEED4  20       // quarter pixels a frame: 5 pixels
-#define BULLET_LIFE    20       // frames: a range of 100 pixels
+#define BULLET_LIFE    20       // frames: drawn at ages 0-19, 10 to 105 pixels from the body centre
+                                // straight (arithmetic; an earlier comment said a range of 100)
 #define BULLET_COLOUR  VCOL_YELLOW
 #define GREN_VY        2        // pixels a frame, up the map
 #define GREN_FLIGHT    30       // frames: lands 60 pixels above the throw

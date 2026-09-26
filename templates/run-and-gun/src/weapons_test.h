@@ -87,10 +87,20 @@ static unsigned hit_cyc, has_cyc;
 __noinline char hit_call(const Box *a, const Box *b) { return box_hit(a, b); }
 __noinline char has_call(const Box *b, unsigned x, unsigned y) { return box_has(b, x, y); }
 
+// Line 16 is waited for with IRQs on, so no IRQ is held off for a frame
+// (an earlier version set SEI first and held the line-211 and line-250 IRQs
+// off for most of a frame); after SEI the raster must still be line 16, or
+// an IRQ took the line and the wait starts again.
 static void timed_start(void)
 {
-    __asm { sei }
-    while (vic.raster != 16 || (vic.ctrl1 & 0x80)) ;   // top border: no badline, no sprite
+    for (;;) {
+        while (vic.raster != 15) ;
+        while (vic.raster != 16 || (vic.ctrl1 & 0x80)) ;   // top border: no badline, no sprite
+        __asm { sei }
+        if (vic.raster == 16 && !(vic.ctrl1 & 0x80))
+            break;
+        __asm { cli }
+    }
     cia1.crb = 0x00;
     cia1.tb = 0xffff;
     cia1.crb = 0x11;
@@ -141,6 +151,44 @@ static void box_tests(void)
     has_cyc = timed_stop() - zero;
 }
 
+// The collision interface at the freeze (weapons.h): the live shot's box and
+// the blast's box against slots 1 and 4 (a point at map (x, y) is drawn at
+// slot X x + 12, Y y - scroll_wy + 44; the dot's box starts 2 left and up,
+// the blast's GREN_L - 1 and GREN_M - 1), then weapons_bullet_spent on the
+// shot: its box is gone, its slot parked, so the next press takes it.
+static unsigned s1x, s1y, s4x, s4y, s4c;   // the slots as the freeze left them
+static unsigned fired_at_freeze;
+static char acc_pass;
+#define ACC_N 6
+
+static void accessor_tests(void)
+{
+    Box b;
+    s1x = SLOT_XL[SLOT_BULLET] + 256 * SLOT_XH[SLOT_BULLET];
+    s1y = SLOT_Y[SLOT_BULLET];
+    s4x = SLOT_XL[SLOT_GRENADE] + 256 * SLOT_XH[SLOT_GRENADE];
+    s4y = SLOT_Y[SLOT_GRENADE];
+    s4c = SLOT_COL[SLOT_GRENADE];
+    fired_at_freeze = shots_fired;
+    acc_pass = 0;
+    if (weapons_bullet_box(0, &b) && b.x == s1x - 12 - 2 && b.y == s1y + scroll_wy - 44 - 2 &&
+        b.w == 4 && b.h == 4)
+        acc_pass++;                                             // 1 the shot's box on its dot
+    if (!weapons_bullet_box(1, &b) && !weapons_bullet_box(2, &b))
+        acc_pass++;                                             // 2 bullets 1 and 2 not flying
+    if (weapons_blast_box(&b) && b.x == s4x - 12 - (GREN_L - 1) &&
+        b.y == s4y + scroll_wy - 44 - (GREN_M - 1) && b.w == 2 * GREN_L && b.h == 2 * GREN_M)
+        acc_pass++;                                             // 3 the blast's box on its burst
+    weapons_bullet_spent(0);
+    if (!weapons_bullet_box(0, &b))
+        acc_pass++;                                             // 4 spent: no box
+    if (SLOT_Y[SLOT_BULLET] == PARK_Y && SLOT_XL[SLOT_BULLET] + 256 * SLOT_XH[SLOT_BULLET] == PARK_X)
+        acc_pass++;                                             // 5 its slot parked this frame
+    weapons_bullet_spent(0);                                    // a second hit on it: nothing
+    if (!weapons_bullet_box(0, &b) && SLOT_Y[SLOT_BULLET] == PARK_Y)
+        acc_pass++;                                             // 6 spending a free bullet is harmless
+}
+
 // What the script must leave (PLAN.md, "Weapons").
 static const char want_facing[6] = { 0, 4, 6, 12, 12, 12 };
 static const signed char want_vx[6] = { 0, 20, 14, -20, -20, -20 };
@@ -151,7 +199,9 @@ static char first_fail(void)
     char n = 1;
     Box blast;
     box_tests();
-    CHECK(overruns == 0 && rd_late == 0)                    // 1 no frame lost, no redraw late
+    char blast_live = weapons_blast_box(&blast);
+    accessor_tests();
+    CHECK(overruns == 0 && lost_all == 0 && rd_late == 0)   // 1 no frame lost to play frame 540, no redraw late
     CHECK(rd_count >= 1 && rd_lead >= MIN_LEAD)             // 2 redraws with shots flying beat the beam
     bool along = true;
     for (char k = 0; k < 6; k++)
@@ -163,8 +213,9 @@ static char first_fail(void)
     CHECK(gl_throw_y - gl_land_y == 60 && gl_blast_frames == 16)    // 7 60 pixels up, 16 blast frames
     CHECK(throws == 5 && grenades == 0)                     // 8 five thrown, the count at 0
     CHECK(throws_busy == 1 && throws_empty == 1)            // 9 no throw while one flies or with none
-    CHECK(weapons_blast_box(&blast))                        // 10 grenade 5 bursting at the freeze
+    CHECK(blast_live)                                       // 10 grenade 5 bursting at the freeze
     CHECK(bt_pass == BT_N)                                  // 11 the hit tests, wrap included
+    CHECK(acc_pass == ACC_N)                                // 12 the collision accessors match the slots
     return 0;
 }
 
@@ -173,7 +224,7 @@ static void weapons_print(void)
     char *s = SCREEN;
     static const char hex[] = "0123456789ABCDEF";
     put_text(s, 10, 1, "SH 00 LO 0 T 0 E 0 B 0");
-    put_dec(s + 10 * 40 + 4, shots_fired, 2);
+    put_dec(s + 10 * 40 + 4, fired_at_freeze, 2);
     put_dec(s + 10 * 40 + 10, shots_lost, 1);
     put_dec(s + 10 * 40 + 14, throws, 1);
     put_dec(s + 10 * 40 + 18, throws_empty, 1);
@@ -197,16 +248,20 @@ static void weapons_print(void)
     put_dec(s + 13 * 40 + 20, has_cyc, 3);
     put_text(s, 14, 1, bt_got);
     put_text(s, 16, 1, "S1 000 000 S4 000 000 00");
-    put_dec(s + 16 * 40 + 4, SLOT_XL[SLOT_BULLET] + 256 * SLOT_XH[SLOT_BULLET], 3);
-    put_dec(s + 16 * 40 + 8, SLOT_Y[SLOT_BULLET], 3);
-    put_dec(s + 16 * 40 + 15, SLOT_XL[SLOT_GRENADE] + 256 * SLOT_XH[SLOT_GRENADE], 3);
-    put_dec(s + 16 * 40 + 19, SLOT_Y[SLOT_GRENADE], 3);
-    put_dec(s + 16 * 40 + 23, SLOT_COL[SLOT_GRENADE], 2);
+    put_dec(s + 16 * 40 + 4, s1x, 3);
+    put_dec(s + 16 * 40 + 8, s1y, 3);
+    put_dec(s + 16 * 40 + 15, s4x, 3);
+    put_dec(s + 16 * 40 + 19, s4y, 3);
+    put_dec(s + 16 * 40 + 23, s4c, 2);
+    put_text(s, 17, 1, "ALL 00 AT 000 ACC 0");
+    put_dec(s + 17 * 40 + 5, lost_all, 2);
+    put_dec(s + 17 * 40 + 11, lost_all_at, 3);
+    put_dec(s + 17 * 40 + 19, acc_pass, 1);
     put_text(s, 15, 1, "WPN 00000 B0 G0");
     put_dec(s + 15 * 40 + 5, wpn_worst, 5);
     put_dec(s + 15 * 40 + 12, wpn_worst_b, 1);
     put_dec(s + 15 * 40 + 15, wpn_worst_g, 1);
-    for (char r = 10; r <= 16; r++)
+    for (char r = 10; r <= 17; r++)
         text_colour(r, 1, 24, TEXT_CRAM);
 }
 #endif
