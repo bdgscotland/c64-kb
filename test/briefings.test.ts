@@ -1486,9 +1486,16 @@ describe("gameBriefing on the #22 section 4.1 shmup brief (#97)", () => {
       starter: "shmup-vertical",
     });
     for (const t of FEATURES) await f.linkArchetypeFeatures("vertical_shmup", t);
+    // A third owner of the raster compare that no fingerprint word names.
+    await f.addTechnique({
+      name: "zoned_sprite_reuse",
+      title: "Zoned sprite reuse by raster band",
+      category: "sprite",
+      complexity: "medium",
+    });
     // Both multiplexers own the one raster compare, as their pages claim:
     // check-compatibility calls the pair a hard unit_contention (#97).
-    for (const owner of ["sprite_multiplex_game", "sprite_multiplex_8"]) {
+    for (const owner of ["sprite_multiplex_game", "sprite_multiplex_8", "zoned_sprite_reuse"]) {
       await f.linkClaims({
         owner,
         ownerKind: "Technique",
@@ -1526,23 +1533,158 @@ describe("gameBriefing on the #22 section 4.1 shmup brief (#97)", () => {
     expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
   });
 
-  it("drops sprite_multiplex_8, found by search, for its hard conflict with the forced sprite_multiplex_game (#97)", async () => {
+  it("drops a technique found by search for its hard conflict with the forced sprite_multiplex_game (#97)", async () => {
     // The #22 run-2 brief got sprite_multiplex_8 from the live graph's vector
-    // search; this seeded graph has no vectors, so the brief names it.
-    const r = await gameBriefing("A vertical shooter whose sprite multiplexer handles 8 sprites");
+    // search; this seeded graph has no vectors, so the brief names the
+    // technique. Since KB-GAPS 2 "sprite" and "multiplexer" are words the
+    // fingerprint's own multiplexer answers, so sprite_multiplex_8 is not
+    // found at all; zoned_sprite_reuse is found by words of its own.
+    const multiplexer = await gameBriefing("A vertical shooter whose sprite multiplexer handles 8 sprites");
+    expect(multiplexer.structured.proposed_techniques.map((t) => t.name)).not.toContain("sprite_multiplex_8");
+    const r = await gameBriefing("A vertical shooter with zoned reuse by raster band");
     expect(r.structured.archetype?.name).toBe("vertical_shmup");
     const got = r.structured.proposed_techniques.map((t) => t.name);
     expect(got).toContain("sprite_multiplex_game");
-    expect(got).not.toContain("sprite_multiplex_8");
+    expect(got).not.toContain("zoned_sprite_reuse");
     const game = r.structured.proposed_techniques.find((t) => t.name === "sprite_multiplex_game");
-    expect(game?.conflicts_left_out?.map((c) => c.name)).toEqual(["sprite_multiplex_8"]);
+    expect(game?.conflicts_left_out?.map((c) => c.name)).toEqual(["zoned_sprite_reuse"]);
     const hard = r.structured.compatibility.conflicts;
-    expect(hard.some((c) => [c.a, c.b].includes("sprite_multiplex_8"))).toBe(false);
-    expect(r.text).toContain("**sprite_multiplex_8**, a hard");
+    expect(hard.some((c) => [c.a, c.b].includes("zoned_sprite_reuse"))).toBe(false);
+    expect(r.text).toContain("**zoned_sprite_reuse**, a hard");
   });
 
   it("still forces text_mode_overlay_render for a text-mode playfield", async () => {
     const r = await gameBriefing("A falling block puzzle on a text-mode playfield");
     expect(r.structured.proposed_techniques.map((t) => t.name)).toContain("text_mode_overlay_render");
+  });
+});
+
+// KB-GAPS 2 (FIREBASE build, templates/run-and-gun/KB-GAPS.md): the
+// run-and-gun brief with its archetype was proposed raycaster_grid_walls
+// ("walls"), tile_map_render ("map"), relocated_code_block ("run", "block")
+// and multi_sprite_object ("sprite") beside a fifteen-technique fingerprint.
+describe("gameBriefing beside a large fingerprint (KB-GAPS 2)", () => {
+  let f: FalkorService;
+  const BRIEF =
+    "vertical run and gun: a soldier on foot walks up a jungle map that scrolls down over a fixed score panel, 8-way movement, trees and walls block him, canopy draws over him, enemies from map rows through a sprite multiplexer, bullets along his facing, grenades lobbed, checkpoints, a gate at the area end, sound effects over a SID tune";
+  // Name, title and category as the pages give them.
+  const FINGERPRINT: [string, string, string][] = [
+    ["threshold_scroll_v", "Player-driven one-way vertical scroll past a threshold line", "scroll"],
+    ["row_map_redraw", "Coarse vertical scroll as a full playfield redraw from a raw row map", "scroll"],
+    ["soft_scroll_v", "Hardware vertical soft-scroll", "scroll"],
+    ["invalid_mode_band", "Black band from the invalid ECM+BMM mode over a split", "raster"],
+    [
+      "sprite_multiplex_game",
+      "Game multiplexer in assembly: persistent sort, double-buffered table, zone IRQs, late guard",
+      "sprite",
+    ],
+    [
+      "sprite_slot_parking",
+      'Unused virtual sprites parked at a blank shape and off-screen X, so the multiplexer never tests "in use"',
+      "sprite",
+    ],
+    ["object_pool", "Fixed-slot object pool for enemies, bullets and effects", "logic"],
+    ["wave_director", "Attack waves triggered by scroll position, with path bytecode per enemy", "logic"],
+    [
+      "char_attribute_flags",
+      "One attribute byte per character code: blocking, draw-behind priority and deadly terrain from one lookup",
+      "logic",
+    ],
+    ["facing_turn_step", "Sixteen-direction aim that turns one step per frame toward the stick", "input"],
+    [
+      "grenade_lob",
+      "A thrown grenade: fixed flight, a height animation, then a box blast around the landing point",
+      "logic",
+    ],
+    [
+      "checkpoint_respawn",
+      "Checkpoint rows per area: after a death restart at the nearest checkpoint behind, clear the enemies, refill the consumables",
+      "logic",
+    ],
+    [
+      "area_end_gate_wave",
+      "The area end: the scroll stops, a counted wave comes out, and when it is cleared a script walks the player into the exit",
+      "logic",
+    ],
+    ["sfx_voice_takeover", "Sound effects that take two voices while the music steps them silently", "music"],
+    ["frame_sync_loop", "Raster-synced frame loop", "raster"],
+  ];
+  const OTHERS: [string, string, string][] = [
+    ["raycaster_grid_walls", "Column raycaster: one ray per screen column through a grid map", "effect"],
+    ["tile_map_render", "Metatile map decode to screen and colour RAM", "scroll"],
+    ["relocated_code_block", "Code stored at one address and run at another", "banking"],
+    [
+      "multi_sprite_object",
+      "Bosses and large objects from several hardware sprites at fixed offsets from one origin",
+      "sprite",
+    ],
+    [
+      "per_frame_hitbox",
+      "Collision boxes per animation frame, emitted at draw time, tested by group",
+      "sprite",
+    ],
+    ["decimal_print", "Decimal score and counters written as screen codes", "text"],
+    ["sid_play_routine_pattern", "The init+play subroutine convention for a SID tune", "music"],
+    [
+      "high_score_table_insert",
+      "A new score into a sorted table: rank, shift down, drop the last, write",
+      "text",
+    ],
+  ];
+
+  beforeAll(async () => {
+    f = new FalkorService();
+    await f.connect();
+    await f.clean();
+    await f.ensureSchema();
+    for (const [name, title, category] of [...FINGERPRINT, ...OTHERS]) {
+      await f.addTechnique({ name, title, category, complexity: "medium" });
+      const recipe = `kickassembler-${name.replace(/_/g, "-")}`;
+      await f.addRecipe({
+        name: recipe,
+        toolchain: "kickassembler",
+        output_format: "PRG",
+        region: "both",
+        source_doc: `recipes/kickassembler/${recipe}.md`,
+      });
+      await f.linkRecipeImplements(recipe, name);
+    }
+    await f.addArchetype({
+      name: "vertical_run_and_gun",
+      title: "Vertical Run-and-Gun",
+      kind: "game",
+      source_doc: "a.md",
+      brief_words: ["on foot", "soldier"],
+    });
+    for (const [name] of FINGERPRINT) await f.linkArchetypeFeatures("vertical_run_and_gun", name);
+  });
+
+  afterAll(async () => f.close());
+
+  it("proposes none of the four the brief's words drew in, and at most four beside the fingerprint", async () => {
+    const r = await gameBriefing(BRIEF, "vertical_run_and_gun");
+    const got = r.structured.proposed_techniques.map((t) => t.name);
+    for (const [name] of FINGERPRINT) expect(got).toContain(name);
+    for (const t of [
+      "raycaster_grid_walls",
+      "tile_map_render",
+      "relocated_code_block",
+      "multi_sprite_object",
+    ])
+      expect(got).not.toContain(t);
+    expect(got.length).toBeLessThanOrEqual(FINGERPRINT.length + 4);
+  });
+
+  it("reaches the front end and the state machine from the archetype (KB-GAPS 28)", async () => {
+    const r = await gameBriefing(BRIEF, "vertical_run_and_gun");
+    const patterns = r.structured.design_patterns ?? [];
+    expect(patterns.map((p) => p.name)).toEqual(
+      expect.arrayContaining(["game_state_machine", "front_end_and_attract"]),
+    );
+    const front = patterns.find((p) => p.name === "front_end_and_attract");
+    expect(front?.source).toBe("game-design/game-structure.md");
+    expect(front?.realised_by).toContain("high_score_table_insert");
+    expect(r.text).toContain("**Game structure:** front_end_and_attract");
+    expect(BriefingSchema.safeParse(r.structured).success).toBe(true);
   });
 });

@@ -108,6 +108,9 @@ export const ToolchainHintSchema = z.object({
   snippet: z.string(),
   rationale: z.string(),
   sources: z.array(DocChunkSchema),
+  // Set when the intent names a technique with a recipe in the toolchain:
+  // the snippet is then that recipe's Source listing (KB-GAPS 8).
+  recipe: z.string().optional(),
 });
 
 // A CLAIMS edge (schema 25): the HardwareUnit, the mode, and for zero_page
@@ -344,6 +347,14 @@ export const PitfallsForSchema = z.object({
       }),
     )
     .optional(),
+  // A technique's own Pitfalls section on its page (KB-GAPS 19): prose, not
+  // Pitfall nodes, one item per bullet or paragraph. Absent when no page
+  // under techniques/ holds the technique's heading.
+  page_pitfalls: z.object({ source: z.string(), items: z.array(z.string()) }).optional(),
+  // Pitfalls reached through a register the technique uses that name other
+  // techniques as their triggers, none of them this one or one it requires
+  // (KB-GAPS 6); owners are those techniques.
+  left_out: z.array(z.object({ name: z.string(), owners: z.array(z.string()) })).optional(),
 });
 
 export const FailureDiagnoseSchema = z.object({
@@ -526,6 +537,15 @@ export const BriefingSchema = z.object({
   // The GameDesigns INSTANCE_OF the resolved archetype (schema 28, tools
   // 2.1.0); c64_plan_budget takes a name as 'design'.
   designs: z.array(BriefingDesignSchema).optional(),
+  // The game-design patterns whose **Applies to:** line names the resolved
+  // archetype (every candidate, when several fit): the state machine, the
+  // front end, level ends and transitions (KB-GAPS 28). Prose pages, not
+  // graph nodes; realised_by names techniques and toolchain/recipe pages.
+  design_patterns: z
+    .array(
+      z.object({ name: z.string(), title: z.string(), source: z.string(), realised_by: z.array(z.string()) }),
+    )
+    .optional(),
 });
 export type BriefingOutput = z.infer<typeof BriefingSchema>;
 

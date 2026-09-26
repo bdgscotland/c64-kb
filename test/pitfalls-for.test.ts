@@ -111,6 +111,58 @@ describe("pitfallsFor", () => {
       source_doc: "toolchains/oscar64-headers-reference.md",
     });
     await f.linkWraps("vic_waitLine", "D012", "Register");
+
+    // KB-GAPS 6: a register-reached pitfall that other techniques trigger
+    // belongs to them. scroll_step_v uses D011 only; fpp_thing owns
+    // fpp_like_window; needs_fpp requires fpp_thing, so it keeps it.
+    for (const name of ["scroll_step_v", "fpp_thing", "needs_fpp"]) {
+      await f.addTechnique({ name, title: name, category: "scroll", complexity: "low" });
+      await f.linkTechniqueUsesRegister(name, "D011");
+    }
+    await f.linkTechniqueRequires("needs_fpp", "fpp_thing");
+    await f.addPitfall({
+      name: "fpp_like_window",
+      title: "An FPP write outside its window",
+      severity: "high",
+      region: "both",
+      category: "raster",
+    });
+    await f.linkTriggeredBy("fpp_like_window", "D011", "Register");
+    await f.linkTriggeredBy("fpp_like_window", "fpp_thing", "Technique");
+    await f.addPitfall({
+      name: "d011_general_only",
+      title: "A pitfall of the register alone",
+      severity: "medium",
+      region: "both",
+      category: "raster",
+    });
+    await f.linkTriggeredBy("d011_general_only", "D011", "Register");
+
+    // KB-GAPS 7 and 19: techniques no Pitfall node names.
+    await f.addTechnique({ name: "lonely_technique", title: "Lonely", category: "logic", complexity: "low" });
+    await f.addRegister("DC00", "$DC00", "CIA1", "RW", ["PRA"]);
+    await f.addTechnique({
+      name: "facing_turn_step",
+      title: "Sixteen-direction aim",
+      category: "input",
+      complexity: "low",
+    });
+    await f.linkTechniqueUsesRegister("facing_turn_step", "DC00");
+    await f.addPitfall({
+      name: "keyboard_thing",
+      title: "A keyboard-scan pitfall",
+      severity: "high",
+      region: "both",
+      category: "input",
+    });
+    await f.linkTriggeredBy("keyboard_thing", "DC00", "Register");
+    await f.addTechnique({
+      name: "keyboard_matrix_scan_x",
+      title: "Scan",
+      category: "input",
+      complexity: "low",
+    });
+    await f.linkTriggeredBy("keyboard_thing", "keyboard_matrix_scan_x", "Technique");
   });
 
   afterAll(async () => f.close());
@@ -171,6 +223,46 @@ describe("pitfallsFor", () => {
     expect(r.structured.pitfalls[0]?.via).toEqual([{ name: "D012", kind: "Register", address: "$D012" }]);
     expect(r.text).toContain("**Reached through:** D012 $D012 (Register), which this function wraps");
     expect(await f.linkWraps("vic_waitLine", "FFFF", "Register")).toBe(false);
+  });
+
+  it("leaves out a register-reached pitfall that belongs to techniques this one neither is nor requires (KB-GAPS 6)", async () => {
+    const r = await pitfallsFor("scroll_step_v");
+    const names = r.structured.pitfalls.map((p) => p.name);
+    expect(names).toContain("d011_general_only");
+    expect(names).not.toContain("d012_wrap_around"); // stable_raster_irq's
+    expect(names).not.toContain("fpp_like_window");
+    expect(r.structured.left_out).toContainEqual({ name: "fpp_like_window", owners: ["fpp_thing"] });
+    expect(r.text).toMatch(/Left out.*fpp_like_window \(fpp_thing\)/s);
+    // The owner itself, and a technique that requires the owner, keep it.
+    expect((await pitfallsFor("fpp_thing")).structured.pitfalls.map((p) => p.name)).toContain(
+      "fpp_like_window",
+    );
+    expect((await pitfallsFor("needs_fpp")).structured.pitfalls.map((p) => p.name)).toContain(
+      "fpp_like_window",
+    );
+  });
+
+  it("says a technique exists and no Pitfall node names it, instead of no match (KB-GAPS 7)", async () => {
+    const r = await pitfallsFor("lonely_technique");
+    expect(r.structured.topic_kind).toBe("Technique");
+    expect(r.structured.pitfalls).toEqual([]);
+    expect(r.text).toMatch(/lonely_technique is a technique/);
+    expect(r.text).not.toMatch(/No direct entity match/);
+  });
+
+  it("returns a technique's own page pitfalls (KB-GAPS 19)", async () => {
+    const r = await pitfallsFor("facing_turn_step");
+    expect(r.structured.topic_kind).toBe("Technique");
+    expect(r.structured.page_pitfalls?.source).toBe("techniques/input.md");
+    expect(r.structured.page_pitfalls?.items).toHaveLength(4);
+    expect(r.text).toMatch(/A centred stick must hold the facing/);
+    // Its register-reached pitfall that another technique owns is left out.
+    expect(r.structured.pitfalls.map((p) => p.name)).not.toContain("keyboard_thing");
+    // A technique the graph does not hold still answers from its page.
+    const g = await pitfallsFor("grenade_lob");
+    expect(g.structured.topic_kind).toBe("Technique");
+    expect(g.structured.page_pitfalls?.items).toHaveLength(4);
+    expect(g.text).toMatch(/not in the graph/);
   });
 
   it("returns pitfalls for a technique topic (stable_raster_irq)", async () => {

@@ -34,9 +34,9 @@ export const toolchainHintTool = defineTool({
 
 Purpose: Returns a ranked set of documentation chunks most relevant to the intent, scoped to the requested toolchain. The structured output carries the snippet text plus the bias-rationale string so the consuming agent can surface it to the user.
 
-Inputs: 'toolchain' is optional (oscar64 | kickassembler | cc65). Omitting it triggers the Oscar64 default and annotates the rationale. 'intent' is a free-form description of what you want to do (e.g. "raster irq", "sprite multiplex", "disk load").
+Inputs: 'toolchain' is optional (oscar64 | kickassembler | cc65). Omitting it triggers the Oscar64 default and annotates the rationale. 'intent' is a free-form description of what you want to do (e.g. "raster irq", "sprite multiplex", "disk load"), or a technique name ("row_map_redraw", "object pool").
 
-Output: {toolchain, intent, snippet, rationale, sources[]}. 'snippet' is the text of the top-matching chunk. 'rationale' explains the toolchain choice. 'sources' carries up to 3 ranked chunks.
+Output: {toolchain, intent, snippet, rationale, sources[], recipe?}. When the intent names a technique with a recipe, 'snippet' is that recipe's Source listing and 'recipe' its name; with no toolchain given, a technique with no Oscar64 recipe is answered in the toolchain of its recipe, since its figures are that code's (row_map_redraw: KickAssembler). Otherwise 'snippet' is the text of the top-matching chunk. 'rationale' explains the toolchain choice. 'sources' carries up to 3 ranked chunks.
 
 When to use: When you need toolchain-idiomatic code patterns rather than hardware-register semantics. For register/opcode/kernal questions use the dedicated lookup tools.
 

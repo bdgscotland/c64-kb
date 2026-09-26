@@ -178,3 +178,51 @@ export async function enrichPitfall(
     ...(via ? { via } : {}),
   };
 }
+
+const OwnersRow = z.object({ name: z.string(), owners: z.array(z.string()).nullish() });
+
+/**
+ * Of the pitfalls a technique reaches only through a register or routine
+ * it uses, those whose TRIGGERED_BY list names techniques, none of them the
+ * topic or one it requires (REQUIRES, up to twelve deep), belong to those
+ * techniques. `pitfalls-for threshold_scroll_v` listed every `$D011` trick
+ * through SCROLY (fpp_write_outside_window, linecrunch_write_outside_window,
+ * mid_row_badline_write_off_by_one), none of which a one-line YSCROLL step
+ * meets (KB-GAPS 6). A pitfall the register alone triggers stays.
+ * Returns the kept rows and the left-out names with their owners.
+ */
+export async function withoutOthersPitfalls(
+  f: FalkorService,
+  key: string,
+  rows: PitfallRow[],
+  viaOf: Map<string, Via[]>,
+): Promise<{ rows: PitfallRow[]; leftOut: { name: string; owners: string[] }[] }> {
+  const viaNames = rows.filter((r) => viaOf.has(r.name)).map((r) => r.name);
+  if (viaNames.length === 0) return { rows, leftOut: [] };
+  const own = await f.roQuery(
+    `MATCH (t:Technique {name: $key})
+     OPTIONAL MATCH (t)-[:REQUIRES*1..12]->(r:Technique)
+     RETURN collect(DISTINCT r.name) AS owners, t.name AS name`,
+    { key },
+  );
+  const mine = new Set([key, ...(z.array(OwnersRow).parse(own.data).at(0)?.owners ?? [])]);
+  const res = await f.roQuery(
+    `MATCH (p:Pitfall)-[:TRIGGERED_BY]->(o:Technique) WHERE p.name IN $names
+     RETURN p.name AS name, collect(DISTINCT o.name) AS owners`,
+    { names: viaNames },
+  );
+  const leftOut = z
+    .array(OwnersRow)
+    .parse(res.data)
+    .map((r) => ({ name: r.name, owners: [...(r.owners ?? [])].sort() }))
+    .filter((r) => r.owners.length > 0 && !r.owners.some((o) => mine.has(o)))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const dropped = new Set(leftOut.map((r) => r.name));
+  return { rows: rows.filter((r) => !dropped.has(r.name)), leftOut };
+}
+
+/** Whether the graph holds a Technique of this name. */
+export async function techniqueExists(f: FalkorService, key: string): Promise<boolean> {
+  const r = await f.roQuery(`MATCH (t:Technique {name: $key}) RETURN t.name AS name LIMIT 1`, { key });
+  return r.data.length > 0;
+}
