@@ -27,7 +27,8 @@ line 225, right after the frame counter ticks below the playfield, and runs
 top row first, so every row is written before the VIC fetches it in the next
 frame. One screen matrix, no second buffer, and colour RAM is written once at
 start-up. This is the `row_map_redraw` technique. The panel shows the redraw's
-start and end lines, its cycle count and its smallest lead over the beam.
+start and end lines, its cycle count and its smallest lead over the beam,
+printed on the frame after the redraw.
 `:wait=10` holds the redraw back to line 10 and shows the tear this layout
 avoids. The panel split is `invalid_mode_band` (`recipes/kickassembler/invalid-mode-band.md`),
 and the KERNAL is banked out so the interrupts go through `$FFFE`
@@ -46,7 +47,8 @@ and the KERNAL is banked out so the interrupts go through `$FFFE`
 // second matrix. That frame runs no other logic.
 // A harness records the redraw's start and end raster lines, its CIA1 timer B
 // cycle count (interrupts included) and the line each row was finished on,
-// and prints them in the panel with the smallest lead over the beam.
+// and on the next frame, a quiet one, prints them in the panel with the
+// smallest lead over the beam.
 // Build: java -jar KickAss.jar row-map-redraw.asm -o row-map-redraw.prg
 // Variant: :wait=10 holds the redraw until line 10, too late: it tears.
 
@@ -125,7 +127,6 @@ panel:  lda panel_text,x
         sta top
         jsr redraw              // first picture
         lda #$ff                // forget the first redraw's figures
-        sta worstlead+1
         sta worstlead
         lda #$7f
         sta worstlead+1
@@ -133,6 +134,7 @@ panel:  lda panel_text,x
         sta worstcyc
         sta worstcyc+1
         sta count
+        sta pending
 
         lda #PF_D011
         sta $d011               // bit 7 clear: raster compare below 256
@@ -157,7 +159,7 @@ wait:   cmp frame
         txa
         and #7
         sta yscroll             // the line-250 IRQ writes it to $D011
-        bne main                // seven frames in eight: game logic goes here
+        bne quiet               // seven frames in eight: game logic goes here
         ldx top                 // the eighth: one map row up, then redraw
         dex
         bpl settop
@@ -173,7 +175,14 @@ settop: stx top
         bcs !-
 }
         jsr redraw
-        jsr report
+        lda #1                  // print on the next frame: on NTSC the
+        sta pending             // redraw ends on line 181 and the report
+        jmp main                // would run past the tick on 224
+quiet:  lda pending
+        beq main
+        lda #0
+        sta pending
+        jsr report              // harness: lead loop and panel, ~3,500 cycles
         jmp main
 
 // The redraw: rows 0-20 from map row `top` onward, 40 bytes each, top row
@@ -202,9 +211,13 @@ src:    lda $ffff,y
 dst:    sta $ffff,y
         dey
         bpl src
-        lda $d012               // harness: the line this row was finished on
+.assert "copy loop in one page: a taken bpl across a page costs 819 more cycles", >src, >*
+!:      ldy $d011               // harness: the line this row was finished on,
+        lda $d012               // retried if bit 8 changed between the reads
+        cpy $d011               // (26 cycles a row)
+        bne !-
         sta rowlo,x
-        lda $d011
+        tya
         sta rowhi,x
         lda src+1               // next row: +40 on both operands
         clc
@@ -541,6 +554,7 @@ minrow:    .byte 0
 worstlead: .word 0
 worstcyc:  .word 0
 count:     .byte 0
+pending:   .byte 0
 l0:        .byte 0
 l1:        .byte 0
 d0:        .byte 0
@@ -556,8 +570,8 @@ java -jar KickAss.jar row-map-redraw.asm -o row-map-redraw.prg
 java -jar KickAss.jar row-map-redraw.asm :wait=10 -o row-map-redraw-torn.prg
 ```
 
-The PRG is 3,637 bytes, loaded at $0801-$1633. The map is 2,400 of them
-(60 rows at $0C91-$15F0).
+The PRG is 3,662 bytes, loaded at $0801-$164C. The map is 2,400 of them
+(60 rows at $0CA9-$1608).
 
 ## Expected output
 
@@ -567,9 +581,9 @@ runs from line 55 to line 213 and moves down one line a frame. Lines 214-222
 are black. A dark-grey panel from line 223 to line 246 reads, in white:
 
 ```
-REDRAW START 0E1 END 093 CYCLES 394A
-MIN LEAD 003E AT ROW 14 TOP 08
-WORST CYCLES 3951 MIN LEAD 003E N 1F
+REDRAW START 0E1 END 087 CYCLES 363D
+MIN LEAD 004B AT ROW 14 TOP 08
+WORST CYCLES 365C MIN LEAD 004A N 1F
 ```
 
 All panel figures are hex. Row 1: the last redraw's start and end raster
@@ -588,9 +602,9 @@ each 8 x 8 cell against the character ROM.
 | Pinned shot | Cycles | What the PNG shows |
 |---|---|---|
 | `row-map-redraw.png` (PAL) | 8,000,000 | YSCROLL 5, top map row 8. 21 rows from line 55, the first 6 lines tall, the rest 8. Block columns 8, 9, … 28, each row one more than the row above. Band 214-222, panel 223-246. |
-| `row-map-redraw-ntsc.png` | 8,000,000 | YSCROLL 6, top map row 8, columns 8 to 27, each +1. Same band and panel lines. |
-| `row-map-redraw-mid.png` (PAL) | 8,045,360 | The exit lands while the redraw is still copying (it ends on line 147). Lines 55-102 come from the new frame: YSCROLL 0, top map row 7, rows starting on 56, 64, … 96 with columns 8 to 13. From line 103 the PNG still holds the previous frame (YSCROLL 7, top row 8). Every row is one column on from the one above. |
-| `row-map-redraw-mid-ntsc.png` | 8,023,828 | The same picture on NTSC, cut on the same line; the redraw ends on line 193 there. |
+| `row-map-redraw-ntsc.png` | 8,000,000 | YSCROLL 5, top map row 4, columns 4 to 24, each +1. Same band and panel lines. |
+| `row-map-redraw-mid.png` (PAL) | 8,045,360 | The exit lands while the redraw is still copying (it ends on line 135). Lines 55-102 come from the new frame: YSCROLL 0, top map row 7, rows starting on 56, 64, … 96 with columns 8 to 13. From line 103 the PNG still holds the previous frame (YSCROLL 7, top row 8). Every row is one column on from the one above. |
+| `row-map-redraw-mid-ntsc.png` | 8,040,923 | The same picture on NTSC with top map row 3 above the cut (columns 3 to 9) and top row 4 below it, cut on the same line; the redraw ends on line 181 there. |
 | `row-map-redraw-torn.png` (PAL, `:wait=10`) | 8,137,592 | A whole frame at YSCROLL 0 with top map row 10. Rows 0-12 (to line 151) hold columns 10 to 22; the row from line 152 holds column 24, and the rows below continue from 24. Column 23 is missing: rows 13-20 are the old picture, the tear. |
 
 Panel figures, converted:
@@ -598,21 +612,40 @@ Panel figures, converted:
 | | PAL | NTSC | PAL `:wait=10` |
 |---|---|---|---|
 | Redraw start line | 225 | 225 | 10 |
-| Redraw end line | 147 (next frame) | 193 (next frame) | 249 (same frame) |
-| Cycles, last redraw | 14,666 | 14,879 | 14,923 |
-| Cycles, worst of the run | 14,673 | 14,889 | 14,963 |
-| Smallest lead | 62 lines, row 20 | 17 lines, row 20 | −18 lines, row 17 |
-| Redraws counted | 31 | 31 | 28 |
+| Redraw end line | 135 (next frame) | 181 (next frame) | 252 (same frame) |
+| Cycles, last redraw | 13,885 | 14,128 | 15,144 |
+| Cycles, worst of the run | 13,916 | 14,175 | 15,191 |
+| Smallest lead, last redraw | 75 lines, row 20 | 29 lines, row 20 | −20 lines, row 17 |
+| Smallest lead, whole run | 74 lines | 28 lines | −20 lines |
+| Redraws counted | 31 | 35 | 28 |
 
 The torn panel reports the redraw before the pictured one; every redraw
 in that build starts on line 10, and each one ends after the frame tick on
-line 224, so the loop loses a frame per redraw and counts fewer.
+line 224, so the loop loses a frame per redraw and counts fewer. The default
+build loses none: from 8,000,000 to 12,000,000 cycles N goes from $1F to $38
+on PAL (25 redraws in 203.5 frames) and from $23 to $40 on NTSC (29 in 234),
+eight frames each. An earlier version of this recipe printed the panel right
+after the redraw; on NTSC the redraw ended on line 193 and the report
+(about 3,500 cycles, measured with CIA1 timer B) ran past the tick on line
+224, so NTSC lost a frame on every redraw and scrolled one pixel in nine
+frames, not eight. The report now runs on the frame after, a quiet one.
+
+The harness logs a row when its last byte, column 0, is stored. The block
+cell is stored earlier in the row, so in the torn build rows 11 and 12 show
+their new block although their logged leads are −3 and −5 lines (from a
+build that printed each row's line; its row 17 matches the panel's −20). A row
+finished after line 216 is read as frame N, so the torn build's smallest
+lead covers rows 0-17 only.
 
 The cycle counts include the line-250 interrupt, which lands inside the
 redraw, the badline stalls of the display lines it overlaps, and the
-harness's per-row `$D012`/`$D011` reads (18 cycles a row, 378 in all,
+harness's per-row `$D011`/`$D012` reads (26 cycles a row, 546 in all,
 instruction-table arithmetic). The inner loop is 14 cycles a byte, 559 a row,
-plus one cycle for each load that crosses a page (arithmetic).
+plus one cycle for each load that crosses a page (arithmetic). The loop must
+sit in one page: a taken `BPL` into another page costs one more cycle a
+byte, 819 a redraw, and the listing asserts it. An earlier version of this
+recipe had the loop across $08FF/$0900 and measured 14,666 cycles on PAL for
+the same copy, and its "14 cycles a byte" was 15 in its own build.
 
 ### The cycle sweep
 
@@ -620,18 +653,18 @@ The same default build was run with the exit screenshot at 232 different
 cycle counts: every 2,457 cycles (39 PAL lines) over ten frames from
 8,000,000 on PAL, every 2,113 over ten frames on NTSC, and every 4 lines from
 line 40 to line 160 (PAL) and 40 to 200 (NTSC) of a frame in which the
-redraw is running. In every one, the block column steps by exactly one from
+redraw is running. The sweep was re-run on the current listing. In every one, the block column steps by exactly one from
 each playfield row to the next, lines 214-222 are black across the whole
 window, line 55 is the first playfield line and the panel reads back as
-above. All eight YSCROLL phases appear on both models. Where an exit cuts a
+above (the last redraw's count reads $363D or $363E on PAL). All eight YSCROLL phases appear on both models. Where an exit cuts a
 frame, the cut shows as one row a line short (the next frame is one pixel
 lower) and never as a skipped or repeated column; in the redraw frame the cut
-moved down the screen with the exit point, 56, 64, … 160 on PAL and up to 200
+moved down the screen with the exit point, 56, 64, … 160 on PAL and up to 192
 on NTSC, so every row was seen from the half-redrawn screen.
 
-The same check on the `:wait=10` build, every 39 lines, finds the missing
-column in every exit from line 156 of its redraw frame until the beam passes
-line 152 in the frame after.
+The same check on the `:wait=10` build, 80 exits every 39 lines from
+8,000,000, finds the missing column, at line 152, in eight consecutive exits
+(8,127,764 to 8,144,963, one frame) and in none of the other 72.
 
 ## Why this works
 
@@ -644,17 +677,20 @@ the band split ticks the frame counter.
 
 **The redraw has to beat the beam once, not every row.** In the next frame
 YSCROLL is 0 and row r is fetched on line 48 + 8r. A build that also printed
-each row's finish line (PAL, 8,000,000 cycles) showed rows finished on lines
-236, 248, 260, 270, 281, 291, 301, then 0, 10, 21, 32, 42 of the next frame
-for rows 7-11, and 53 to 145 for rows 12-20. So rows 0-11 are done before
-line 48. In the border a row takes about 10.5 lines; on the display lines
-about 11.5, because each badline takes 40-odd cycles, and the beam gains three
-to four lines a row. The lead is smallest on the last row: 62 lines on PAL.
-NTSC's frame has 263 lines, so only rows 0-6 are done by line 48, and row 20
-finishes on line 191 against its fetch on 208: 17 lines. Starting the same
-copy on line 10 (`:wait=10`) gives rows 0-12 time and loses from row 13 on:
-the harness reports −18 lines at row 17, and the PNG shows the old rows 13-20
-under the new rows 0-12.
+each row's finish line (PAL, 8,000,000 cycles; its row-20 line matches the
+pinned panel's lead) showed rows 0-7 finished on lines 236, 246, 258, 268,
+278, 288, 298 and 308, rows 8-12 on 6, 16, 26, 35 and 46 of the next frame,
+and rows 13-20 on 57 to 133. So rows 0-12 are done before line 48. A row
+takes about 10.3 lines in the border and about 11 on the display lines,
+where each badline takes 40-odd cycles, so the lead shrinks by about three
+lines a row. It is smallest on the last row: 208 − 133 = 75 lines on PAL.
+NTSC's frame has 263 lines, so only rows 0-7 are done by line 48, and row 20
+finishes on line 179 against its fetch on 208: 29 lines. Starting the same
+copy on line 10 (`:wait=10`) gives rows 0-12 time for the block and loses
+from row 13 on: the harness reports −20 lines at row 17, and the PNG shows
+the old rows 13-20 under the new rows 0-12. An earlier version quoted 62 and
+17 lines and a finish on line 145; those came from the build whose loop
+crossed a page (above).
 
 **The new rows and the new YSCROLL must reach the same frame.** The main loop
 sets YSCROLL to 0 before the redraw, and the line-250 interrupt writes it
@@ -669,8 +705,14 @@ written once at start-up. A map that needs a colour per cell would have to
 copy 840 more bytes into `$D800`, which cannot be double buffered either
 (`techniques/scroll.md`, `char_scroll_buffer_v`).
 
-**Seven frames in eight are free.** The recipe runs no logic, but the loop
-shows where it goes: `bne main` after the YSCROLL step. On the redraw frame
-the budget is what the redraw and the band split leave: PAL 19,656 − 14,673 −
-852 = 4,131 cycles, NTSC 17,095 − 14,889 − 874 = 1,332 (arithmetic from the
-measured counts and the split's cost in `invalid-mode-band.md`).
+**Seven frames in eight are free.** The recipe runs no game logic, but the
+loop shows where it goes: `bne quiet` after the YSCROLL step, where the
+harness's report also runs. On the redraw frame, logic fits between the
+redraw's end and the split interrupt on line 211. PAL: 76 lines × 63 = 4,788
+cycles, less 10 badlines × 43 = 4,358. NTSC: 30 lines × 65 = 1,950, less 4
+badlines × 43 = 1,778 (arithmetic from the measured end lines). That window
+holds no harness work: the report moved to the next frame. The redraw
+itself still holds 546 cycles of harness reads, so a game without them
+ends the copy about eight lines sooner and gains that time too. An earlier
+version gave 4,131 and 1,332 cycles, by subtracting counts from the frame,
+while the report it did not count ran in that time.

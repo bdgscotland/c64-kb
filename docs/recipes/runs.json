@@ -2782,7 +2782,7 @@
     }
   },
   "kickassembler/row-map-redraw@midntsc": {
-    "cycles": 8023828,
+    "cycles": 8040923,
     "models": [
       "ntsc"
     ],

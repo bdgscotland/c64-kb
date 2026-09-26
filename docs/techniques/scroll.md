@@ -424,9 +424,9 @@ frame's active display period.
 **Uses kernal:** (none)
 **Requires:** soft_scroll_v
 **Alternative to:** char_scroll_buffer_v (redraws every row from the map instead of moving them; no colour RAM move and no seam row, but the level must sit in RAM as raw screen codes, 40 bytes a row, and the redraw frame has little time left for logic), eight_way_scroll_double_buffer (one screen and no `$D018` flip; vertical only, and the one-pass redraw must stay ahead of the beam)
-**Cost:** cycles_per_frame=14673
+**Cost:** cycles_per_frame=13304
 **Cost basis:** measured-vice
-**Cost measured on:** kickassembler-row-map-redraw (the redraw frame, 21 rows, CIA1 timer B, screen on, PAL; includes the line-250 IRQ and 378 cycles of per-row harness reads; 14,889 on NTSC)
+**Cost measured on:** kickassembler-row-map-redraw (the redraw frame, 21 rows, CIA1 timer B, screen on, PAL: 13,916 measured, less the 546 cycles of per-row harness reads and the 66-cycle line-250 IRQ that `invalid_mode_band` already counts, arithmetic; 14,175 measured on NTSC; an earlier version said 14,673, measured with the copy loop across a page boundary and the harness included)
 **Claims:** vic_yscroll (shares)
 **Claims basis:** derived-listing
 
@@ -469,11 +469,13 @@ last playfield row's badline, screen RAM can change freely until row 0's
 badline in the next frame. The copy starts in that gap and writes rows in the
 order the beam reads them, so it only has to stay ahead, not finish, before
 the display starts. Measured in VICE x64sc 3.10 on the recipe: from line 225
-on PAL, rows 0-11 are written before line 48, and the last row finishes on
-line 145 against its fetch on line 208. On the display lines a row costs
-about 11.5 lines because of the badlines, so the lead shrinks by three to
-four lines a row, to 62 lines at row 20. On NTSC, whose frame is 263 lines,
-only rows 0-6 are done by line 48 and the lead at row 20 is 17 lines.
+on PAL, rows 0-12 are written before line 48, and the last row finishes on
+line 133 against its fetch on line 208. On the display lines a row costs
+about 11 lines because of the badlines, so the lead shrinks by about three
+lines a row, to 75 lines at row 20. On NTSC, whose frame is 263 lines,
+only rows 0-7 are done by line 48 and the lead at row 20 is 29 lines. An
+earlier version said 62 and 17 lines and a finish on line 145, from a build
+whose copy loop crossed a page and so cost 15 cycles a byte.
 
 ### When not to use it
 
@@ -484,9 +486,11 @@ only rows 0-6 are done by line 48 and the lead at row 20 is 17 lines.
   of about 190 rows. Metatiles (`tile_map_render`) store the same level in a
   fraction of that, but decoding them inside the copy adds cycles to every
   row of the race (not measured here); see the metatile variation below.
-- **Heavy logic every frame.** The redraw frame keeps only what the copy and
-  the interrupts leave: 4,131 cycles on PAL and 1,332 on NTSC in the recipe
-  (arithmetic from the measured counts). If logic may not skip a frame in
+- **Heavy logic every frame.** The redraw frame keeps only the time between
+  the copy's end and the next interrupt: in the recipe, about 4,360 cycles
+  on PAL and 1,780 on NTSC (arithmetic from the measured end lines, badlines
+  taken off; an earlier version said 4,131 and 1,332 and did not count the
+  harness report that then ran in that time). If logic may not skip a frame in
   eight, spread the move over the seven quiet frames into a second screen and
   flip `$D018` (`screen_double_buffer_d018`).
 
@@ -504,10 +508,18 @@ only rows 0-6 are done by line 48 and the lead at row 20 is 17 lines.
   YSCROLL 7) the copy overwrites rows the VIC has not yet fetched in the
   current frame.
 - **NTSC has less room.** 49 fewer lines between the playfield's end and the
-  next frame's first badline; the recipe's lead falls from 62 lines to 17.
-- **The frame tick.** A redraw that runs past the next frame-counter tick
-  makes a wait-for-change loop miss a frame. The `:wait=10` build ends on
-  line 249, after the tick on 224, and loses a frame on every redraw.
+  next frame's first badline; the recipe's lead falls from 75 lines to 29.
+- **The frame tick.** A redraw, or the work after it, that runs past the
+  next frame-counter tick makes a wait-for-change loop miss a frame. The
+  `:wait=10` build ends on line 252, after the tick on 224, and loses a
+  frame on every redraw. An earlier recipe build printed its report (about
+  3,500 cycles) right after the redraw; on NTSC that ran past the tick, so
+  it scrolled one pixel in nine frames on every coarse step.
+- **A copy loop across a page.** A taken branch into another page costs one
+  more cycle. With `BPL` crossing a page, the copy is 15 cycles a byte, 819
+  more a redraw. The recipe's PAL lead was 62 lines with its loop across a
+  page and is 75 in one page, although its harness now spends 168 more
+  cycles. Assert that the loop sits in one page.
 
 ### Variations
 
@@ -521,13 +533,17 @@ only rows 0-6 are done by line 48 and the lead at row 20 is 17 lines.
 
 ### Cycle budget
 
-Measured in VICE x64sc 3.10 with CIA1 timer B around the redraw, 31 redraws
-per run, screen on: 14,666 to 14,673 cycles on PAL and up to 14,889 on
-NTSC, including the line-250 interrupt that lands inside, the badline stalls
-and 378 cycles of harness reads. The inner loop is 14 cycles a byte, 559 a
-row, plus a cycle per page-crossing load (arithmetic). The recipe's band
-split costs 852 cycles on PAL (`invalid_mode_band`), so the redraw frame has
-about 4,100 cycles left on PAL and 1,300 on NTSC.
+Measured in VICE x64sc 3.10 with CIA1 timer B around the redraw, screen on:
+13,885 to 13,916 cycles on PAL and up to 14,175 on NTSC, including the
+line-250 interrupt that lands inside, the badline stalls and 546 cycles of
+harness reads. Without the harness and the interrupt that is about 13,304 on
+PAL (arithmetic). The inner loop is 14 cycles a byte, 559 a row, plus a
+cycle per page-crossing load (arithmetic), if the loop does not cross a
+page itself. The copy ends on line 135 on PAL and 181 on NTSC; the band
+split's interrupt comes on line 211, so logic on the redraw frame has about
+4,360 cycles on PAL and 1,780 on NTSC. An earlier version gave 14,673 and
+14,889 cycles and 4,100 and 1,300 left, from a build whose loop crossed a
+page and whose report ran on the redraw frame.
 
 ### In Commando (1985)
 
