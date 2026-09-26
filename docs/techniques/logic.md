@@ -245,7 +245,13 @@ green on exactly the 128 of its 256 pixels where the checker glyph has a
 - **Multicolour characters.** In multicolour text only bit pairs 10 and 11
   cover a sprite with its bit set; pair 01 is background
   (`mob_priority`). Draw canopy pixels in `$D023` or colour RAM, not
-  `$D022`.
+  `$D022`. Measured by the recipe's `:mc=1` build (VICE x64sc 3.10, PAL
+  and NTSC): the walker under the multicolour checker canopy showed yellow
+  on all 128 pixels of the glyph's pair-01 (`$D022`) rows and green on the
+  128 of its pair-10 (`$D023`) rows. A canopy with `$D022` highlights shows
+  the hidden soldier through them, as FIREBASE's does
+  (`templates/run-and-gun`). An earlier version of this page gave the rule
+  from `mob_priority` and measured only a hires canopy.
 
 ### In Commando (1985)
 
@@ -275,7 +281,7 @@ him, three steps of his velocity, and its attribute gives all three bits.
 
 ### Recipes
 
-- `recipes/kickassembler/char-attribute-flags.md` — a map with a canopy, a bush with the canopy's glyph and no flags, walls and a hazard; three scripted walkers stop, go behind and die, the event frames and cycles printed and the hidden pixels counted, PAL and NTSC
+- `recipes/kickassembler/char-attribute-flags.md` — a map with a canopy, a bush with the canopy's glyph and no flags, walls and a hazard; three scripted walkers stop, go behind and die, the event frames and cycles printed and the hidden pixels counted, PAL and NTSC; `:mc=1` repeats it in multicolour text, where the canopy's `$D022` pixels show the sprite
 
 ## flip_screen_rooms — A world of room records, redrawn whole at every edge
 

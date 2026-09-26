@@ -5,7 +5,7 @@ output_format: PRG
 region: both
 techniques: [char_attribute_flags, mob_priority]
 file_formats: [PRG]
-uses_registers: [D000, D001, D002, D003, D004, D005, D010, D011, D012, D015, D017, D018, D01B, D01C, D01D, D020, D021, D027, D028, D029, DD04, DD05, DD0E]
+uses_registers: [D000, D001, D002, D003, D004, D005, D010, D011, D012, D015, D016, D017, D018, D01B, D01C, D01D, D020, D021, D022, D023, D027, D028, D029, DD04, DD05, DD0E]
 uses_kernal: []
 claims: [sprite_0-2 (owns), vic_char_base (owns), zero_page $FB-$FC (owns)]
 harness: [cia2_timer_a]
@@ -48,6 +48,11 @@ screen. Use it as the terrain lookup of a top-down game
 // Then the frame of every event, the final state and the worst update
 // time and one probe's time (CIA2 timer A) are printed in hex on
 // rows 17-23.
+// Variant: :mc=1 turns on multicolour text. The checker glyph's $AA rows
+// become bit pair 10 ($D023) and its $55 rows pair 01 ($D022); only pair
+// 10 covers a sprite whose $D01B bit is set.
+
+.var MC = cmdLineVars.containsKey("mc") ? cmdLineVars.get("mc").asNumber() : 0
 
 .const SCREEN  = $0400
 .const CHARSET = $3800        // VIC bank 0, $D018 = $1E
@@ -96,7 +101,7 @@ BasicUpstart2(start)
 
 .function colourOf(ch) {
     .if (ch == WALL) { .return 9 }                    // brown
-    .if (ch == CANOPY || ch == BUSH) { .return 5 }    // green
+    .if (ch == CANOPY || ch == BUSH) { .return MC != 0 ? 13 : 5 } // green; 8+ is multicolour
     .if (ch == HAZARD) { .return 14 }                 // light blue
     .return 1                                         // text: white
 }
@@ -180,6 +185,14 @@ start:
     sta $d01c
     sta $d01d
     sta $d01b
+    .if (MC != 0) {
+        lda #$18              // multicolour text, 40 columns
+        sta $d016
+        lda #13               // pair 01: light green, background for priority
+        sta $d022
+        lda #5                // pair 10: green, foreground
+        sta $d023
+    }
 
     lda #$33                  // character ROM in at $D000
     sta $01
@@ -466,6 +479,7 @@ labels: .text "lane   x  pr st on of bk dd             "
 
 ```bash
 java -jar KickAss.jar char-attribute-flags.asm -o char-attribute-flags.prg
+java -jar KickAss.jar char-attribute-flags.asm :mc=1 -o char-attribute-flags-mc.prg
 ```
 
 `-showmem`: code `$0810-$0EBD`, sprite shape `$3000-$303F`, map
@@ -513,6 +527,30 @@ at X − 16, so it reaches column c at X = 8c + 16: column 10 at frame 55,
 column 6 at frame 23, column 14 at frame 87. Its leading probe is at
 X − 8, so the wall at column 20 stops it when X = 168, at frame 128.
 
+### Multicolour text (`:mc=1`)
+
+The variant sets `$D016` to `$18` (multicolour text), `$D022` to 13 (light
+green) and `$D023` to 5 (green), and gives the canopy and bush cells colour
+13, so they draw in multicolour. The checker glyph's `$AA` rows are bit
+pair 10 (`$D023`) and its `$55` rows pair 01 (`$D022`). Verified in VICE
+x64sc 3.10, PAL (C64C) and NTSC (6567R8), 8,000,000 cycles; screenshots
+`screenshots/char-attribute-flags-mc.png` and
+`screenshots/char-attribute-flags-mc-ntsc.png`. A PIL script found in both:
+
+- **Walker a** at x 176-191, lines 83-98, priority `$FF`: 128 pixels green
+  (`$D023`) and 128 yellow, in whole rows. Lines 83, 85, ... 97, the glyph's
+  pair-10 rows, are green; lines 84, 86, ... 98, its pair-01 rows, are
+  yellow. The sprite shows through every light-green `$D022` pixel.
+- **Walker b** over the bush: 256 yellow. **Walker c**: 256 red.
+- Rows 17-23 print the same figures as the hires build: the update runs
+  below the display and the text cells stay hires (colour 1).
+
+A canopy drawn with `$D022` highlights therefore shows a hidden sprite
+through them. Draw the pixels that must cover it in pair 10 (`$D023`) or
+11 (colour RAM). The rule is `mob_priority`'s, measured over every pixel
+class in `recipes/kickassembler/sprite-priority-classes.md`; this run
+shows it on a canopy.
+
 The first run of this listing printed 657 cycles on PAL and 700 on NTSC.
 The empty JSR/RTS that calibrates the timer ran at wherever the program
 happened to start, and a badline had stolen 43 cycles from it. The
@@ -537,6 +575,8 @@ together into `$D01B`. The VIC-II then decides per pixel: over a 1 bit of
 the canopy the character wins, over a 0 bit the sprite shows
 (`mob_priority`). That is why walker a is half green, in the checker's
 pattern, and walker b, over the same glyph with its bit clear, is solid.
+In multicolour text the foreground pixels are bit pairs 10 and 11 only;
+pair 01 is background, which the `:mc=1` run shows.
 
 ### Map, not screen
 
