@@ -56,7 +56,7 @@ The two archetypes it is most often confused with: the vertical shooter (a ship 
 
 **Technique fingerprint:** `threshold_scroll_v`, `row_map_redraw`, `soft_scroll_v`, `invalid_mode_band`, `sprite_multiplex_game`, `sprite_slot_parking`, `object_pool`, `wave_director`, `char_attribute_flags`, `facing_turn_step`, `grenade_lob`, `checkpoint_respawn`, `area_end_gate_wave`, `sfx_voice_takeover`, `frame_sync_loop`
 
-**Brief words:** vertical run and gun, run and gun on foot, on foot, soldier, commando, grenade, grenades, top down soldier, walks up the map
+**Brief words:** on foot, soldier, commando, grenade, grenades, top down soldier, walks up the map
 
 **Common pitfalls:** `sprite_dma_overflow`, `badline_cycle_loss`, `raster_irq_first_line_jitter`, `ecm_with_mcm_set_is_invalid_black_mode`
 
