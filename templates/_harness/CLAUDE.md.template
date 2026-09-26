@@ -85,6 +85,11 @@ make run              # windowed VICE, for a human
   covers both. An earlier version said `$02` to `$52`, which is the registers
   only.
 - The meter takes CIA2 timer A. Do not open RS-232 (device 2) while it runs.
+- In a meter build the first frames after `meter_init` and the frame after
+  the last recorded one start late (calibration, then the median selection;
+  frame_meter.h). A deadline that reads the raster line must act only on
+  frames that began on time, or the AUTOPILOT run takes a path the release
+  never takes (run-and-gun's `objects_on_time` in main.c).
 - The KERNAL serial routines end in `CLI` (ROM bytes `58 60` / `58 18` at
   `$EDAB`, `$EDB5`, `$EDDB`, `$EE82`). After any disk call, `SEI` again if
   the program runs with the KERNAL IRQ off: otherwise that IRQ lands inside
