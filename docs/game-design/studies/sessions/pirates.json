@@ -1,0 +1,2952 @@
+{
+  "image": {
+    "sha1": "ec94dbfb6908b9c0249958b4aed3dff452096ea3",
+    "kind": "d64",
+    "file": "pirates!+",
+    "title": "Pirates!",
+    "release": "nostalgia"
+  },
+  "machine": {
+    "model": "pal"
+  },
+  "inject": [
+    {
+      "at_pc": "$1F4B",
+      "after_hits": 20,
+      "set": {
+        "a": "$00"
+      },
+      "once": true,
+      "why": "crack intro wait loop $1F48 LDA $DC01 / $1F4B AND $DC00 / $1F4E AND #$10 / $1F50 BNE: passes when ($DC01 & $DC00 & $10)==0 (measured $DC00=$7F $DC01=$FF at the poll). Inject on the instruction after the read; hit 21 = clock 50,867,977."
+    },
+    {
+      "at_pc": "$EB30",
+      "after_hits": 2200,
+      "set": {
+        "x": "$11"
+      },
+      "why": "SCNKEY no-key path $EB30 CPX #$FF -> $EB34 TXA -> $EB3C STA $0277,X: X is the PETSCII char inserted in the keyboard buffer on every IRQ. $11 = cursor down; held is right here because the trainer handler $42BB bounds the selection at $F9, so it lands on START GAME (first hit clock 78,007,913)."
+    },
+    {
+      "at_pc": "$EB30",
+      "after_hits": 2215,
+      "set": {
+        "x": "$0D"
+      },
+      "why": "RETURN: trainer handler $42BB CMP #$0D toggles $4178,x and auto-advances (LDA #$11 / JMP $42BB); on X=$0B = START GAME it drops the return address and leaves the menu. First hit clock 78,254,200. Held is harmless after that: the game never reads $0277 (trace load 0277 0278 shows only the KERNAL's own $E5B4/$E5B9, 32 reads, last 78,254,328)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 2000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 2050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 2100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 2150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 2200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 2250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 2300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 2350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 2400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 2450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 2500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 2550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 2600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 2650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 2700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 2750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 2800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 2850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 2900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 2950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 2950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 3000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 3050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 3100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 3150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 3200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 3250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 3300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 3350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 3400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 3450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 3500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 3550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 3600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 3650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 3700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 3750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 3800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 3850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 3900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 3950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 3950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 4000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 4050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 4100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 4150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 4200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 4250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 4300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 4350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 4400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 4450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 4500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 4550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 4600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 4650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 4700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 4750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 4800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 4850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 4900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 4950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 4950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 5000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 5050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 5100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 5150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 5200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 5250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 5300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 5350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 5400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 5450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 5500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 5550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 5600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 5650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 5700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 5750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 5800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 5850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 5900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 5950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 5950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 6000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 6050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 6100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 6150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 6200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 6250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 6300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 6350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 6400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 6450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 6500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 6550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 6600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 6650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 6700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 6750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 6800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 6850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 6900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 6950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 6950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 7000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 7050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 7100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 7150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 7200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 7250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 7300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 7350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 7400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 7450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 7500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 7550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 7600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 7650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 7700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 7750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 7800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 7850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 7900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 7950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 7950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 8000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 8050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 8100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 8150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 8200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 8250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 8300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 8350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 8400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 8450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 8500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 8550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 8600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 8650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 8700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 8750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 8800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 8850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 8900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 8950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 8950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 9000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 9050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 9100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 9150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 9200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 9250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 9300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 9350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 9400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 9450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 9500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 9550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 9600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 9650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 9700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 9750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 9800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 9850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 9900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 9950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 9950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 10000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 10050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 10100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 10150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 10200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 10250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 10300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 10350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 10400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 10450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 10500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 10550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 10600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 10650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 10700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 10750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 10800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 10850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 10900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 10950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 10950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 11000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 11050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 11100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 11150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 11200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 11250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 11300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 11350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 11400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 11450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 11500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 11550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 11600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 11650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 11700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 11750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 11800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 11850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 11900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 11950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 11950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 12000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 12050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 12100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 12150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 12200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 12250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 12300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 12350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 12400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 12450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 12500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 12550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 12600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 12650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 12700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 12750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 12800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 12850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 12900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 12950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 12950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 13000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 13050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 13100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 13150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 13200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 13250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 13300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 13350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 13400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 13450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 13500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 13550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 13600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 13650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 13700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 13750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 13800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 13850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 13900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 13950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 13950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 14000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 14050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 14100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 14150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 14200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 14250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 14300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 14350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 14400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 14450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 14500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 14550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 14600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 14650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 14700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 14750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 14800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 14850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 14900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 14950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 14950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 15000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 15050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 15100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 15150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 15200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 15250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 15300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 15350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 15400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 15450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 15500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 15550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 15600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 15650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 15700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 15750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 15800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 15850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 15900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 15950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 15950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 16000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 16050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 16100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 16150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 16200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 16250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 16300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 16350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 16400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 16450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 16500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 16550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 16600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 16650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 16700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 16750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 16800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 16850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 16900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 16950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 16950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17000,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 17000; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17050,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 17050; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17100,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 17100; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17150,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 17150; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17200,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 17200; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17250,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 17250; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17300,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 17300; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17350,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 17350; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17400,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 17400; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17450,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 17450; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17500,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 17500; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17550,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 17550; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17600,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 17600; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17650,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 17650; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17700,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 17700; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17750,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 17750; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17800,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 17800; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17850,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 17850; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17900,
+      "set": {
+        "a": "$6f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $6f = port 2 fire. One-frame once entry on hit 17900; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 17950,
+      "set": {
+        "a": "$7f"
+      },
+      "once": true,
+      "why": "game input $970D ORA $DC00 -> $9710 LSR chain, bit4 fire -> $960E; $7f = port 2 idle (release). One-frame once entry on hit 17950; entries 50 frames apart, alternating press/release, because the question layer drops presses that are not followed by idle reads at this rate (measured: 3-frame groups 700 frames apart stall at question 2, this pattern reaches the town)."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 18100,
+      "set": {
+        "a": "$7d"
+      },
+      "why": "TOWN MENU CURSOR MOVE: joystick 2 DOWN held. Frame read $970D ORA $DC00 -> $9710 LSR chain; bit1 low = INC $9611, the sprite-0 pointer Y (+1 px/frame). The town menu (BASIC GOSUB 8000) computes C=INT(PEEK($9611)/8)-7-15 (line 8060) and clamps at N-1=7 = LEAVE TOWN (N=8 menu lines; table $9480=08). At menu entry $9611=$C4=196 (C=2 VISIT THE GOVERNOR, measured in ram-town.raw); 40 frames -> $9611=236 -> C=7 LEAVE TOWN. Town menu drawn at clock 547,523,243 = hit ~17977 (window draw $9980, run r2b); 18100 is after it. Do not hold longer than ~55 frames: $9611 is a byte and wraps."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 18140,
+      "set": {
+        "a": "$6f"
+      },
+      "why": "TOWN MENU SELECT: joystick 2 FIRE held. $960E=1 (the exact read is LDA ($14),Y at $B818, the BASIC ROM PEEK function; measured reading $960E at clock 379,335,498). GOSUB 8000 returns C=7; line 3330 ON 7 GOTO ... -> 3332 roll call -> GOTO 2999 -> GOSUB 5000 the voyage (ship at sea) -> line 3000 arrival."
+    },
+    {
+      "at_pc": "$9710",
+      "after_hits": 18160,
+      "set": {
+        "a": "$7f"
+      },
+      "why": "release: joystick 2 idle $7f so the voyage screen is not auto-advanced by a held trigger.",
+      "once": true
+    }
+  ],
+  "in_play": {
+    "check": "exec",
+    "pc": "$A486",
+    "after_clock": 213000000,
+    "why": "$A486: a key-wait loop in RAM under the BASIC ROM (LDA $C6 / LDA $0277 / CMP #$20, SPACE, with a $D020 flash). It is NOT duel-only: 215,103 hits from 2,958,794 (boot) to 261,711,412, 1,282 of them at 150-175M during the setup questions. after_clock selects the duel: screenshots bisect its start to 212.5M-213.0M cycles (blank at 212.5M, the ship duel at 213.0M), so the first hit after 213,000,000 is in the duel. An earlier after_clock of 195,000,000 fired at 205,240,221, before the duel. Open: whether the duel reads the joystick (a text search of the trace for $DC00 found none; indexed or pointer reads were not checked)."
+  },
+  "limitcycles": 555000000,
+  "title": "Pirates! (1987, MicroProse) \u2014 sailing scene (sea)"
+}

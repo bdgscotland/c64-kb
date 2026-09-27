@@ -300,4 +300,28 @@ Enemy AI in beat-em-ups is more complex than in platformers or puzzle games. Eac
 
 **Modern examples:** none widely known
 
+---
+
+## Open World / Modes
+
+**Archetype:** `open_world_modes`
+
+A world map the player travels across, with separate modes entered by events or the player's choice: trading in port, duelling, a sea battle, browsing menus, reading a calendar. The game's logic is driven by a high-level script (BASIC in Pirates!) calling machine-code service blocks; one bytecode interpreter runs every real-time action scene and returns an event code; the script dispatches on it. No mode draws on the resources of another at run time: each loads its data and code when entered and unloads on exit.
+
+Pirates! (1987, MicroProse) is the model and the only C64 title measured here. BASIC lines are the scenario script: menus, the calendar, the voyage driver, and the transitions between modes are all BASIC. Machine-code blocks at fixed pages ($9500 memory kernel, $9600 video and input, $9980 windows) are the runtime library, called by SYS with parameters POKEd into zero page and results read back with PEEK. One bytecode interpreter at $A486 runs every animated scene — fencing, sailing, outcome panels — from a script that can poke sprite registers, read the joystick and return an event code to the script dispatcher. The sailing map is a character screen (VIC bank 3, screen $E400, charset $E000) with the ship fixed at screen centre in two overlaid sprites and 16 heading poses as sprite-pointer pairs; the world window redraws from a static 3,048-byte map block every ~5 frames and hands the fine-scroll registers to the raster IRQ through one dirty byte. The BASIC program itself is swapped between phases: the duel loads a 381-line program, the town an 817-line one.
+
+The calendar drives events: a day counter advances per voyage leg, months trigger events, and the year rolls at 360 days. The player's career accumulates across legs rather than in one continuous play session. The modes are not levels in sequence; they recur in any order that events and the player's choices produce.
+
+Elite (1985, Firebird) fits the open-world / modal shape — a galaxy map, trading, space combat, docking — but its implementation (wire-frame 3D combat, split-screen radar) differs from Pirates!, and it has not been measured here (rung 4 for Elite).
+
+**Technique fingerprint:** `scene_bytecode_interpreter`, `basic_ml_service_blocks`, `bank_swap_trampoline`, `centred_sprite_map_scroll`, `text_window_and_menu`, `facing_turn_step`, `sprite_animation_table`, `ram_under_kernal`, `frame_sync_loop`
+
+**Common pitfalls:** `ram_under_rom_traps`, `fastloader_kernal_dependency`
+
+**Brief words:** open world, sailing, trading, career, mini-games, pirates
+
+**Reference titles:** [Pirates!](https://www.c64-wiki.com/wiki/Sid_Meier%27s_Pirates!) (1987), [Elite](https://www.c64-wiki.com/wiki/Elite) (1985). C64-Wiki files Pirates! as a strategy/trading/action game and Elite as a space trading/combat game.
+
+**Modern examples:** none checked.
+
 - Production planning for any archetype (build order, memory budget, scope and region, editors): `./production-planning.md`.
