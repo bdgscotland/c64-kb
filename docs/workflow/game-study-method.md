@@ -175,6 +175,18 @@ direction), and the grenade on `$DC01` at $38DC (rung 1, the flow
 agent's runs). Create those checkpoints disabled and enable them from a
 checkpoint on the play-start PC, so they act only in play.
 
+A menu that needs a fresh press per question is edge-triggered: it counts
+a press only after a release. An injection as above holds its value on
+every pass after `after_hits`, so that menu counts one press and then
+waits for a release that never comes. Give the entry `"once": true` and it
+sets its value on exactly one hit and disables its checkpoint in the same
+command (`command N "r a = 6f; disable N"`); the next pass reads the
+port's own idle value, which is the release, so one once entry is one
+press and two once entries at different `after_hits` are two. Measured in
+VICE x64sc on test/fixtures/re/press-count.asm (a loop that counts a press
+only after a release): two once entries counted 2 presses, one held
+injection counted 1.
+
 ## 4. Snapshot
 
 ```text

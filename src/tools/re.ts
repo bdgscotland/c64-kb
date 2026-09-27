@@ -82,7 +82,7 @@ const common = {
     .number()
     .int()
     .min(100_000)
-    .max(200_000_000)
+    .max(2_000_000_000)
     .default(8_000_000)
     .describe("Run length in CPU cycles (-limitcycles)"),
   disk_path: z
@@ -107,7 +107,7 @@ const sourced = {
     .number()
     .int()
     .min(100_000)
-    .max(200_000_000)
+    .max(2_000_000_000)
     .optional()
     .describe(
       "Run length in CPU cycles (-limitcycles). Default 8000000; with a session, omit it or match its limitcycles",

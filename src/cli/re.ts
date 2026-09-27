@@ -12,8 +12,8 @@ import { reSession } from "../tools/re-session.ts";
 /** --cycles for the RE commands: an integer from 100,000, the MCP tools' own floor. */
 function cyclesArg(value: string): number {
   const n = Number(value);
-  if (!Number.isInteger(n) || n < 100_000 || n > 200_000_000)
-    throw new InvalidArgumentError("--cycles must be an integer from 100000 to 200000000.");
+  if (!Number.isInteger(n) || n < 100_000 || n > 2_000_000_000)
+    throw new InvalidArgumentError("--cycles must be an integer from 100000 to 2000000000.");
   return n;
 }
 

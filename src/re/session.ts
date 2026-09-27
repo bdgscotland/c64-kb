@@ -34,7 +34,12 @@
  * An injection fires on every pass through at_pc after its first
  * after_hits: `ignore` only skips the first N, and the command runs on each
  * hit after them. A game that returns to its title and polls there again
- * gets fire again at once.
+ * gets fire again at once. An entry with `once` sets its value on exactly
+ * one hit and disables its checkpoint in the same command (`command N "r a
+ * = 6f; disable N"`), so the port reads its own idle value on every later
+ * pass: one entry is one press of a button, and a game whose menus want a
+ * fresh press per question gets one entry per question (a press-then-release
+ * is two entries, or one once-entry and then nothing).
  */
 import { z } from "zod";
 import type { Hit } from "./monlog.ts";
@@ -57,6 +62,8 @@ export const SessionSchema = z.object({
         at_pc: z.string().regex(HEX_ADDR),
         after_hits: z.number().int().min(0),
         set: z.partialRecord(z.enum(["a", "x", "y"]), z.string().regex(HEX_BYTE)),
+        /** Set the value on exactly one hit, then disable the checkpoint. */
+        once: z.boolean().optional(),
         why: z.string(),
       }),
     )
@@ -67,7 +74,9 @@ export const SessionSchema = z.object({
     after_clock: z.number().int().min(0),
     why: z.string().optional(),
   }),
-  limitcycles: z.number().int().min(100_000).max(200_000_000),
+  // 2,000,000,000 (was capped at 200,000,000): a long replay is bounded by
+  // runBatch's maxLogBytes, not by this.
+  limitcycles: z.number().int().min(100_000).max(2_000_000_000),
 });
 export type Session = z.infer<typeof SessionSchema>;
 type Injection = Session["inject"][number];
@@ -84,7 +93,9 @@ function injectionLines(i: Injection, n: number): { checkpoint: string; then: st
     .map(([r, v]) => `${r} = ${hex2(parseHex(v))}`)
     .join(", ");
   const then = i.after_hits > 0 ? [`ignore ${n} ${i.after_hits.toString(16)}`] : [];
-  if (regs) then.push(`command ${n} "r ${regs}"`);
+  // `once` disables the checkpoint in the same command line (one command line
+  // may hold both, `;`-separated), so the next pass reads the port's own value.
+  if (regs) then.push(`command ${n} "r ${regs}${i.once === true ? `; disable ${n}` : ""}"`);
   return { checkpoint: `trace exec ${pc} ${pc}`, then };
 }
 

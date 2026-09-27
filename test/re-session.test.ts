@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { REGION_TIMING } from "../src/domain/timing.ts";
 import { analyseIrqChain } from "../src/re/irq-chain.ts";
-import { parseHit, type Hit } from "../src/re/monlog.ts";
+import { parseHit, readHits, storedValue, type Hit } from "../src/re/monlog.ts";
 import {
   inPlayClock,
   inPlayCommand,
@@ -16,10 +16,18 @@ import {
   sessionScript,
   type Session,
 } from "../src/re/session.ts";
-import { batchOf, loadSession, reSession, runSession, screenshotPath } from "../src/tools/re-session.ts";
+import {
+  batchOf,
+  loadSession,
+  reSession,
+  runSession,
+  screenshotPath,
+  withImage,
+} from "../src/tools/re-session.ts";
 import { reFrameProfile, reIrqChain } from "../src/tools/re.ts";
 import { reFrameMode } from "../src/tools/re-frame.ts";
 import { resolveX64sc } from "../src/services/vice-bin.ts";
+import { runBatch } from "../src/services/vice-batch.ts";
 import { findC1541, findToolchains } from "../scripts/lib/toolchains.ts";
 
 const base = {
@@ -42,18 +50,25 @@ describe("session file", () => {
     expect(s.inject[0]?.after_hits).toBe(1000);
     expect(s.machine.model).toBe("pal");
   });
-  it("refuses a bad sha1, a non-hex PC, a negative hit count, a register other than a/x/y, no in_play", () => {
+  it("refuses a bad sha1, a non-hex PC, a negative hit count, a register other than a/x/y, a once that is not a boolean, no in_play", () => {
     const bad = [
       { image: { ...base.image, sha1: "b2ca4794" } },
       { inject: [{ ...base.inject[0], at_pc: "fire" }] },
       { inject: [{ ...base.inject[0], after_hits: -1 }] },
       { inject: [{ ...base.inject[0], set: { p: "$00" } }] },
       { inject: [{ ...base.inject[0], set: { a: "$100" } }] },
+      { inject: [{ ...base.inject[0], once: "yes" }] },
+      { inject: [{ ...base.inject[0], once: 1 }] },
+      { inject: [{ ...base.inject[0], once: null }] },
       { in_play: undefined },
       { machine: { model: "c64c" } },
     ];
     for (const b of bad)
       expect(SessionSchema.safeParse({ ...base, ...b }).success, JSON.stringify(b)).toBe(false);
+  });
+  it("limitcycles runs to 2,000,000,000 and refuses above it", () => {
+    expect(SessionSchema.safeParse({ ...base, limitcycles: 2_000_000_000 }).success).toBe(true);
+    expect(SessionSchema.safeParse({ ...base, limitcycles: 2_000_000_001 }).success).toBe(false);
   });
   it("loads the committed Commando session and refuses a path outside the sessions directory", () => {
     const ok = loadSession("docs/game-design/studies/sessions/commando.json");
@@ -88,6 +103,28 @@ describe("monitor commands", () => {
     const s = session({ inject: [{ at_pc: "$C000", after_hits: 0, set: { a: "$01", x: "$2" }, why: "t" }] });
     expect(injectCommands(s, 1)).toBe('trace exec c000 c000\ncommand 1 "r a = 01, x = 02"\n');
   });
+  it("a once entry sets the value and disables its checkpoint in one command line", () => {
+    const s = session({
+      inject: [{ at_pc: "$C000", after_hits: 4, set: { a: "$6F" }, once: true, why: "one press" }],
+    });
+    expect(injectCommands(s, 2)).toBe('trace exec c000 c000\nignore 2 4\ncommand 2 "r a = 6f; disable 2"\n');
+  });
+  it("once:false or no once is the plain every-hit command", () => {
+    for (const once of [false, undefined]) {
+      const s = session({
+        inject: [
+          {
+            at_pc: "$C000",
+            after_hits: 0,
+            set: { a: "$6F" },
+            ...(once === undefined ? {} : { once }),
+            why: "t",
+          },
+        ],
+      });
+      expect(injectCommands(s, 1)).toBe('trace exec c000 c000\ncommand 1 "r a = 6f"\n');
+    }
+  });
   it("traces the in-play PC", () => {
     expect(inPlayCommand(session())).toBe("trace exec 4134 4134\n");
   });
@@ -121,6 +158,14 @@ describe("MonitorScript: one numbering for every session-driven run", () => {
         "",
       ].join("\n"),
     );
+  });
+  it("a once entry takes the same checkpoint number as any other and shifts nothing after it", () => {
+    const first = { at_pc: "$0FB5", after_hits: 2, set: { a: "$6F" }, why: "fire" };
+    const second = { at_pc: "$1000", after_hits: 0, set: { x: "$00" }, why: "t" };
+    const plain = sessionScript(session({ inject: [first, second] }));
+    const once = sessionScript(session({ inject: [{ ...first, once: true }, second] }));
+    expect(once.checkpoint("trace exec 2000 2000")).toBe(plain.checkpoint("trace exec 2000 2000"));
+    expect(once.text().replace("; disable 1", "")).toBe(plain.text());
   });
   it("shares the in_play checkpoint with an identical tool line, never an injection's", () => {
     const m = sessionScript(session());
@@ -250,10 +295,10 @@ const tools = findToolchains();
 const x64sc = resolveX64sc();
 const canRun = x64sc !== null && !x64sc.windowed && tools.kickass !== null && tools.java !== null;
 
-/** The fixture PRG, a manifest naming it by sha1, and a session for it. */
-function fixture(): { manifest: string; sha1: string } {
+/** The fixture PRG (title-fire.asm unless named), a manifest naming it by sha1, and a session for it. */
+function fixture(asm = "title-fire.asm"): { manifest: string; sha1: string } {
   const dir = mkdtempSync(join(tmpdir(), "re-session-"));
-  copyFileSync(join(import.meta.dirname, "fixtures", "re", "title-fire.asm"), join(dir, "t.asm"));
+  copyFileSync(join(import.meta.dirname, "fixtures", "re", asm), join(dir, "t.asm"));
   const built = spawnSync(tools.java ?? "java", ["-jar", tools.kickass ?? "", "t.asm", "-o", "t.prg"], {
     cwd: dir,
   });
@@ -261,7 +306,7 @@ function fixture(): { manifest: string; sha1: string } {
   const prg = join(dir, "t.prg");
   const sha1 = createHash("sha1").update(readFileSync(prg)).digest("hex");
   const manifest = join(dir, "manifest.json");
-  writeFileSync(manifest, JSON.stringify({ [sha1]: { path: prg, title: "title-fire" } }));
+  writeFileSync(manifest, JSON.stringify({ [sha1]: { path: prg, title: asm.replace(/\.asm$/, "") } }));
   return { manifest, sha1 };
 }
 
@@ -348,6 +393,60 @@ describe.skipIf(!canRun)("the fixture's title exit is play only after fire", () 
     expect(r.ok, JSON.stringify(r)).toBe(true);
     if (r.ok) expect(r.result.play_clock - (r.result.injections[0]?.fired_at_clock ?? 0)).toBe(4);
   }, 120_000);
+});
+
+describe.skipIf(!canRun)("a once entry is one fresh press of an edge-triggered menu", () => {
+  const f = canRun ? fixture("press-count.asm") : { manifest: "", sha1: "" };
+  const menu = (inject: unknown[]): Session =>
+    SessionSchema.parse({
+      image: { sha1: f.sha1, kind: "prg", title: "press-count" },
+      machine: { model: "pal" },
+      inject,
+      in_play: { check: "exec", pc: "$083D", after_clock: 0, why: "the menu stops polling" },
+      limitcycles: 4_000_000,
+    });
+  const PRESS = { at_pc: "$081E", after_hits: 0, set: { a: "$6F" }, why: "menu waits for fire: CMP #$6F" };
+
+  /**
+   * One run: the press count the loop stored at $C000 when it stopped
+   * polling, and how many hits each injection checkpoint logged (a once
+   * entry's checkpoint is disabled by its own command, so one).
+   */
+  const counts = async (inject: unknown[]) => {
+    const s = menu(inject);
+    const m = sessionScript(s);
+    const stores = m.checkpoint("trace store c000 c000");
+    const r = await withImage(s, f.manifest, async (staged) => {
+      const run = await runBatch(batchOf(staged, s, m, { screenshot: screenshotPath("press-count", shots) }));
+      try {
+        const all: Hit[] = [];
+        for await (const h of readHits(run.log)) all.push(h);
+        return {
+          presses: m
+            .toolHits(all)
+            .filter((h) => h.checkpoint === stores)
+            .map((h) => storedValue(h)),
+          injectionHits: s.inject.map((_, k) => all.filter((h) => h.checkpoint === k + 1).length),
+        };
+      } finally {
+        run.dispose();
+      }
+    });
+    if ("error" in r) throw new Error(r.error);
+    return r;
+  };
+
+  it("two once entries give two presses where one held entry gives one", async () => {
+    const two = await counts([
+      { ...PRESS, once: true },
+      { ...PRESS, after_hits: 25, once: true },
+    ]);
+    expect(two.presses).toEqual([2]);
+    expect(two.injectionHits).toEqual([1, 1]);
+    const held = await counts([PRESS]);
+    expect(held.presses).toEqual([1]);
+    expect(held.injectionHits[0]).toBeGreaterThan(1);
+  }, 240_000);
 });
 
 const c1541 = findC1541();
