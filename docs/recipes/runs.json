@@ -3016,5 +3016,17 @@
       "pal": "screenshots/scene-bytecode-interpreter.png",
       "ntsc": "screenshots/scene-bytecode-interpreter-ntsc.png"
     }
+  },
+  "kickassembler/basic-ml-service-blocks": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/basic-ml-service-blocks.png",
+      "ntsc": "screenshots/basic-ml-service-blocks-ntsc.png"
+    }
   }
 }
