@@ -182,6 +182,12 @@ check: phases
 # five grenades and presses once more with none, then walks up scrolling
 # with shots in the air and freezes during the last blast. expect-weapons.json
 # grades its verdict rows and the blast and bullet on screen, PAL and NTSC.
+# The freeze's SHOWN pin reads 8 now, not 10: two of the ten sprites were
+# enemy grenade blasts that never expired (issue #133; ages 46 and 182 in
+# the pool at the freeze) and free at age 20 since 2d3c0f9. The script's
+# walk and timings are unchanged and every other pin reads the same, so
+# the scene is still soldier + one shot + the blast + the enemy objects
+# above the cut: five of them now.
 # weaponsfault: the same with -dWEAPONS_FAULT=1 (fire on the level, an
 # autofire) must fail those checks.
 WEAPONS_CYCLES := 16000000              # the freeze comes on play frame 540: about 12,600,000 on PAL

@@ -1153,6 +1153,14 @@ figure, from the map and the script (play frame n is script entry n + 3):
   - 60 - 10 + 16 = 66. Its blast has run 539 - 504 - 30 - 2 light frames
   = 3 frames: the white phase. On screen: the shot's yellow dot at VIC x
   246-249, lines 69-72; the blast's white at x 236-257, lines 70-85.
+  Verdict row 8 (`SHOWN 08`) counts the freeze's sprites: soldier, the
+  shot, the blast and five enemy objects above the cut (a rifleman, the
+  dust of the runner grenade 5's blast killed, a grenade in flight, an
+  enemy shot, a grenadier). An earlier version pinned `SHOWN 10` and "7
+  enemy objects": two of the seven were enemy grenade blasts that never
+  expired (issue #133; ages 46 and 182 in the pool at the freeze) and free
+  at age 20 since the fix, so the count is 8. The script's walk and
+  timings are unchanged and every other figure reads the same.
 - The collision accessors at the freeze (verdict row 17, `ACC 6`): the
   live shot's `weapons_bullet_box(0)` is its slot's point minus 12 + 2 in
   X and minus 44 + 2 in Y plus `scroll_wy`; bullets 1 and 2 have no box;

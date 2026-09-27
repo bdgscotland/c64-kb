@@ -5,7 +5,7 @@
     { "name": "soldier X, Y; map y on line 55; scroll steps", "type": "text", "row": 4, "col": 1, "text": "X 236 Y 110 WY 480 ST 127", "dy": 4 },
     { "name": "redraws with shots and grenades flying", "type": "text", "row": 5, "col": 18, "text": "RD 15", "dy": 4 },
     { "name": "lost frames, late redraws", "type": "text", "row": 7, "col": 1, "text": "LOST 00 AT 000 LATE 00", "dy": 4 },
-    { "name": "sprites shown at the freeze: soldier, one shot, the blast and 7 enemy objects above the cut (3 before the enemies landed)", "type": "text", "row": 8, "col": 1, "text": "SHOWN 10", "dy": 4 },
+    { "name": "sprites shown at the freeze: soldier, one shot, the blast and 5 enemy objects above the cut (3 before the enemies landed; SHOWN read 10 until the fix of issue #133: two of the seven were enemy grenade blasts that never expired and held their slots, ages 46 and 182 in the pool. A blast frees at age 20 now, so the five are a rifleman, the dust of the runner grenade 5's blast killed, a grenade in flight, an enemy shot and a grenadier)", "type": "text", "row": 8, "col": 1, "text": "SHOWN 08", "dy": 4 },
     { "name": "frame meter, the first 200 frames that ran the game's logic (every shot and throw of the first part)", "type": "meter", "row": 9, "col": 1, "frames": 200, "dy": 4 },
     { "name": "shots fired 22, one press lost with three flying; throws 5, one press with none left, one while one flew", "type": "text", "row": 10, "col": 1, "text": "SH 22 LO 1 T 5 E 1 B 1", "dy": 4 },
     { "name": "the first six shots along facings 0 4 6 12 12 12; ends: block, range, off, range x3; shot 0 blocked at frame 10", "type": "text", "row": 11, "col": 1, "text": "F 046CCC E 213111 A10", "dy": 4 },
