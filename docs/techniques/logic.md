@@ -3891,3 +3891,187 @@ here).
 ### Recipes
 
 - `recipes/oscar64/pinball-ball.md` — collision map of kinds with unit normals, gravity, reflection with e = 0.75, adaptive substeps; a floor drop, a slope and a thin-wall shot with and without substeps, trails on screen, every frame timed with CIA1, PAL and NTSC
+
+## scene_bytecode_interpreter — Bytecode interpreter for animated scenes
+
+**Complexity:** medium
+**Uses registers:** D41B, DC00
+**Demands:** (none)
+**Requires:** (none)
+
+One small interpreter runs every animated scene from a byte stream. Each
+opcode covers one action — set a sprite position, poke a register, wait
+frames, loop, read the joystick, draw a SID-random pose, branch, or end —
+and the interpreter dispatches them in sequence. The caller passes a script
+address; an end opcode returns an event code. All game animation lives in
+one piece of code.
+
+### Why
+
+Per-scene hard-coded animation routines share no code and are hard to
+change. A bytecode approach shares one interpreter across every scene. The
+script is data: the designer changes timing, positions and branching without
+touching assembly. The interpreter is small enough to live entirely in RAM
+(Pirates! uses about 640 bytes for the main loop and 128 × 2 = 256 bytes
+for the handler table).
+
+### How
+
+1. **Script layout.** One opcode byte per step, followed by 0–3 operand
+   bytes. A 16-bit program counter in zero page, advanced by `INC ZPC /
+   BNE / INC ZPCHI`. A `fetch_byte` subroutine reads the next byte and
+   advances the PC.
+
+2. **Dispatch.** Multiply the opcode by 2 to index into a word table of
+   handler addresses, then jump there. Two variants:
+
+   All figures below use the same convention: **fetch + dispatch = cycles
+   paid per opcode, excluding the handler body.** The recipe also gives the
+   full benchmark-iteration cost (fetch + dispatch + NOP handler), which
+   includes `DEC zp + BNE` (8 cycles) as the NOP handler and is the figure
+   the CIA1 timer reports.
+
+   | Method | Fetch + dispatch (rung 3) | Full iteration measured (rung 1, VICE x64sc 3.10, CIA1, display blanked) |
+   |---|---|---|
+   | Pirates! 1-byte-patch JMP (page-aligned) | 15 + 11 = **26 cycles** | — |
+   | Recipe 2-byte-patch JMP | 15 + 23 = **38 cycles** | 47 cycles ($1783 / 128; NOP handler included) |
+   | RTS trick | 15 + 24 = **39 cycles** | 48 cycles ($1810 / 128) |
+
+   The 1-cycle gap between arithmetic and measured comes from the CIA1
+   timer's start/stop latency (one phi2 cycle). All three measurements used
+   the recipe's benchmark with `DEN=0` (display blanked) to prevent
+   VIC-II bad-line cycle stealing from skewing the count.
+
+   - **Self-modified JMP (page-aligned table, as in Pirates!).**
+     `ASL A` to double the opcode; `STA patch+1` patches the low byte of a
+     `JMP (abs)` operand, whose high byte is fixed because the table is
+     page-aligned. The `JMP (abs)` reads the handler address from
+     `table + opcode*2` and jumps there. Each handler ends with
+     `JMP next_op`. Fetch + dispatch: 26 cycles.
+
+   - **Self-modified JMP (non-aligned table, recipe variant).**
+     As above but both bytes of the JMP operand are patched: one `ADC`
+     computes the low byte and a second handles the carry into the high
+     byte. Fetch + dispatch: 38 cycles (arithmetic), 39 cycles measured.
+
+   - **RTS trick.** Push `handler_addr − 1` high then low onto the stack,
+     then `RTS`. The 6502 pops and adds 1 to jump to the handler. The
+     handler ends with `JMP next_op` (or `RTS` if the loop uses `JSR` to
+     reach it). Fetch + dispatch: 39 cycles (arithmetic), 40 cycles measured.
+     Costs about the same as a non-aligned JMP patch but requires no self-
+     modification.
+
+   **Warning.** If `fetch_byte` sets `LDY #0` internally (as it must for
+   `LDA (ZPC),Y` indirect addressing), any handler that calls `fetch_byte`
+   twice will find Y=0 on the second return. Save the sprite-register
+   offset (`sprite# * 2`) to zero page before the second call and restore
+   it with `LDY zp` before the `STA $D000,Y` store.
+
+3. **Opcode families.** Typical sets cover:
+   - *Sprite pose and position*: write to `$D000,Y` and `$D001,Y` indexed
+     by `sprite# * 2`; write a sprite pointer byte for a pose swap.
+   - *Poke any address*: two operand bytes are patched into the address
+     field of a `STA abs` instruction, then the value byte is written. This
+     lets scripts write sprite pointers, colours, `$D015` and `$D016`
+     without opcode-per-register proliferation.
+   - *Wait N frames*: spin on a zero-page frame counter that the raster IRQ
+     increments once per frame.
+   - *Counted loop*: a zero-page counter is initialised by a LOOP opcode
+     and decremented by an ENDLOOP opcode; ENDLOOP subtracts a fixed
+     back-offset from the PC to repeat the loop body.
+   - *SID random*: read `$D41B` (SID voice 3 noise), scale, and use as a
+     choice (pose, direction, enemy decision). Voice 3 gate must be on and
+     frequency non-zero before use.
+   - *Joystick read*: read a CIA port byte and extract fire or direction
+     bits into a zero-page result.
+   - *Conditional skip*: skip N bytes forward if the joystick result is set
+     (or zero). Forward skips index a jump-target cache to avoid scanning on
+     every pass.
+   - *End with event code*: store the event code and return to the caller.
+
+4. **Frame timing.** Time scenes with a raster-IRQ frame counter, not pass
+   counts. A fixed counter value makes scene speed independent of how much
+   work the CPU does per pass. Pirates! (1987) times by pass counts; that
+   only works because its CPU speed is fixed. A frame-counter wait is one
+   extra opcode in a loop; the overhead is small.
+
+5. **Caller interface.** `JSR run_vm` with the script address in ZPC.
+   The interpreter runs until the end opcode, which RTSes with the event
+   code in A. The caller dispatches on it (a BASIC `ON N GOTO` in Pirates!).
+
+### Timing correction
+
+Pirates! does not read the frame counter. Each "turn" is a fixed count of
+interpreter passes; measured at 89 passes per frame (rung 1, from the
+VICE trace of the duel scene, `data/re/pirates/scene-vm/findings.txt`).
+Pass-counted timing is wall-clock stable only on the original hardware
+speed. A recipe that uses the raster-IRQ frame counter is portable to
+any speed.
+
+When measuring dispatch cost with CIA1, blank the display first (`$D011`
+bit 4 = 0, wait two full frames for it to take effect at raster line 48).
+Without the blank, VIC-II bad lines steal ~43 CPU cycles each; 25 bad lines
+in the display region add ~1,075 cycles to the measurement, and the exact
+count varies by where in the raster the benchmark starts.
+
+### Variations
+
+- **Push/pop stack for variables.** Pirates! has a 16-bit stack for
+  arithmetic and a separate set of state words for per-channel data. A
+  simpler interpreter can put script variables in zero page directly.
+- **Channels (sequential repeat loops).** Pirates! supports counted loops
+  that share the loop table with a GOSUB return stack. The simplest form is
+  one zero-page counter per active loop.
+- **Conditional branches with a jump cache.** Pirates! scans forward for
+  block landmarks on the first use of each conditional site and caches the
+  target. A simpler recipe can use a fixed forward-skip count (one operand
+  byte).
+- **Engine calls.** A CALL opcode with an address operand executes a
+  machine-code routine, popping its arguments from zero page. This lets
+  scripts reach sound, disk and other subsystems without adding opcodes for
+  each.
+
+### In Pirates! (1987)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (a cracked release;
+its start-up menu patched five interpreter table entries at opcodes `$31`,
+`$32`, `$33`, `$36` and `$39` to cheat hooks — opcode meanings there
+describe the modified copy, not the original); rung 1 throughout.
+
+The main loop is at `$A486–$A4EB`, the 128-entry handler word table at
+`$A300–$A3FF`. Dispatch: the opcode byte is fetched at `$A4A8` via
+`LDA ($9E),Y` (the zero-page PC); the doubled opcode is stored into the
+low byte of a `JMP (abs)` operand at `$A4EC` (table high byte fixed at
+`$A3`), and the handler is jumped to. Each handler ends with `RTS`, which
+returns to `$A4E2`, which increments the PC and loops.
+
+The interpreter ran flat out: 12,762 passes in 143 frames = 89 passes per
+frame (rung 1), median 198 cycles per pass. It never reads the jiffy clock
+or the frame counter `$9616`. Timing is by pass counts: a channel's loop
+body runs a fixed number of ticks between visible updates. The duel's
+fencer bursts came every 518 tick-dispatches ≈ 152,000 cycles ≈ 7.7 frames.
+The IRQ at line 0 (`$9681`, cost 333 cycles = 0.03% of the frame) handles
+all sound; there are no sound opcodes.
+
+Opcodes confirmed by trace (`probeA`/`probeB` runs, rung 1): `$66` (sprite
+X), `$67` (sprite Y), `$30` (byte poke — sprite pointers and `$D015`),
+`$08` (SID random scaled), `$40` (channel tick), `$70` (define channel),
+`$0B`/`$43` (memory peek — joystick via `LDA ($61),Y` with the pointer set
+to `$DC00`). No dispatch of the five crack-hook opcodes appeared in 12,762
+passes of the duel window.
+
+### Recipes
+
+- `recipes/kickassembler/scene-bytecode-interpreter.md` — a 10-opcode
+  interpreter: sprite position, byte poke, frame wait, counted loop,
+  SID-random pose, joystick fire, conditional skip and end-with-event; a
+  CIA1 benchmark of both JMP-table and RTS-trick dispatch (128 iterations
+  each, totals stored at `$02F0–$02F3`); two sprites moved to VIC X=60 and
+  X=180 by the script, event code 1 printed at screen row 24, PAL and NTSC
+
+### Sources
+
+- `data/re/pirates/scene-vm/findings.txt` — full disassembly and trace
+  analysis of the Pirates! interpreter (local, gitignored). Claims marked
+  [C] in `data/re/pirates/SYNTHESIS.txt` were checked by the controller
+  against bytes or traces.
