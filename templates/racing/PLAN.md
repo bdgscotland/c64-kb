@@ -814,6 +814,14 @@ second, PAL and NTSC.
 - The road leans half as far as a camera fixed on the centre line would
   make it: full lean sheared every row by up to 10 pixels with the car
   off-centre.
+- The curvature is eased between segment middles (four samples a segment,
+  quarter units) and drawn at half the table's scale: the maintainer found
+  the bends "choppy, too sharp" (a kink at each segment boundary walking
+  down the road, and 3 a hairpin). The bends are sweepers now.
+- Deferred to step 2 from the first play: the opponents' Y moves only with
+  each picture (every 3 frames) because the road's pads depend on the
+  sprites' lines, so they step down the road; the hills sit above the road's
+  horizon with sky between and do not slide with the bends.
 - 38 columns everywhere: in 40 columns XSCROLL's shifted-in pixels showed
   the background as a sawtooth wherever a bend brought the road to the
   screen's edge (seen at top speed on the first play). The panel's text

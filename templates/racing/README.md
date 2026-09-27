@@ -118,6 +118,14 @@ brought them to the screen's edge (the maintainer saw it at top speed on
 the first play, 2026-09-26). The 38-column border hides those pixels on
 both sides; the panel's text keeps to columns 1-37.
 
+The curvature is eased: `track.asm` holds one value a segment, and
+`curvf` samples it four times a segment as a straight line from one
+segment's value at its middle to the next's, at half the table's scale.
+Before this a bend switched on at a segment boundary and showed as a kink
+walking down the road, and 3 was a hairpin that left the screen's side
+within 40 lines (the maintainer, first play: "bends like choppy, too
+sharp"). The car's push in a bend reads the same eased value.
+
 The bands are the kernel's: each line's grass, road band and kerb stripe
 come from z × 8 plus the camera's position (a zero-page byte the game
 writes every frame), so they move at the frame rate whatever the picture
@@ -201,7 +209,7 @@ this program measured whole.
 |---|---|---|
 | `make shot check` | 34 checks a model: the verdict, the panel's text and lap times, the still's horizon (line 124 sky, the road's first line on 125), the rumble strips' white and red bands, the road and grass bands, the left edge line by line inside rows (163-178), the three cars' boxes (sizes by distance), the road and the sky identical on PAL and NTSC, the meter | 68 of 68 passed |
 | `make selftest` | FORCE_FAULT records lap 1 a frame long: the verdict fails | check.py rejected the build |
-| `make roadcheck` | Reads the shown copy's $D016 and z tables, each row's $D018, the camera's position, the colour tables, the screen, colour RAM, the character sets under I/O and the KERNAL, the VIC-II and the sprites out of the machine, draws lines 107-202 from them in 38 columns, and matches the shots pixel for pixel | 96 of 96 lines on PAL and NTSC, 80 XSCROLL changes, 2 character sets in the still, largest left-edge step 2 px |
+| `make roadcheck` | Reads the shown copy's $D016 and z tables, each row's $D018, the camera's position, the colour tables, the screen, colour RAM, the character sets under I/O and the KERNAL, the VIC-II and the sprites out of the machine, draws lines 107-202 from them in 38 columns, and matches the shots pixel for pixel | 96 of 96 lines on PAL and NTSC, 58 XSCROLL changes, 3 character sets in the still, largest left-edge step 2 px |
 | `make mutants` | Seven faults, each caught: 1 pads that ignore the sprites (roadcheck: 64 of 96 lines wrong on PAL, 63 on NTSC), 2 no curve, 3 no hill, 4 one car size, 5 the clock counting every other frame, 6 no contact, 7 one step past the next tick | 7 of 7 caught |
 | `make drivetest` | The normal build, the stick on `$DC00` (harness/drive.py): fire on the title starts the lights, fire held after GO! reaches SPEED 480 | drivetest: PASS |
 | `make claims` | Every store the run makes, title to verdict, against CLAIMS_ARGS (the road's character sets under I/O are declared ranges) | 0 violations |

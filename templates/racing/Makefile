@@ -12,6 +12,7 @@
 #                     each must fail a check
 #   make drive        the normal game played headless (harness/drive.py)
 #   make drivetest    DRIVE_STEPS: fire starts the race, fire held reaches top speed
+#   make gallery      shots/gallery.png: the normal game in play, for the README (GALLERY_SCRIPT)
 #   make disk         build/racing.d64
 #   make claims       c64-kb's claims-watch over the autopilot build
 #   make clean
@@ -48,6 +49,10 @@ VERIFY_TARGETS := roadcheck mutants drivetest
 # panel's SPEED 480).
 DRIVE_SCREEN := C800:19-24
 DRIVE_STEPS  := "until:PRESS FIRE" tap:fire "until:GO!" hold:fire "until:SPEED 480" print
+
+# make gallery: the normal build played into the first right-hander at full
+# speed, for the README's picture (no verdict, no meter).
+GALLERY_SCRIPT := "until:PRESS FIRE" tap:fire "until:GO!" hold:fire wait:250 hold:fire+right wait:75
 
 # make watch (in make check): the player writes the SID. The autopilot run
 # stored to it in 4,025 frames on PAL and 5,006 on NTSC (4,001 and 5,004

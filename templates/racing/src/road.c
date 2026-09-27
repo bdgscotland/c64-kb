@@ -69,6 +69,8 @@ void road_init(void)
     {
         B(ASM_CURV_LO + s) = 0;
         B(ASM_CURV_HI + s) = 0;
+        for (char q = 0; q < 4; q++)
+            B(ASM_CURVF + 4 * s + q) = 0;
     }
 #endif
     hoff = HOFF_LEVEL;

@@ -523,9 +523,6 @@ detect_model:
 sh6_lo_lo:  .fill 256, i >> 6
 sh6_lo_hi:  .fill 256, (i << 2) & $ff
 sh6_hi:     .fill 256, (i < 128) ? (i >> 6) : ((i >> 6) | $fc)
-// z * 8, z in units of 8 world units
-m8lo:       .fill 256, <(i * 8)
-m8hi:       .fill 256, >(i * 8)
 // half-width at a line from its z: w = W0 * ZN / (8 z); z * 8 = ZN at line 202
 w_of_z:     .fill 256, (i == 0) ? 0 : min(255, round(W0 * ZN / (i * 8)))
 

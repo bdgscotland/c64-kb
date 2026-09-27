@@ -5,7 +5,7 @@
 //
 // Per row, bottom up: the curve in closed form. The builder keeps the road
 // centre cx and its slope dx (10.6 pixels) at the row's bottom line. With
-// the curvature k of the segment under the row's middle line, eight lines
+// the curvature k under the row's middle line (track.asm curvf), eight lines
 // up the slope grows by 8k and the centre moves 8dx + 36k; the row's top
 // line is at 7dx + 28k (the per-line rule dx += k, cx += dx, summed). Inside
 // the row each line's centre is on the chord from bottom to top: the curve
@@ -363,26 +363,44 @@ row_start:
         sta zp_code
         sta zp_code2
 
-        // ---- the curvature under the middle line, its dash phase ----
+        // ---- the curvature under the middle line (curvf: eased, quarter units) ----
         ldy #4
         lda (zp_ztrow), y
         sta zmid
         beq !flat+
-        tax
-        lda m8lo, x
+        sta zp_t0               // position = rb_pos + z * 8; index = (position >> 6) & 255
+        lda #0
+        asl zp_t0
+        rol
+        asl zp_t0
+        rol
+        asl zp_t0
+        rol
+        sta zp_t1
+        lda zp_t0
         clc
         adc rb_pos
         sta pmid
-        lda m8hi, x
+        lda zp_t1
         adc rb_pos + 1
-        and #63
+        asl
+        asl
+        sta zp_t1
+        lda pmid
+        lsr
+        lsr
+        lsr
+        lsr
+        lsr
+        lsr
+        ora zp_t1
         tax
-        lda curv_lo, x
+        lda curvf, x
         jmp !have+
 !flat:  lda #0
 !have:  clc
-        adc #8
-        tax                     // k + 8
+        adc #32
+        tax                     // k4 + 32
 
         // ---- the row as this copy last had it? (its centre and slope at the
         // bottom, the curvature under it and the horizon: all its geometry;
@@ -454,10 +472,10 @@ row_start:
         sta zp_t3
         lda zp_t2
         clc
-        adc k28lo, x
+        adc k7lo, x
         sta zp_t2
         lda zp_t3
-        adc k28hi, x
+        adc k7hi, x
         sta zp_t3
         stx zp_t4               // (k + 8, kept a moment)
         Pix(zp_cx, zp_cx + 1)
@@ -476,17 +494,17 @@ row_start:
         sta zp_cx + 1
         lda zp_cx
         clc
-        adc k36lo, x
+        adc k9lo, x
         sta zp_cx
         lda zp_cx + 1
-        adc k36hi, x
+        adc k9hi, x
         sta zp_cx + 1
         lda zp_dx
         clc
-        adc k8lo, x
+        adc k2lo, x
         sta zp_dx
         lda zp_dx + 1
-        adc k8hi, x
+        adc k2hi, x
         sta zp_dx + 1
 
         lda row_same            // nothing else changed: the pads, then done
@@ -1062,13 +1080,14 @@ zp_x:       .byte 0
 row40_lo:   .fill 12, <(i * 40)
 row40_hi:   .fill 12, >(i * 40)
 
-// k * 8, k * 28, k * 36 for k = -8..7 (index k + 8), 16-bit.
-k8lo:       .fill 16, <((i - 8) * 8)
-k8hi:       .fill 16, >((i - 8) * 8)
-k28lo:      .fill 16, <((i - 8) * 28)
-k28hi:      .fill 16, >((i - 8) * 28)
-k36lo:      .fill 16, <((i - 8) * 36)
-k36hi:      .fill 16, >((i - 8) * 36)
+// 8k, 28k and 36k for the curvature k in quarter units k4 = -32..31 (index
+// k4 + 32): 2 k4, 7 k4 and 9 k4, 16-bit.
+k2lo:       .fill 64, <((i - 32) * 2)
+k2hi:       .fill 64, >((i - 32) * 2)
+k7lo:       .fill 64, <((i - 32) * 7)
+k7hi:       .fill 64, >((i - 32) * 7)
+k9lo:       .fill 64, <((i - 32) * 9)
+k9hi:       .fill 64, >((i - 32) * 9)
 
 // The eight shifts of a row's lines from its content centre, in pixels, by
 // the chord's d = bottom - top (-32..32, clamped) and the content centre's

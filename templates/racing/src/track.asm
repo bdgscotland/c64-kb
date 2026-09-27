@@ -1,9 +1,10 @@
 // track.asm: the circuit, 64 segments of 256 world units (16,384 a lap).
 // Imported by engine.asm; C reads the same tables through asm.h.
 //
-// curv: the road's curvature in a segment, in 1/64 pixel per line per line
-// (the builder adds it to the centre's slope every road line). Positive
-// bends right. 3 moves the horizon's end of a bend about 190 pixels.
+// curv: the road's curvature in a segment, 0-3 either way; positive bends
+// right. The builder reads it eased and halved (curvf, below): 3 draws as
+// 1.5/64 pixel per line per line and moves the horizon's end of a long
+// bend about 100 pixels (arithmetic: k L^2 / 128 for L = 96 lines).
 // hill: the horizon offset the segment asks for, 0-23 (line 108 + hoff):
 // 8 is level ground; more hides the road beyond a crest, less shows it
 // climbing away.
@@ -31,4 +32,21 @@
 
 curv_lo:    .fill 64, <track.get(i * 2)
 curv_hi:    .fill 64, (track.get(i * 2) < 0) ? $ff : 0
+
+// The curvature eased: four samples a segment (one per 64 units, 256 a
+// lap), in quarter units of half the table's value (curv 3 draws as 1.5:
+// at 3 the road left the screen's side within 40 lines, a hairpin), a
+// straight line from a segment's value at its middle to the next's. A bend then builds over a
+// segment and fades over one instead of switching on at a boundary, which
+// showed as a kink walking down the road (the maintainer, 2026-09-27:
+// "bends like choppy, too sharp"). The builder and the car's push read this.
+.function curvF(e) {
+    .var i = floor((e - 2) / 4)                 // the segment whose middle is at or before e
+    .if (e < 2) .eval i = -1
+    .var a = track.get(((i + 64) & 63) * 2)
+    .var b = track.get(((i + 65) & 63) * 2)
+    .var t = (e - (4 * i + 2)) / 4
+    .return round(2 * (a + (b - a) * t))    // half the table's values: 3 was a hairpin
+}
+curvf:      .fill 256, curvF(i)
 hill:       .fill 64, track.get(i * 2 + 1)
