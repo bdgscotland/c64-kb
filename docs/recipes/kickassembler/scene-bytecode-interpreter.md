@@ -8,8 +8,8 @@ file_formats: [PRG]
 uses_registers: [D000, D001, D002, D003, D010, D011, D015, D016, D017, D019, D01A, D01C, D01D, D020, D021, D027, D028, D40E, D40F, D412, D41B, DC00, DC04, DC05, DC0D, DC0E]
 uses_kernal: []
 claims: [irq_vector_0314 (owns), vic_raster_irq (init), cia1_timer_a (init), cia1_timer_b (init), cia1_tod (init), sid_voice_3 (init), sprite_0 (owns), sprite_1 (owns), zero_page $F5-$FF (owns)]
-harness: [cia1_timer_a, $02F0-$02F3]
-ram: [scr=$0400-$07FF, shape=$2000-$207F, colour=$D800-$DBFF, timing=$02F0-$02F3]
+harness: [cia1_timer_a]
+ram: [scr=$0400-$07FF, shape=$2000-$207F, colour=$D800-$DBFF]
 kernal_services: [IRQ]
 ---
 
@@ -23,10 +23,11 @@ A minimal bytecode interpreter runs a script that moves two sprites with
 position opcodes, waits 60 frames on a raster-IRQ counter, draws a
 SID-voice-3 random pose, reads the joystick fire button, branches on the
 result, and ends with an event code printed on screen. Dispatch is a
-self-modified `JMP` through a word table. A separate CIA1 benchmark in the
-startup code measures both the `JMP`-table and the RTS-trick dispatch; the
-results are stored at `$02F0–$02F3` (not on screen, as warp mode makes
-CIA1 non-deterministic against the display). The `scene_bytecode_interpreter`
+self-modified `JMP` through a word table. Before benchmarking, the display
+is blanked (`$D011` bit 4 = 0) and a ~200 000-cycle delay lets the blank
+take effect; this removes VIC-II bad-line cycle stealing and makes the CIA1
+measurements deterministic. The JMP-table and RTS-trick dispatch totals
+(128 iterations each) appear on screen row 23 as hex. The `scene_bytecode_interpreter`
 technique in `techniques/logic.md` covers the full design.
 
 ## Source
@@ -43,7 +44,9 @@ technique in `techniques/logic.md` covers the full design.
 // are stored into the JMP (abs) operand (self-modified). An RTS-trick
 // dispatcher is benchmarked with CIA1 for comparison; the counter lives
 // in zero page so the table-index X register is not confused with the
-// iteration count. Both totals (128 iterations) are stored at $02F0-$02F3.
+// iteration count. The display is blanked during both benchmarks so
+// VIC-II badlines cannot steal cycles. Both totals (128 iterations) are
+// shown on row 23 in hex.
 //
 // Build: java -jar KickAss.jar scene-bytecode-interpreter.asm \
 //        -o scene-bytecode-interpreter.prg
@@ -94,8 +97,13 @@ BasicUpstart2(start)
 
 // Screen codes (screencode_upper encoding)
 .const SC_E  = $05
-.const SC_V  = $16
+.const SC_J  = $0a
+.const SC_M  = $0d
+.const SC_P  = $10
+.const SC_R  = $12
+.const SC_S  = $13
 .const SC_T  = $14
+.const SC_V  = $16
 .const SC_EQ = $3d
 
 start:
@@ -134,15 +142,27 @@ start:
 
     // Sprite shapes at $2000 and $2040 (VIC ptrs 128 and 129).
     // VIC bank 0 $1000-$1FFF is character ROM; use $2000-$3FFF (RAM).
-    // Both shapes are identical (solid fill) so the SID-random pointer
-    // choice does not change the screenshot (reproducible on PAL and NTSC).
+    // Shape 128 ($2000): solid (all bits on).
     ldx #62
 !:
     lda #$ff
     sta $2000,x
-    sta $2040,x
     dex
     bpl !-
+    // Shape 129 ($2040): striped ($AA odd indices, $55 even).
+    ldx #62
+spr1_loop:
+    txa
+    and #$01
+    beq spr1_ev
+    lda #$aa
+    jmp spr1_st
+spr1_ev:
+    lda #$55
+spr1_st:
+    sta $2040,x
+    dex
+    bpl spr1_loop
 
     // Sprite hardware setup
     lda #$03
@@ -156,16 +176,16 @@ start:
     lda #$07
     sta $d028
     lda #$60
-    sta $d000     // sprite 0 X = 96
+    sta $d000     // sprite 0 initial X = 96
     lda #$80
-    sta $d001     // sprite 0 Y = 128
+    sta $d001     // sprite 0 initial Y = 128
     lda #$c8
-    sta $d002     // sprite 1 X = 200
+    sta $d002     // sprite 1 initial X = 200
     lda #$80
-    sta $d003     // sprite 1 Y = 128 (separate from X)
+    sta $d003     // sprite 1 initial Y = 128
     lda #$00
     sta $d010
-    lda #$80      // pointer 128 = VIC addr $2000
+    lda #$80      // pointer 128 = VIC addr $2000 (solid)
     sta SPRPTR+0
     sta SPRPTR+1
 
@@ -176,16 +196,30 @@ start:
     sta SV3FH
     lda #$00
     sta SV3CTL
-    lda #$81
+    lda #$81       // noise ($80) + gate ($01)
     sta SV3CTL
 
     // CIA1: mask all interrupt sources
     lda #$7f
     sta $dc0d
-    lda $dc0d
+    lda $dc0d      // clear any pending
 
     // ---- Benchmark A: JMP-dispatch, ITERS iterations ----
-    // Counter in ZBCNT; the table-index X register is separate
+    // Blank display first (DEN=0 at $D011 bit 4) to eliminate bad lines.
+    // DEN is sampled at raster line $30 (48); a ~200 000-cycle delay ensures
+    // at least two full frames pass before the CIA timer starts.
+    lda #$0b       // $1B with bit 4 cleared = DEN=0
+    sta $d011
+    // Fixed delay: two nested loops burning ~200 000 cycles
+    ldx #200
+!:
+    ldy #200
+!:
+    dey
+    bne !-
+    dex
+    bne !-
+
     lda #<bench_opseq
     sta ZPC
     lda #>bench_opseq
@@ -197,30 +231,30 @@ start:
     sta C1TLO
     sta C1THI
     lda #$11
-    sta C1CRA
+    sta C1CRA      // force-load + start CIA1 timer A
 
 bj_loop:
     ldy #$00
-    lda (ZPC),y
+    lda (ZPC),y    // fetch opcode
     inc ZPC
     bne bj_no
     inc ZPCHI
 bj_no:
-    asl               // op * 2
+    asl            // op * 2
     clc
     adc #<bench_tbl
-    sta bjmp+1
+    sta bjmp+1     // patch JMP operand low byte
     lda #>bench_tbl
     adc #0
-    sta bjmp+2
+    sta bjmp+2     // patch JMP operand high byte
 bjmp:
-    jmp ($0000)
+    jmp ($0000)    // dispatch (both bytes patched above)
 bench_nop_jmp:
     dec ZBCNT
     bne bj_loop
 
     lda #$00
-    sta C1CRA
+    sta C1CRA      // stop timer
     sec
     lda #$ff
     sbc C1TLO
@@ -230,6 +264,7 @@ bench_nop_jmp:
     sta time_jmp+1
 
     // ---- Benchmark B: RTS-trick, ITERS iterations ----
+    // Display still blanked; reset bench PC
     lda #<bench_opseq
     sta ZPC
     lda #>bench_opseq
@@ -250,13 +285,13 @@ br_loop:
     bne br_no
     inc ZPCHI
 br_no:
-    asl               // op * 2 = 0
-    tax               // X = table index (does NOT conflict with counter in ZBCNT)
+    asl            // op * 2 = 0 (opcode always 0 in bench_opseq)
+    tax            // X = table index (separate from counter in ZBCNT)
     lda rts_tbl_hi,x
     pha
     lda rts_tbl_lo,x
     pha
-    rts               // RTS trick: jump to bench_nop_rts
+    rts            // RTS trick: jump to bench_nop_rts
 bench_nop_rts:
     dec ZBCNT
     bne br_loop
@@ -271,15 +306,47 @@ bench_nop_rts:
     sbc C1THI
     sta time_rts+1
 
-    // Timing stored at $02F0-$02F3 (not on screen)
-    lda time_jmp
-    sta $02f0
+    // Restore display (DEN=1)
+    lda #$1b
+    sta $d011
+
+    // ---- Display timing on row 23 ----
+    // Layout: "JMP=XXYY RTS=XXYY" (hex16 each, space-separated)
+    lda #SC_J
+    sta SCREEN+23*40+0
+    lda #SC_M
+    sta SCREEN+23*40+1
+    lda #SC_P
+    sta SCREEN+23*40+2
+    lda #SC_EQ
+    sta SCREEN+23*40+3
     lda time_jmp+1
-    sta $02f1
-    lda time_rts
-    sta $02f2
+    jsr hex_byte
+    sta SCREEN+23*40+4
+    stx SCREEN+23*40+5
+    lda time_jmp
+    jsr hex_byte
+    sta SCREEN+23*40+6
+    stx SCREEN+23*40+7
+
+    lda #$20
+    sta SCREEN+23*40+8  // space
+    lda #SC_R
+    sta SCREEN+23*40+9
+    lda #SC_T
+    sta SCREEN+23*40+10
+    lda #SC_S
+    sta SCREEN+23*40+11
+    lda #SC_EQ
+    sta SCREEN+23*40+12
     lda time_rts+1
-    sta $02f3
+    jsr hex_byte
+    sta SCREEN+23*40+13
+    stx SCREEN+23*40+14
+    lda time_rts
+    jsr hex_byte
+    sta SCREEN+23*40+15
+    stx SCREEN+23*40+16
 
     // ---- Raster IRQ at line 252 ----
     lda #<irq
@@ -289,7 +356,7 @@ bench_nop_rts:
     lda #$01
     sta $d01a
     lda #$01
-    sta $d019       // clear stale VIC interrupt flag
+    sta $d019      // clear stale VIC interrupt flag
     lda #$fc
     sta $d012
     lda #$00
@@ -318,7 +385,7 @@ bench_nop_rts:
     sta SCREEN+24*40+3
     pla
     clc
-    adc #$30
+    adc #$30       // screen code: '1'=$31, '2'=$32
     sta SCREEN+24*40+4
 
 halt:
@@ -331,6 +398,29 @@ irq:
     sta $d019
     jmp $ea31
 
+// ---- hex_byte: A=byte; returns A=hi-nibble screen code, X=lo-nibble ----
+hchars:
+    .text "0123456789ABCDEF"
+
+hex_byte:
+    pha
+    lsr
+    lsr
+    lsr
+    lsr
+    tax
+    lda hchars,x
+    sta hbt
+    pla
+    and #$0f
+    tax
+    lda hchars,x
+    tax
+    lda hbt
+    rts
+hbt:
+    .byte 0
+
 // ---- run_vm: execute script at ZPC/ZPCHI; returns event code in A ----
 run_vm:
 next_op:
@@ -340,7 +430,7 @@ next_op:
     bne vno
     inc ZPCHI
 vno:
-    asl               // op * 2
+    asl            // op * 2
     clc
     adc #<vm_tbl
     sta vmjmp+1
@@ -393,16 +483,16 @@ vm_tbl:
 
 // ---- Handlers ----
 h_end:
-    jsr fetch_byte     // event code -> A
+    jsr fetch_byte   // event code -> A
     rts
 
 h_sprx:
-    jsr fetch_byte     // sprite# -> A
-    asl                // * 2 = register Y offset
-    sta ZEL_N          // save offset (fetch_byte clobbers Y internally)
-    jsr fetch_byte     // x value -> A
-    ldy ZEL_N          // restore Y
-    sta $d000,y        // D000 (sprite 0 X) or D002 (sprite 1 X)
+    jsr fetch_byte   // sprite# -> A
+    asl              // * 2 = register Y offset
+    sta ZEL_N        // save offset (fetch_byte clobbers Y internally)
+    jsr fetch_byte   // x value -> A
+    ldy ZEL_N        // restore Y
+    sta $d000,y      // D000 (sprite 0 X) or D002 (sprite 1 X)
     jmp next_op
 
 h_spry:
@@ -411,7 +501,7 @@ h_spry:
     sta ZEL_N
     jsr fetch_byte
     ldy ZEL_N
-    sta $d001,y        // D001 (sprite 0 Y) or D003 (sprite 1 Y)
+    sta $d001,y      // D001 (sprite 0 Y) or D003 (sprite 1 Y)
     jmp next_op
 
 h_poke:
@@ -419,21 +509,21 @@ h_poke:
     sta poke_ins+1
     jsr fetch_byte
     sta poke_ins+2
-    jsr fetch_byte
+    jsr fetch_byte   // value -> A
 poke_ins:
-    sta $ffff          // self-modified target
+    sta $ffff        // self-modified target
     jmp next_op
 
 h_wait:
     jsr fetch_byte
-    tax                // N -> X
+    tax              // N -> X
 wt_outer:
     lda ZFRAM
     sta ZWREF
 wt_spin:
     lda ZFRAM
     cmp ZWREF
-    beq wt_spin
+    beq wt_spin      // spin until ZFRAM changes (one IRQ period)
     dex
     bne wt_outer
     jmp next_op
@@ -444,7 +534,7 @@ h_loop:
     jmp next_op
 
 h_endlp:
-    jsr fetch_byte
+    jsr fetch_byte   // back offset -> A
     sta ZEL_N
     lda ZLOOP
     beq el_done
@@ -461,18 +551,18 @@ el_done:
     jmp next_op
 
 h_rndp:
-    jsr fetch_byte
-    tay                // sprite# -> Y
-    lda SV3RND         // SID voice 3 noise register
+    jsr fetch_byte   // sprite# -> A
+    tay              // Y = sprite#
+    lda SV3RND       // SID voice 3 noise register
     and #$01
     clc
-    adc #$80           // pointer 128 or 129 ($2000 or $2040; both solid fill)
+    adc #$80         // pointer 128 (solid) or 129 (striped)
     sta SPRPTR,y
     jmp next_op
 
 h_joyf:
     lda $dc00
-    and #$10           // bit 4 = fire, active low
+    and #$10         // bit 4 = fire, active low
     bne jf_open
     lda #$01
     sta ZJOY
@@ -483,10 +573,10 @@ jf_open:
     jmp next_op
 
 h_skipnz:
-    jsr fetch_byte
+    jsr fetch_byte   // skip count -> A
     sta ZSK_N
     lda ZJOY
-    beq sk_no
+    beq sk_no        // ZJOY == 0: fire not pressed, no skip
     clc
     lda ZPC
     adc ZSK_N
@@ -526,22 +616,22 @@ java -jar KickAss.jar scene-bytecode-interpreter.asm -o scene-bytecode-interpret
 
 ## Expected output
 
-Dark grey (`$0B`) border, black background. After 60 frames the script
-moves two sprites and ends with event code 1 (no joystick fire pressed in
-headless VICE).
+Dark grey (`$0B`) border, black background. The display is blanked during
+the CIA1 benchmarks, then restored. After 60 frames the script moves two
+sprites and ends with event code 1 (no joystick fire in headless VICE).
 
-- **Sprite 0** (white, VIC colour 1): solid 24×21 block at VIC X=60,
+- **Row 23**: white text `JMP=1783 RTS=1810` (PAL, CIA1 cycles for 128
+  iterations, display blanked; 47.0 cyc/iter JMP, 48.1 RTS). NTSC shows
+  `JMP=1814 RTS=1784` (48.1 and 47.0). Values may differ from the page
+  here if the benchmark code is at different addresses.
+- **Sprite 0** (white, striped — SID noise chose pointer 129): at VIC X=60,
   VIC Y=120. On PAL, screen pixels x=68–91, y=105–125.
-- **Sprite 1** (yellow, VIC colour 7): solid 24×21 block at VIC X=180,
-  VIC Y=120. On PAL, screen pixels x=188–211, y=105–125.
-- **Row 24**: white text "EVT=1" starting at screen column 0.
+- **Sprite 1** (yellow, solid — pointer 128): at VIC X=180, VIC Y=120.
+  On PAL, screen pixels x=188–211, y=105–125.
+- **Row 24**: white text `EVT=1`.
 
 On NTSC, sprites at the same VIC coordinates, screenshot rows shifted up
 by 12 (screenshot row = raster line − 28 vs − 16 on PAL).
-
-Both sprite shapes are the same (solid fill) so the SID-random pointer
-choice does not change the screenshot; both PAL and NTSC screenshots are
-pixel-for-pixel reproducible across runs.
 
 PIL verification (PAL):
 
@@ -551,15 +641,15 @@ im = Image.open('out.png').convert('RGB')
 px = im.load()
 w, h = im.size
 assert (w, h) == (384, 272), f"Wrong size: {w}x{h}"
-# Sprite 0 white at VIC X=60, Y=120 -> screen x=68, y=105
-assert px[68, 105] == (255, 255, 255), f"Sprite 0 not white at (68,105): {px[68,105]}"
-# Sprite 1 yellow at VIC X=180, Y=120 -> screen x=188, y=105
+# Sprite 0 (white, striped) at VIC X=60, Y=120 -> screen x=68, y=105
+assert px[68, 105] == (255, 255, 255), f"Sprite 0 not visible at (68,105): {px[68,105]}"
+# Sprite 1 (yellow) at VIC X=180, Y=120 -> screen x=188, y=105
 r, g, b = px[188, 105]
 assert r > 200 and g > 200 and b < 150, f"Sprite 1 not yellow at (188,105): {px[188,105]}"
-# EVT=1: row 24 = raster line 51+24*8 = 243, screen y=243-16=227
-# 'E' screen code pixel presence in row 24
-e_row = [px[33+dx, 228] for dx in range(8)]
-assert any(p != (0,0,0) and p != (98,98,98) for p in e_row), "EVT= text not visible on row 24"
+# Row 23 timing: display y=219-226; check for any white pixel
+assert any(px[x, 219] == (255, 255, 255) for x in range(32, 200)), "No timing text on row 23"
+# Row 24 EVT=1: check 'E' pixel present
+assert any(px[32+dx, 228] not in [(0,0,0),(98,98,98)] for dx in range(8)), "EVT text missing"
 print("PASS")
 ```
 
@@ -575,11 +665,23 @@ read from the inline word table `vm_tbl` and jumped to. Each handler ends
 with `JMP next_op` to loop.
 
 The Pirates! (1987) method patches only the low byte because its table is
-page-aligned (high byte fixed at `$A3`): 34 cycles per dispatch (arithmetic
-from 6502 timing: 15 fetch + 11 dispatch + 8 return). This recipe uses an
-unaligned two-byte patch: 46 cycles (15 + 23 + 8). The RTS trick—push
-handler-address−1 high then low, then `RTS`—costs 47 cycles (15 + 24 + 8)
-and needs no self-modification.
+page-aligned (high byte fixed at `$A3`). Dispatch costs: (a) is exclusive
+of handler body; (b) includes the benchmark NOP handler (`DEC zp + BNE` =
+8 cycles). All figures rung 3 unless marked.
+
+| Method | (a) fetch + dispatch | (b) full iteration measured (rung 1, PAL, CIA1, display blanked) |
+|---|---|---|
+| Pirates! 1-byte-patch JMP | 15 + 11 = 26 cycles | — |
+| This recipe 2-byte-patch JMP | 15 + 23 = 38 cycles | 47 cycles ($1783 / 128; 8-cycle NOP handler included) |
+| RTS trick | 15 + 24 = 39 cycles | 48 cycles ($1810 / 128) |
+
+**Blanking during benchmarks.** `$D011` bit 4 (DEN) suppresses the display
+for the full frame when cleared before raster line 48 (`$30`). Two
+~100 000-cycle loops give about two full frames for the blank to take
+effect. Without blanking, VIC-II bad lines (each stealing ~43 cycles once
+per 8 raster lines through the display region) add up to ~390 extra cycles
+per frame and vary in count depending on where the benchmark falls in the
+raster. With DEN=0, there are no bad lines, and the CIA1 count is fixed.
 
 **Frame counter.** The raster IRQ at line 252 increments `ZFRAM`. The
 `h_wait` handler spins on `ZFRAM` so each "wait 1 frame" is exactly one
@@ -600,4 +702,8 @@ same for symmetry.
 
 **Sprite shapes.** VIC bank 0 maps `$1000–$1FFF` to the character ROM for
 VIC reads, though CPU writes go to RAM there. Both sprite shapes are placed
-at `$2000` and `$2040` (bank 0 RAM) with pointers 128 and 129.
+at `$2000` and `$2040` (bank 0 RAM) with pointers 128 and 129. Shape 128
+is solid (`$FF` bytes); shape 129 is striped (`$AA`/`$55`). The SID noise
+registers are seeded deterministically by the harness, so the RNDP opcode
+consistently chooses pointer 129 (striped) for sprite 0 in both PAL and
+NTSC runs.

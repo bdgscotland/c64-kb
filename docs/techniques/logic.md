@@ -3925,24 +3925,40 @@ for the handler table).
 2. **Dispatch.** Multiply the opcode by 2 to index into a word table of
    handler addresses, then jump there. Two variants:
 
+   All figures below use the same convention: **fetch + dispatch = cycles
+   paid per opcode, excluding the handler body.** The recipe also gives the
+   full benchmark-iteration cost (fetch + dispatch + NOP handler), which
+   includes `DEC zp + BNE` (8 cycles) as the NOP handler and is the figure
+   the CIA1 timer reports.
+
+   | Method | Fetch + dispatch (rung 3) | Full iteration measured (rung 1, VICE x64sc 3.10, CIA1, display blanked) |
+   |---|---|---|
+   | Pirates! 1-byte-patch JMP (page-aligned) | 15 + 11 = **26 cycles** | — |
+   | Recipe 2-byte-patch JMP | 15 + 23 = **38 cycles** | 47 cycles ($1783 / 128; NOP handler included) |
+   | RTS trick | 15 + 24 = **39 cycles** | 48 cycles ($1810 / 128) |
+
+   The 1-cycle gap between arithmetic and measured comes from the CIA1
+   timer's start/stop latency (one phi2 cycle). All three measurements used
+   the recipe's benchmark with `DEN=0` (display blanked) to prevent
+   VIC-II bad-line cycle stealing from skewing the count.
+
    - **Self-modified JMP (page-aligned table, as in Pirates!).**
      `ASL A` to double the opcode; `STA patch+1` patches the low byte of a
      `JMP (abs)` operand, whose high byte is fixed because the table is
      page-aligned. The `JMP (abs)` reads the handler address from
      `table + opcode*2` and jumps there. Each handler ends with
-     `JMP next_op`. Dispatch overhead: 15 cycles (fetch) + 11 cycles
-     (ASL + STA + JMP) = 26 cycles, rung 3, arithmetic from 6502 timing.
+     `JMP next_op`. Fetch + dispatch: 26 cycles.
 
    - **Self-modified JMP (non-aligned table, recipe variant).**
      As above but both bytes of the JMP operand are patched: one `ADC`
      computes the low byte and a second handles the carry into the high
-     byte. Dispatch overhead: 15 + 23 = 38 cycles, rung 3.
+     byte. Fetch + dispatch: 38 cycles (arithmetic), 39 cycles measured.
 
    - **RTS trick.** Push `handler_addr − 1` high then low onto the stack,
      then `RTS`. The 6502 pops and adds 1 to jump to the handler. The
      handler ends with `JMP next_op` (or `RTS` if the loop uses `JSR` to
-     reach it). Dispatch overhead: 15 + 24 = 39 cycles, rung 3. Costs
-     about the same as a non-aligned JMP patch but requires no self-
+     reach it). Fetch + dispatch: 39 cycles (arithmetic), 40 cycles measured.
+     Costs about the same as a non-aligned JMP patch but requires no self-
      modification.
 
    **Warning.** If `fetch_byte` sets `LDY #0` internally (as it must for
@@ -3991,6 +4007,12 @@ VICE trace of the duel scene, `data/re/pirates/scene-vm/findings.txt`).
 Pass-counted timing is wall-clock stable only on the original hardware
 speed. A recipe that uses the raster-IRQ frame counter is portable to
 any speed.
+
+When measuring dispatch cost with CIA1, blank the display first (`$D011`
+bit 4 = 0, wait two full frames for it to take effect at raster line 48).
+Without the blank, VIC-II bad lines steal ~43 CPU cycles each; 25 bad lines
+in the display region add ~1,075 cycles to the measurement, and the exact
+count varies by where in the raster the benchmark starts.
 
 ### Variations
 
