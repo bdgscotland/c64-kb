@@ -46,7 +46,8 @@ the whole step's cycles. The technique is `centred_sprite_map_scroll` in
 // along the facing, redraw the window from the map into the matrix that is not
 // on display, and hand the fine scroll and the screen page to the raster IRQ
 // through one dirty byte. The IRQ never reads the map; the map code never
-// writes $D011, $D016 or $D018. Rows 1-2 report the measurements.
+// writes $D011, $D016 or $D018. The raster source exits through $EA81; the
+// CIA1 source alone runs the KERNAL service ($EA31: jiffy clock, keyboard). Rows 1-2 report the measurements.
 // Build: java -jar KickAss.jar centred-sprite-map-scroll.asm -o centred-sprite-map-scroll.prg
 .encoding "screencode_upper"
 
@@ -326,11 +327,11 @@ spptr:
 irq:
     lda $d019
     and #$01
-    beq notvic
+    beq kernal              // not the raster compare: the CIA1 source
     sta $d019               // acknowledge the raster compare
     inc frame
     lda hpage
-    bpl notvic              // bit 7 clear: nothing handed over
+    bpl irqout              // bit 7 clear: nothing handed over
     and #$7f
     sta $0288               // the KERNAL's screen page follows the visible matrix
     asl
@@ -345,8 +346,10 @@ irq:
     lda hpage
     and #$7f
     sta hpage
-notvic:
-    jmp $ea31               // jiffy clock, cursor off ($CC=1), keyboard scan
+irqout:
+    jmp $ea81               // bare restore and RTI: no KERNAL work on this source
+kernal:
+    jmp $ea31               // the CIA1 source: jiffy clock and keyboard scan
 
 // ---- screen redraw from the map into the back matrix ----------------
 redraw:
@@ -644,7 +647,7 @@ the largest `C` and `T` seen so far.
 | What | PAL 8.0M | PAL 8.6M | NTSC 8.0M | NTSC 8.6M |
 |---|---|---|---|---|
 | Row 1 | `X=7B Y=36 H=04 S=0031` | `X=81 Y=36 H=04 S=0037` | `X=82 Y=36 H=04 S=0038` | `X=89 Y=36 H=04 S=003F` |
-| Row 2 | `C=3AA5 T=421B L=F5` | `C=3AA5 T=421B L=F5` | `C=3A7C T=416E L=EA` | `C=3A7C T=416E L=ED` |
+| Row 2 | `C=3AA5 T=4235 L=F3` | `C=3AA5 T=4235 L=F3` | `C=3A7B T=416E L=E6` | `C=3A7B T=416E L=E6` |
 | Fine scroll XSCROLL, YSCROLL | 4, 1 | 6, 1 | 5, 1 | 6, 1 |
 | The four landmark cells | (92,81) (172,129) (252,177) (332,209) | (86,81) (166,129) (246,177) (326,209) | (85,69) (165,117) (245,165) (325,197) | (78,69) (158,117) (238,165) (318,197) |
 | The ship's white hull | x 183-200, rows 124-144 | same | x 183-200, rows 112-132 | same |
@@ -677,16 +680,24 @@ the landmarks moved. One pixel a step is the move table; the redraw is
 1,000 bytes whether the camera crossed a cell or not.
 
 The redraw cost is against the frame: 15,013 cycles, 76% of the 19,656
-PAL cycles, and 14,972 of the 17,095 NTSC cycles, 88%, once every five
+PAL cycles, and 14,971 of the 17,095 NTSC cycles, 88%, once every five
 frames. The frame lengths and the two percentages are arithmetic (63
 cycles a line over 312 lines on PAL, 65 over 263 on NTSC). The whole
-step, stick to hand-off, is 16,923 cycles on PAL and 16,750 on NTSC, so
+step, stick to hand-off, is 16,949 cycles on PAL and 16,750 on NTSC, so
 on NTSC 345 cycles of the frame are left (arithmetic) and the step runs
 on one frame in five only because the other four frames do none of it.
-The redraw ends on line 245 (PAL) and 234-237 (NTSC), inside the
-display's lines 55-246 (measured): the copy runs while the beam is
-reading the window, which is safe only because it writes the matrix that
-is not on display.
+The redraw ends on line 243 (PAL) and 230 (NTSC), inside the display's
+lines 55-246 (measured): the copy runs while the beam is reading the
+window, which is safe only because it writes the matrix that is not on
+display.
+
+An earlier build of the listing let every raster interrupt exit through
+`$EA31`, so the KERNAL service ran once per raster interrupt as well as
+once per CIA1 interrupt: the jiffy clock advanced on both sources and
+every raster interrupt carried a keyboard scan. The handler now sends
+each source its own way, the raster source to the bare `$EA81` exit,
+and the figures above are from that build; the earlier one read
+`C=3AA5 T=421B L=F5` on PAL and `C=3A7C T=416E L=EA` on NTSC.
 
 Off by one: with the report written from matrix column 0, the first
 field decoded as a space on every shot. With CSEL 0 the display window

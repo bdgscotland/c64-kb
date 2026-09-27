@@ -1846,10 +1846,10 @@ one field of slack.
 **Uses kernal:** (none)
 **Requires:** soft_scroll_h, soft_scroll_v, screen_double_buffer_d018
 **Alternative to:** eight_way_scroll_double_buffer (the whole window is redrawn from the map once every few frames and the fine scroll goes to the IRQ through one dirty byte, instead of a matrix prep on every pixel step with the colour RAM copied over four fields; the camera moves at the rate the game chooses and colour RAM is one value for the world)
-**Cost:** cycles_per_frame=16923, every_n_frames=5, bytes_code=1177, bytes_data=3152
+**Cost:** cycles_per_frame=16949, every_n_frames=5, bytes_code=1177, bytes_data=3152
 **Cost basis:** measured-vice
 **Cost bytes basis:** derived-listing
-**Cost measured on:** kickassembler-centred-sprite-map-scroll (one step: the stick read, the turn, the camera move, the 1,000-byte window redraw, the pose write and the report rows, screen on; 16,750 on NTSC; the redraw alone is 15,013 and 14,972)
+**Cost measured on:** kickassembler-centred-sprite-map-scroll (one step: the stick read, the turn, the camera move, the 1,000-byte window redraw, the pose write and the report rows, screen on; 16,750 on NTSC; the redraw alone is 15,013 and 14,971)
 **Claims:** none
 **Claims basis:** derived-listing
 
@@ -1941,13 +1941,21 @@ and the whole step, screen on, PAL C64C and NTSC 6567R8:
 | | PAL | NTSC |
 |---|---|---|
 | Frame | 19,656 cycles | 17,095 cycles |
-| Window redraw, 1,000 bytes | 15,013 (76%) | 14,972 (88%) |
-| Whole step | 16,923 (86%) | 16,750 (98%) |
-| The redraw returns on line | 245 | 234-237 |
+| Window redraw, 1,000 bytes | 15,013 (76%) | 14,971 (88%) |
+| Whole step | 16,949 (86%) | 16,750 (98%) |
+| The redraw returns on line | 243 | 230 |
 
 Every figure in the table is measured except the two frame lengths,
 which are arithmetic (63 cycles a line over 312 lines on PAL, 65 over
 263 on NTSC).
+
+Which interrupts run the KERNAL service is part of the cost. The recipe
+sends each source its own way: the raster source exits through the bare
+`$EA81` restore, and only the CIA1 source runs `$EA31`, so the jiffy
+clock and the keyboard scan happen once a jiffy instead of once per
+raster interrupt. An earlier build of the recipe let every interrupt
+exit through `$EA31`, and it measured 16,923 cycles a step with the copy
+returning on lines 245 (PAL) and 234-237 (NTSC).
 
 The step runs once in five frames, so the four frames between steps
 spend none of this. What they do spend is the frame counter's increment
