@@ -1846,10 +1846,10 @@ one field of slack.
 **Uses kernal:** (none)
 **Requires:** soft_scroll_h, soft_scroll_v, screen_double_buffer_d018
 **Alternative to:** eight_way_scroll_double_buffer (the whole window is redrawn from the map once every few frames and the fine scroll goes to the IRQ through one dirty byte, instead of a matrix prep on every pixel step with the colour RAM copied over four fields; the camera moves at the rate the game chooses and colour RAM is one value for the world)
-**Cost:** cycles_per_frame=17436, every_n_frames=5, bytes_code=1177, bytes_data=3152
+**Cost:** cycles_per_frame=17415, every_n_frames=5, bytes_code=1177, bytes_data=3152
 **Cost basis:** measured-vice
 **Cost bytes basis:** derived-listing
-**Cost measured on:** kickassembler-centred-sprite-map-scroll (one step: the stick read, the turn, the camera move, the 1,000-byte window redraw, the pose write and the report rows, screen on; 17,516 on NTSC; the redraw alone is 15,014 and 14,972)
+**Cost measured on:** kickassembler-centred-sprite-map-scroll (one step: the stick read, the turn, the camera move, the 1,000-byte window redraw, the pose write and the report rows, screen on; 17,491 on NTSC; the redraw alone is 15,014 and 14,971)
 **Claims:** none
 **Claims basis:** derived-listing
 
@@ -1941,9 +1941,9 @@ and the whole step, screen on, PAL C64C and NTSC 6567R8:
 | | PAL | NTSC |
 |---|---|---|
 | Frame | 19,656 cycles | 17,095 cycles |
-| Window redraw, 1,000 bytes | 15,014 (76%) | 14,972 (88%) |
-| Whole step | 17,436 (89%) | 17,516 (102%) |
-| The redraw returns on line | 243 | 230-234 |
+| Window redraw, 1,000 bytes | 15,014 (76%) | 14,971 (88%) |
+| Whole step | 17,415 (89%) | 17,491 (102%) |
+| The redraw returns on line | 242-243 | 231-235 |
 | The hand-off lands on line | 0-278 | 0-7 of the next frame |
 | Steps published a frame late | 0 of 49-55 | 55-62 of 55-62 |
 

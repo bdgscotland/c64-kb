@@ -3078,5 +3078,15 @@
     "shots": {
       "ntsc": "screenshots/centred-sprite-map-scroll-frame3-ntsc.png"
     }
+  },
+  "kickassembler/centred-sprite-map-scroll@step256": {
+    "cycles": 29000000,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/centred-sprite-map-scroll-step256.png"
+    }
   }
 }

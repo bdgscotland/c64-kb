@@ -214,11 +214,15 @@ loop:
 step:
     jsr tstartB
     // 1. the stick, ANDed with the script so the pinned run is deterministic
+    lda stepc+1
+    bne scrmax              // past step 255 the script holds its last byte
     ldx stepc
     cpx #$ff
-    bcc !+
-    ldx #$ff                // the script holds its last byte after 255 steps
-!:  lda $dc00
+    bcc scrok
+scrmax:
+    ldx #$ff
+scrok:
+    lda $dc00
     and scripttbl,x
     eor #$ff
     and #$0f
@@ -693,7 +697,7 @@ hand-off landed on N=steps published a frame late`, all hex, the largest
 | What | PAL 8.0M | PAL 8.6M | NTSC 8.0M | NTSC 8.6M |
 |---|---|---|---|---|
 | Row 1 | `X=7B Y=36 H=04 S=0031` | `X=81 Y=36 H=04 S=0037` | `X=81 Y=36 H=04 S=0037` | `X=88 Y=36 H=04 S=003E` |
-| Row 2 | `C=3AA6 T=441C L=F3 E=0116 N=00` | `C=3AA6 T=441C L=F3 E=0116 N=00` | `C=3A7C T=446C L=EA E=0007 N=37` | `C=3A7C T=446C L=E6 E=0007 N=3E` |
+| Row 2 | `C=3AA6 T=4407 L=F3 E=0116 N=00` | `C=3AA6 T=4407 L=F3 E=0116 N=00` | `C=3A7B T=4453 L=EA E=0007 N=37` | `C=3A7B T=4453 L=E7 E=0007 N=3E` |
 | Fine scroll XSCROLL, YSCROLL | 4, 1 | 6, 1 | 6, 1 | 7, 1 |
 | The four landmark cells | (92,81) (172,129) (252,177) (332,209) | (86,81) (166,129) (246,177) (326,209) | (86,69) (166,117) (246,165) (326,197) | (79,69) (159,117) (239,165) (319,197) |
 | The ship's white hull | x 183-200, rows 124-144 | same | x 183-200, rows 112-132 | same |
@@ -727,10 +731,10 @@ the landmarks moved. One pixel a step is the move table; the redraw is
 1,000 bytes whether the camera crossed a cell or not.
 
 The redraw cost is against the frame: 15,014 cycles, 76% of the 19,656
-PAL cycles, and 14,972 of the 17,095 NTSC cycles, 88%, once every five
+PAL cycles, and 14,971 of the 17,095 NTSC cycles, 88%, once every five
 frames. The frame lengths and the two percentages are arithmetic (63
 cycles a line over 312 lines on PAL, 65 over 263 on NTSC). The whole
-step, stick to hand-off, measures 17,436 cycles on PAL and 17,516 on
+step, stick to hand-off, measures 17,415 cycles on PAL and 17,491 on
 NTSC, which on NTSC is longer than the frame itself: the copy runs
 across the display's badlines and sprite fetches and pays for them. The
 redraw ends on line 243 (PAL) and 230-234 (NTSC), inside the display's
@@ -770,7 +774,7 @@ on NTSC) are three consecutive frames around one publication.
 | What | PAL up | PAL uplater | NTSC up | NTSC uplater |
 |---|---|---|---|---|
 | Row 1 | `X=94 Y=2F H=00 S=004E` | `X=94 Y=29 H=00 S=0054` | `X=94 Y=25 H=00 S=0058` | `X=94 Y=1E H=00 S=005F` |
-| Row 2 | `C=3AA6 T=441C L=F2 E=0116 N=00` | `C=3AA6 T=441C L=F2 E=0116 N=00` | `C=3A7C T=446C L=EA E=0007 N=58` | `C=3A7C T=446C L=EB E=0007 N=5F` |
+| Row 2 | `C=3AA6 T=4407 L=F2 E=0116 N=00` | `C=3AA6 T=4407 L=F2 E=0116 N=00` | `C=3A7B T=4453 L=EB E=0007 N=58` | `C=3A7B T=4453 L=EB E=0007 N=5F` |
 | The landmark cells | (67,88) (147,136) (227,184) (307,216) | (67,94) (147,142) (227,190) (307,222) | (67,86) (147,134) (227,182) | (67,93) (147,141) (227,189) |
 | The ship's white hull | x 181-202, rows 126-143 | same | x 181-202, rows 114-131 | same |
 
@@ -792,6 +796,23 @@ No step is lost. Every frame is whole: each report's camera puts every
 landmark at its exact position, which is the check the script runs on
 every shot, and the pair check across consecutive frames reports the
 identical pair and the one-step pair as such.
+
+One more pinned run is past the end of the script. `@step256`
+(29,000,000 on PAL) is 263 steps in, where the stick script's table has
+run out:
+
+| What | PAL step256 |
+|---|---|
+| Row 1 | `X=94 Y=00 H=00 S=0107` |
+| Row 2 | `C=3AA6 T=4407 L=F2 E=0116 N=00` |
+
+The facing is still 0 and the camera is still at X $94: the script holds
+its last byte, centred, and the ship keeps sailing up into the map's
+edge, where the camera stops (camy $00). An earlier build indexed the
+table with the low byte of the step counter, so at step 256 the index
+wrapped to 0 and the scripted stick replayed from its start: the facing
+turned back to 12 and the camera walked left. The index now saturates at
+255.
 
 A capture note. `-exitscreenshot` can land mid-frame and the picture is
 then the top of one frame and the bottom of the next; the script catches
