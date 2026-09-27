@@ -240,7 +240,7 @@ make drive STEPS='"until:PRESS FIRE" tap:fire "until:GO!" hold:fire+left run:4 p
 
 ## Memory
 
-The KickAssembler blob runs from $0880 to $870A (its two road copies, the
+The KickAssembler blob runs from $0880 to $810A (its two road copies, the
 builder, the glyph and template data, the tables); the C program starts
 on the page after it and ends below $C000 with Oscar64's 4 KB stack and
 no heap. VIC bank 3: road screens $C000 and $C400, the panel's screen

@@ -46,6 +46,8 @@ lmc:        .fill 2 * ROAD_LINES, $ff   // per copy: the set each line's pad was
 back_idx:   .byte 0             // the back copy: 0 A, 1 B
 back_pre:   .byte 0             // back_idx * PRE_SIZE: its entry block (PreBlock) from pre_a
 row_mmax:   .byte 0             // the row's largest whole-column move (0: not sheared)
+row_b:      .byte 0             // the content centre's low two bits, added to the shifts
+shifts:     .fill 8, 0          // the row's eight shifts (pattern_s + row_b)
 row_same:   .byte 0             // 1: the row's geometry is as this copy last had it
 rk_cxl:     .fill 24, $ff       // per copy and row: the geometry it was built from
 rk_cxh:     .fill 24, $ff
@@ -547,7 +549,8 @@ row_start:
         lda cb_hi
         sta zp_cref + 1
         lda cb_lo
-!dset:  and #3                  // pattern_s + (d + 32) * 32 + b * 8
+!dset:  and #3                  // zp_ramp = pattern_s + (d + 32) * 8; b is added at use (row_b)
+        sta row_b
         asl
         asl
         asl
@@ -559,15 +562,11 @@ row_start:
         lda #0
         sta zp_ramp + 1
         lda zp_t2
-    .for (var n = 0; n < 5; n++) {
+    .for (var n = 0; n < 3; n++) {
         asl
         rol zp_ramp + 1
     }
         clc
-        adc zp_t1
-        bcc !+
-        inc zp_ramp + 1
-!:      clc
         adc #<pattern_s
         sta zp_ramp
         lda zp_ramp + 1
@@ -663,6 +662,9 @@ tpl_ldhi: lda tpl_hi, y
     .for (var j = 0; j < 8; j++) {
         ldy #j
         lda (zp_ramp), y
+        clc
+        adc row_b
+        sta shifts + j
         sta line_s + j, x
         and #7
         ora #D016_ROAD
@@ -875,7 +877,7 @@ st_copy:
 st_slots:
         // m(l): each line's whole-column move
         ldy #7
-!:      lda (zp_ramp), y
+!:      lda shifts, y
         lsr
         lsr
         lsr
@@ -1090,17 +1092,16 @@ k9lo:       .fill 64, <((i - 32) * 9)
 k9hi:       .fill 64, >((i - 32) * 9)
 
 // The eight shifts of a row's lines from its content centre, in pixels, by
-// the chord's d = bottom - top (-32..32, clamped) and the content centre's
-// low two bits b (it is on a 4-pixel boundary): for d >= 0 the top line is
-// at b, for d < 0 the bottom line is at b and the top at b - d. Line j is
-// round(d * j / 7) from the top. A line's XSCROLL is its shift & 7; a shift
-// of 8 or more is a whole-column move that only a sheared row can show.
+// the chord's d = bottom - top (-32..32, clamped), before the content
+// centre's low two bits b are added (it is on a 4-pixel boundary): for
+// d >= 0 the top line is at 0, for d < 0 the bottom line is at 0 and the
+// top at -d. Line j is round(d * j / 7) from the top. A line's XSCROLL is
+// its shift & 7; a shift of 8 or more is a whole-column move that only a
+// sheared row can show. An earlier version held four copies, one per b.
 pattern_s:
     .for (var d = -32; d <= 32; d++) {
-        .for (var b = 0; b < 4; b++) {
-            .var a = d >= 0 ? b : b - d
-            .fill 8, a + round(d * i / 7)
-        }
+        .var a = d >= 0 ? 0 : -d
+        .fill 8, a + round(d * i / 7)
     }
 // The bands from the low byte of position + z * 8: grass and road by bit 7,
 // the kerb's stripes by bit 6.
