@@ -88,6 +88,7 @@ void objects_hold(void);                // the redraw frame and the frame after 
 #if AUTOPILOT
 // Test counters (the verdict of make enemies prints them).
 extern unsigned ost_spawned, ost_at_row, ost_lost, ost_shots, ost_nades, ost_wall, ost_nwall;
+char obj_age_of(char i);                // the pool's age counter (make blasts: how old a blast is)
 extern unsigned ost_park_bad, ost_shown_bad, ost_lag_bad, ost_fixes, ost_lag_skip, ost_frames;
 extern char ost_peak;
 extern unsigned ost_skipped;            // thinking ticks skipped for time (OBJ_LATE)

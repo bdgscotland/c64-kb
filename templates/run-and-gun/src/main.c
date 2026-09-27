@@ -150,6 +150,23 @@ static const char script[][2] = {
 };
 #define PLAY_FRAMES 60000               // never frozen in play: the title freezes it
 #define FREEZE_YS   3
+#elif defined(BLASTTEST)
+// make blasts (-dBLASTTEST=1): enemy grenade blasts must all expire (issue
+// #133). The graded walk's start, so the map scrolls under the blasts: up to
+// the threshold and 25 lines, right past the sandbags, then up 60 lines. At
+// play frame BLAST_AT (inside that up phase) enemy grenade blasts are
+// spawned by blocking terrain with the pool filled; at BLAST_CLEAR the
+// enemies and shots step out of the verdict's rows. He stands from frame 205
+// and the run freezes at 260, when every blast must be gone.
+static const char script[][2] = {
+    {   2, 0xff }, {   2, 0xef },       // title: fire starts the game
+    {  75, 0xfe },                      // up: 50 frames to the threshold, then 25 lines
+    {  70, 0xf7 },                      // right, past the sandbags' end
+    {  60, 0xfe },                      // up: 60 lines, the spawn at frame 160 inside it
+    { 100, 0xff },                      // stand: the blasts expire, or (the bug) linger
+};
+#define PLAY_FRAMES 60000
+#define TEST_FREEZE (play_frames >= 260)   // every blast gone by then (or the bug: still there)
 #else
 static const char script[][2] = {
     {   2, 0xff }, {   2, 0xef },       // title: fire starts the game
@@ -232,7 +249,7 @@ static char last_fc, wake_fc;
 static unsigned overruns;
 static char counting;
 static unsigned lost_at;
-#if defined(COLLIDETEST) || defined(DEATHTEST) || defined(AREATEST) || defined(FULLPOOL)
+#if defined(COLLIDETEST) || defined(DEATHTEST) || defined(AREATEST) || defined(FULLPOOL) || defined(BLASTTEST)
 #define LOST_ALL 1                      // the wave-2 proofs count every lost frame too
 #endif
 #ifdef WEAPONS
@@ -608,6 +625,112 @@ static void light_frame(char joy)
     light = 0;
 }
 
+#ifdef BLASTTEST
+// ---- make blasts: the scenario and its tracking (issue #133) ------------------------
+// Enemy grenade blasts by blocking terrain with the pool busy, under the
+// redraw pair's think skip and the objects' deadline: every one must be
+// freed by age BLAST_AGE_MAX and within BLAST_FRAMES_MAX frames of the frame
+// it became a blast. The counters read the pool from outside; nothing is
+// added to objects.c's aging paths, so this build compiles the same
+// K_BLAST case the game does.
+#define BLAST_AT         160            // spawn: inside the up-scroll phase (redraw pairs over
+                                        // the blasts' lives)
+#define BLAST_CLEAR      220            // enemies and shots out of the verdict's rows
+#define BLAST_AGE_MAX    20             // freed at age 20: obj_age steps 2 a tick, so 18 is the
+                                        // last age seen alive
+#define BLAST_FRAMES_MAX 48             // 20 age = 10 ticks = 20 frames, plus redraw pairs and
+                                        // the deadline's skipped ticks
+static char bt_seen[N_POOL], bt_birth[N_POOL];
+static char bt_live, bt_max_age, bt_max_frames, bt_cells, bt_fill, bt_now;
+static unsigned bt_born, bt_freed, bt_hold, bt_rd;
+static unsigned bt_birth_lo = 999, bt_birth_hi;
+
+// The conditions of the report. The spawn list's own actors are cleared at
+// play frame 2 and again at BLAST_CLEAR (a grenadier's throw would make
+// blasts of its own, and its sprites would stand over the verdict's rows).
+// The three blocking cells are found one row a frame over the frames before
+// BLAST_AT (a whole scan in one frame cost that frame its line 250), then a
+// grenade and a blast go on each: the grenade bursts on its cell in 16-18
+// frames (nade_tick's wall), the blast is where a burst was. Then riflemen
+// until the pool is full.
+static void blasts_scan(char r)
+{
+    for (char c = 0; c < 40 && bt_cells < 3; c++) {
+        if (!(attr_at((unsigned)c * 8 + 4, (unsigned)(scroll_top + r) * 8 + 4) & A_BLOCK))
+            continue;
+        char x2 = 4 * c + 6, row = scroll_top + r + 1;  // the cell under the probe
+        objects_spawn(K_GRENADE, x2, row, 60);
+        if (bt_cells < 2)
+            objects_spawn(K_BLAST, x2, row, 0);
+        bt_cells++;
+        return;
+    }
+}
+
+static void blasts_setup(void)
+{
+    for (char n = 0; n < 8 && objects_free(); n++)
+        if (objects_spawn(K_RIFLE, 30 + 40 * n, scroll_top + 8 + 2 * n, 64) != 0xff)
+            bt_fill++;
+    bt_rd = rd_count;
+}
+
+static void blasts_clear(void)
+{
+    for (char i = 0; i < N_POOL; i++) {
+        char k = obj_kind[i];
+        if (k >= K_RIFLE && k <= K_GRENADIER)
+            obj_kill(SLOT_POOL + i);        // dust for 24 frames, gone before the freeze
+        else if (k == K_SHOT || k == K_GRENADE)
+            obj_free(i);                    // a blast is never touched
+    }
+}
+
+// Every play frame: a blast is tracked from the frame it is first seen as
+// one (a grenade's burst sets its age to 0) to the frame its slot is free.
+static void blasts_frame(void)
+{
+    if (play_frames == 2 || play_frames == BLAST_CLEAR)
+        blasts_clear();
+    if (play_frames >= BLAST_AT - 10 && play_frames < BLAST_AT - 5)
+        blasts_scan((char)(4 + play_frames - (BLAST_AT - 10)));   // one row a frame, rows 4-8
+    if (play_frames == BLAST_AT)
+        blasts_setup();
+    char live = 0, now = 0;
+    for (char i = 0; i < N_POOL; i++) {
+        if (obj_kind[i] == K_BLAST) {
+            live++;
+            if (!bt_seen[i]) {
+                bt_seen[i] = 1;
+                bt_birth[i] = (char)play_frames;
+                bt_born++;
+                if (play_frames < bt_birth_lo)
+                    bt_birth_lo = play_frames;
+                if (play_frames > bt_birth_hi)
+                    bt_birth_hi = play_frames;
+            }
+            char a = obj_age_of(i);
+            if (a > bt_max_age)
+                bt_max_age = a;
+            if (a > now)
+                now = a;
+        } else if (bt_seen[i]) {
+            bt_seen[i] = 0;
+            bt_freed++;
+            char f = (char)(play_frames - bt_birth[i]);
+            if (f > bt_max_frames)
+                bt_max_frames = f;
+        }
+    }
+    bt_live = live;
+    bt_now = now;
+    if (live && rd_count != bt_rd) {        // a redraw pair over a blast's life: two frames in
+        bt_rd = rd_count;                   // which nothing thinks (objects_hold) and it cannot age
+        bt_hold += 2;
+    }
+}
+#endif
+
 #if AUTOPILOT
 // ---- the verdict, after the script -----------------------------------------------------
 // Expected values: PLAN.md, "Autopilot and checks", derives each one.
@@ -780,6 +903,27 @@ static char first_fail_enemies(void)
 #ifdef ENEMYTEST
 #define first_fail first_fail_enemies
 #endif
+#ifdef BLASTTEST
+// make blasts: the scenario worked and every blast expired (issue #133).
+// The bounds are in the script block above; the counts are the run's own,
+// pinned in expect-blasts.json.
+static char first_fail_blasts(void)
+{
+    char n = 1;
+    CHECK(overruns == 0 && rd_late == 0 && lost_all == 0)   // 1 no frame lost, no redraw late
+    CHECK(rd_lead >= MIN_LEAD)                              // 2 every redraw beat the beam
+    CHECK(bt_cells == 3 && bt_born == 5 && ost_nwall == 3)  // 3 three grenades burst on blocking
+                                                            //   cells: five blasts in all
+    CHECK(ost_peak == N_POOL)                               // 4 the pool busy: every slot used
+    CHECK(bt_hold >= 4)                                     // 5 redraw pairs (nothing thinks) over
+                                                            //   the blasts' lives
+    CHECK(bt_freed == bt_born && bt_live == 0)              // 6 every blast freed, none at the freeze
+    CHECK(bt_max_age <= BLAST_AGE_MAX)                      // 7 ... by age 20 + 0
+    CHECK(bt_max_frames <= BLAST_FRAMES_MAX)                // 8 ... within a small bound of frames
+    return 0;
+}
+#define first_fail first_fail_blasts
+#endif
 #if !defined(FRONTEND) && !defined(OWN_VERDICT)
 static void verdict(void)
 {
@@ -830,6 +974,42 @@ static void verdict(void)
     text_colour(3, 1, 17, TEXT_CRAM);
     for (char r = 4; r <= 13; r++)
         text_colour(r, 1, 24, TEXT_CRAM);
+    return;
+#endif
+#ifdef BLASTTEST
+    // Rows 3-8, columns 1-23: the meter row 9 takes columns 1-20, and
+    // BLAST_CLEAR left no sprite over the rows.
+    put_text(s, 4, 1, "BORN 00 FREED 00 LIVE 0");
+    put_dec(s + 4 * 40 + 6, bt_born, 2);
+    put_dec(s + 4 * 40 + 15, bt_freed, 2);
+    put_dec(s + 4 * 40 + 23, bt_live, 1);
+    put_text(s, 5, 1, "AGE 000 NOW 000 FR 000 HOLD 000");
+    put_dec(s + 5 * 40 + 5, bt_max_age, 3);
+    put_dec(s + 5 * 40 + 13, bt_now, 3);
+    put_dec(s + 5 * 40 + 20, bt_max_frames, 3);
+    put_dec(s + 5 * 40 + 29, bt_hold, 3);
+    put_text(s, 6, 1, "NW 00 PEAK 00 CELLS 0 BR 000 000");
+    put_dec(s + 6 * 40 + 4, ost_nwall, 2);
+    put_dec(s + 6 * 40 + 12, ost_peak, 2);
+    put_dec(s + 6 * 40 + 21, bt_cells, 1);
+    put_dec(s + 6 * 40 + 26, bt_birth_lo, 3);
+    put_dec(s + 6 * 40 + 30, bt_birth_hi, 3);
+    put_text(s, 7, 1, "RD 00 STEPS 000 YS 0 F 0");
+    put_dec(s + 7 * 40 + 4, rd_count, 2);
+    put_dec(s + 7 * 40 + 13, scroll_steps, 3);
+    put_dec(s + 7 * 40 + 20, scroll_ys, 1);
+    put_dec(s + 7 * 40 + 24, bt_fill, 1);
+    put_text(s, 8, 1, "LOST 00 00 LATE 0 AT 000");
+    put_dec(s + 8 * 40 + 6, overruns, 2);
+    put_dec(s + 8 * 40 + 9, lost_all, 2);
+    put_dec(s + 8 * 40 + 17, rd_late, 1);
+    put_dec(s + 8 * 40 + 22, lost_at, 3);
+    put_text(s, 3, 19, "SKIP 0000");
+    put_dec(s + 3 * 40 + 24, ost_skipped, 4);
+    text_colour(3, 1, 17, TEXT_CRAM);
+    text_colour(3, 19, 9, TEXT_CRAM);
+    for (char r = 4; r <= 9; r++)
+        text_colour(r, 1, 32, TEXT_CRAM);
     return;
 #endif
     put_text(s, 4, 1, "X 000 Y 000 WY 000 ST 000");
@@ -995,6 +1175,9 @@ int main(void)
                 }
             }
             play_frames++;
+#ifdef BLASTTEST
+            blasts_frame();             // make blasts: the pool tracked every play frame
+#endif
 #ifdef TEST_OVER
             if (state_next == ST_OVER) {        // the game ended: freeze on the play screen instead
                 TEST_OVER;

@@ -103,7 +103,8 @@ What will bite you here:
   (the redraw, `make enemies`, `make weapons`). A stopwatch in C must not
   share a timer with an IRQ's.
 - Proofs, each its own build (`VERIFY_TARGETS`): `make mapend` (the scroll
-  stops at the map's top), `make enemies`, `make weapons`/`weaponsfault`,
+  stops at the map's top), `make enemies`, `make blasts` (every enemy grenade
+  blast expires by age 20; issue #133), `make weapons`/`weaponsfault`,
   `make audio`/`audiotest`, `make frontend`, `make fedrive`, `make longplay`
   (the normal game with 99 lives driven 2,700 frames on PAL and NTSC: no
   lost frame, the redraw's lead), `make collide` (kills, score, a death and

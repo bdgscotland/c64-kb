@@ -140,6 +140,11 @@ VICE x64sc 3.10 (details, the before and after, and limits in `PLAN.md`,
   scene that frame already ends by line 240. Give new per-frame work a
   deadline like objects.c `OBJ_LATE` or collide.c `COLLIDE_LATE`, re-read
   verdict rows 6 and 8, and run `make longplay` and `make fullpool`.
+- **Aging an object.** `make blasts` proves every enemy grenade blast is
+  freed by age 20. Keep objects.c's expiry test branching inside its case:
+  the `gone = a >= 20` form is dropped by Oscar64 -O2 (c64-kb
+  `docs/toolchains/oscar64-reference.md`, "A case's expiry compare is
+  dropped..."; issue #133).
 - **Art.** Change the tools, run `make assets`, commit `src/gen/`.
 
 ## Checks
@@ -154,6 +159,8 @@ VICE x64sc 3.10 (details, the before and after, and limits in `PLAN.md`,
   the gate.
 - `make enemies`: the spawn list, the three kinds, their fire, parked
   slots; its ENEMY_FAULT build must fail.
+- `make blasts`: enemy grenade blasts by blocking terrain with the pool
+  full expire at age 20 (issue #133); its BLAST_FAULT build must fail.
 - `make weapons`: a scripted run fires, turns, throws five grenades and
   shoots while scrolling among the enemies; `make weaponsfault` (autofire)
   must fail.

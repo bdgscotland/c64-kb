@@ -221,7 +221,7 @@ in `src/tools/query.ts`; check which before editing either.
   shifted `<< 8` with one index in a loop that also calls a `__noinline`
   function read the second table at the first one's value (-O1 and up);
   four fixed-address arrays cleared in one loop send one array's stores
-  to another's page (-O1 and up, upstream too: one `memset` each). A `cia1.prb` load between
+  to another's page (-O1 and up, upstream too: one `memset` each). A case's `gone = a[x] >= 20` compare is dropped at -O1 to -O3 when a sibling case of the same switch adds a `signed char` to an `int` array element, and the object is then never freed (run-and-gun's blast case, ages of 96, #133; local build, v1.32.273 and upstream not installed here; branch in the case: `if (a >= 20) { free(); continue; }`). A `cia1.prb` load between
   `cia1.pra = 0x7f` and `cia1.pra = 0xff` can be emitted after the second
   store though `cia1` is `volatile` (every level locally, -O0 on v1.32.273
   and upstream 6cb1a6c; put the scan in `__asm`). Status per fault against

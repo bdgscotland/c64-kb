@@ -31,6 +31,10 @@ char ost_peak;
 #ifndef ENEMY_FAULT
 #define ENEMY_FAULT 0                   // make enemies: 1 fires spawns a row late and leaves freed slots unparked
 #endif
+#ifndef BLAST_FAULT
+#define BLAST_FAULT 0                   // make blasts: 1 drops the blast's age check (the code Oscar64
+                                        // -O2 generated for it before the fix, issue #133)
+#endif
 
 // ---- the kinds ------------------------------------------------------------------------
 //                                   x0  x1  y0  y1 (sprite pixels, inclusive)
@@ -138,6 +142,13 @@ char obj_alloc(char kind)
         }
     return 0xff;
 }
+
+#if AUTOPILOT
+char obj_age_of(char i)
+{
+    return obj_age[i];
+}
+#endif
 
 void obj_free(char i)
 {
@@ -520,11 +531,25 @@ void objects_update(void)
                 p = SPR_BLOCK + SPR_BLAST;
             break;
         }
-        case K_BLAST:
-            obj_age[i] += 2;
-            gone = obj_age[i] >= 20;
-            p = SPR_BLOCK + SPR_BLAST + ((obj_age[i] >> 2) & 1);
+        case K_BLAST: {
+            // The expiry test branches in the case, on the spot. Left in
+            // `gone` for the tail, Oscar64 -O2 drops the compare as soon as
+            // the pose below is computed from the same value: build/<name>.asm
+            // then has the add and the pose but no CMP #$14, the blast is
+            // never gone and only the cull frees it (issue #133; make blasts
+            // saw ages of 96 with five blasts still on screen). The K_DOWN
+            // case's compare compiles right; a direct branch does too.
+            char a = obj_age[i] + 2;
+            obj_age[i] = a;
+            p = SPR_BLOCK + SPR_BLAST + ((a >> 2) & 1);
+#if !BLAST_FAULT
+            if (a >= 20) {
+                obj_free(i);            // age 20: the tick steps 2, so 18 is the last age drawn
+                continue;
+            }
+#endif
             break;
+        }
         default:                                // K_DOWN
             obj_age[i] += 2;
             gone = obj_age[i] >= 24;

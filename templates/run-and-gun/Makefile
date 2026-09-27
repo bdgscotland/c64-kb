@@ -1,7 +1,7 @@
 # run-and-gun (FIREBASE): a vertical run-and-gun starter. Every target but
-# assets, assetcheck, mapend, phases, enemies, weapons, weaponsfault, audio,
-# audiotest, frontend, fedrive, longplay, collide, death, area, fullpool,
-# title and cleared comes from the harness:
+# assets, assetcheck, mapend, phases, enemies, blasts, weapons, weaponsfault,
+# audio, audiotest, frontend, fedrive, longplay, collide, death, area,
+# fullpool, title and cleared comes from the harness:
 #   make            build build/run-and-gun.prg (after the PLAN.md gate)
 #   make run        windowed VICE, joystick in port 2
 #   make shot       headless PAL and NTSC exit screenshots of the autopilot build
@@ -11,6 +11,7 @@
 #   make gallery    shots/gallery.png: the normal game in play, for a README
 #   make title      shots/title.png: the title screen, for a README
 #   make enemies    the enemies' own proof (expect-enemies.json) and its ENEMY_FAULT build
+#   make blasts     enemy grenade blasts expire: expect-blasts.json, and its BLAST_FAULT build must fail
 #   make assets     re-run tools/mkassets.py, tools/mkweapons.py and tools/mktune.py (src/gen/ is committed)
 #   make assetcheck the committed src/gen/ is what the tool writes now
 #   make weapons    the -dWEAPONS=1 build: shots and grenades played and graded (expect-weapons.json)
@@ -84,7 +85,7 @@ assetcheck:
 # MAPEND): the view stops at map y 0 after 7 lines (YSCROLL 0 to 7), and he
 # walks on through the fort's gate to sprite Y 52. expect-mapend.json reads
 # its verdict at YSCROLL 7 ("dy": 4).
-VERIFY_TARGETS := mapend enemies weapons weaponsfault audio audiotest frontend fedrive longplay \
+VERIFY_TARGETS := mapend enemies blasts weapons weaponsfault audio audiotest frontend fedrive longplay \
 	collide death area fullpool
 PRG_MAPEND := build/$(NAME)-mapend.prg
 $(PRG_MAPEND): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
@@ -127,6 +128,36 @@ enemies: $(PRG_ENEMIES) $(PRG_ENEMIES_FAULT)
 	if [ $$st -eq 1 ] && grep -q '^FAIL' shots/enemies-fault.txt; then \
 	  grep '^FAIL' shots/enemies-fault.txt | head -6; echo "enemies: PASS, check.py rejected the ENEMY_FAULT build"; \
 	else cat shots/enemies-fault.txt; echo "enemies: FAIL, check.py did not reject the ENEMY_FAULT build (exit $$st)"; exit 1; fi
+
+# ---- blasts: every enemy grenade blast expires (issue #133) -------------------------
+# The -dBLASTTEST=1 autopilot build (src/main.c, BLASTTEST) spawns enemy
+# grenade blasts on blocking cells with the pool filled while the map scrolls
+# (the redraw pair's think skip and the objects' deadline run over their
+# lives) and freezes on play frame 260. Its verdict (main.c first_fail_blasts)
+# wants every blast freed by age 20 and within BLAST_FRAMES_MAX frames of the
+# frame it became one; expect-blasts.json pins the counts on PAL and NTSC.
+# The BLAST_FAULT=1 build (the blast's age check dropped: the code Oscar64
+# -O2 generated before the fix) must fail those checks.
+PRG_BLASTS := build/$(NAME)-blasts.prg
+PRG_BLASTS_FAULT := build/$(NAME)-blastsfault.prg
+$(PRG_BLASTS): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dBLASTTEST=1 -o=$@ $(C_MAIN)
+$(PRG_BLASTS_FAULT): $(C_DEPS) $(ASM_OUT) $(METER_DEPS) | plan-gate
+	@mkdir -p build
+	$(OSCAR64_BUILD) -d$(AUTOPILOT_DEFINE)=1 -dBLASTTEST=1 -dBLAST_FAULT=1 -o=$@ $(C_MAIN)
+
+.PHONY: blasts
+blasts: $(PRG_BLASTS) $(PRG_BLASTS_FAULT)
+	$(call vice_shot,$(PRG_BLASTS),$(SHOT_CYCLES_PAL),,shots/blasts-pal.png)
+	$(call vice_shot,$(PRG_BLASTS),$(SHOT_CYCLES_NTSC),-model ntsc,shots/blasts-ntsc.png)
+	$(PYTHON) $(HARNESS_DIR)/check.py expect-blasts.json shots/blasts-pal.png shots/blasts-ntsc.png
+	$(call vice_shot,$(PRG_BLASTS_FAULT),$(SHOT_CYCLES_PAL),,shots/blastsfault-pal.png)
+	$(call vice_shot,$(PRG_BLASTS_FAULT),$(SHOT_CYCLES_NTSC),-model ntsc,shots/blastsfault-ntsc.png)
+	@$(PYTHON) $(HARNESS_DIR)/check.py expect-blasts.json shots/blastsfault-pal.png shots/blastsfault-ntsc.png > shots/blastsfault.txt 2>&1; st=$$?; \
+	if [ $$st -eq 1 ] && grep -q '^FAIL' shots/blastsfault.txt; then \
+	  grep '^FAIL' shots/blastsfault.txt | head -6; echo "blasts: PASS, check.py rejected the BLAST_FAULT build"; \
+	else cat shots/blastsfault.txt; echo "blasts: FAIL, check.py did not reject the BLAST_FAULT build (exit $$st)"; exit 1; fi
 
 # ---- phases: the band and the panel at every YSCROLL phase ---------------------------
 # The graded shot freezes on YSCROLL 3 only. Each build here freezes on one
