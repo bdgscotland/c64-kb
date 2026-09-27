@@ -1923,9 +1923,12 @@ is not paged (`eight_way_scroll_double_buffer`).
   steps in eight where the camera did not cross a cell the bytes are
   unchanged and nothing shows; the crossing step can tear.
 - **Redraw only what changed.** One pixel a step crosses a cell every
-  eight steps, and then one row or one column enters the window: 25 or
-  40 bytes instead of 1,000. The step rate and the dirty byte stay as
-  they are.
+  eight steps on an axis, and then one row or one column enters the
+  window: 40 bytes for a row, 25 for a column, instead of 1,000. A
+  diagonal step advances both axes at once, so the two crossings can
+  land on the same step and a row and a column both enter then: 65
+  bytes written, the corner cell twice. The step rate and the dirty byte
+  stay as they are.
 - **A step the game chooses.** The rate is a constant: one step every
   four frames for a light redraw, every eight for a heavy one. What the
   player sees is the camera moving at that rate, or not at all.
