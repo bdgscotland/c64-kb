@@ -3028,5 +3028,89 @@
       "pal": "screenshots/basic-ml-service-blocks.png",
       "ntsc": "screenshots/basic-ml-service-blocks-ntsc.png"
     }
+  },
+  "kickassembler/centred-sprite-map-scroll": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/centred-sprite-map-scroll.png",
+      "ntsc": "screenshots/centred-sprite-map-scroll-ntsc.png"
+    }
+  },
+  "kickassembler/centred-sprite-map-scroll@later": {
+    "cycles": 8600000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
+  },
+  "kickassembler/centred-sprite-map-scroll@up": {
+    "cycles": 10800000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/centred-sprite-map-scroll-up.png",
+      "ntsc": "screenshots/centred-sprite-map-scroll-up-ntsc.png"
+    }
+  },
+  "kickassembler/centred-sprite-map-scroll@uplater": {
+    "cycles": 11400000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/centred-sprite-map-scroll-uplater.png",
+      "ntsc": "screenshots/centred-sprite-map-scroll-uplater-ntsc.png"
+    }
+  },
+  "kickassembler/centred-sprite-map-scroll@frame1": {
+    "cycles": 8068380,
+    "models": [
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "ntsc": "screenshots/centred-sprite-map-scroll-frame1-ntsc.png"
+    }
+  },
+  "kickassembler/centred-sprite-map-scroll@frame2": {
+    "cycles": 8085475,
+    "models": [
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "ntsc": "screenshots/centred-sprite-map-scroll-frame2-ntsc.png"
+    }
+  },
+  "kickassembler/centred-sprite-map-scroll@frame3": {
+    "cycles": 8102570,
+    "models": [
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "ntsc": "screenshots/centred-sprite-map-scroll-frame3-ntsc.png"
+    }
+  },
+  "kickassembler/centred-sprite-map-scroll@step256": {
+    "cycles": 29000000,
+    "models": [
+      "pal"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/centred-sprite-map-scroll-step256.png"
+    }
   }
 }

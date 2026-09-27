@@ -1835,3 +1835,186 @@ one field of slack.
 ### Recipes
 
 - `recipes/kickassembler/eight-way-scroll.md`
+
+---
+
+## centred_sprite_map_scroll — The world moves under a player fixed at screen centre
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D011, D012, D016, D018
+**Uses kernal:** (none)
+**Requires:** soft_scroll_h, soft_scroll_v, screen_double_buffer_d018
+**Alternative to:** eight_way_scroll_double_buffer (the whole window is redrawn from the map once every few frames and the fine scroll goes to the IRQ through one dirty byte, instead of a matrix prep on every pixel step with the colour RAM copied over four fields; the camera moves at the rate the game chooses and colour RAM is one value for the world)
+**Cost:** cycles_per_frame=17415, every_n_frames=5, bytes_code=1177, bytes_data=3152
+**Cost basis:** measured-vice
+**Cost bytes basis:** derived-listing
+**Cost measured on:** kickassembler-centred-sprite-map-scroll (one step: the stick read, the turn, the camera move, the 1,000-byte window redraw, the pose write and the report rows, screen on; 17,491 on NTSC; the redraw alone is 15,014 and 14,971)
+**Claims:** none
+**Claims basis:** derived-listing
+
+The registers the hand-off writes belong to the techniques this one
+composes: `$D011`'s YSCROLL is `soft_scroll_v`'s, `$D016`'s XSCROLL is
+`soft_scroll_h`'s, and the `$D018` page is `screen_double_buffer_d018`'s.
+The raster interrupt and the sprite are the recipe's claims, and the map,
+the window and the one dirty byte are the program's own memory.
+
+### Why
+
+A player crossing a world map must stay on screen and stay steerable,
+and the world must move when he moves, and only then. Scrolling at a
+fixed rate takes the pace away from the player. Walking a sprite around
+a map larger than the screen means sprites leave the display and the
+game must decide what to draw at the edges. Fixing the player at the
+centre turns all of that into one question: where is the camera?
+
+The work is then a window redraw, and it wants to be cheap, predictable
+and off the beam's path. Rewriting a 40 x 25 window every frame is too
+much for a game that also runs logic; rewriting it once every few frames
+gives the game a step it can budget.
+
+### How
+
+Hold the camera in map pixels, `camx`, `camy`. Everything else derives
+from those two bytes:
+
+1. **The window.** Matrix row k shows map row `(camy >> 3) + k` and
+   matrix column c shows map column `(camx >> 3) + c`. `XSCROLL = 7 −
+   (camx AND 7)` and `YSCROLL = 7 − (camy AND 7)`; a map pixel (x, y)
+   then draws at VIC x `31 + x − camx` and raster line `55 + y − camy`
+   (arithmetic from the two register writes, measured exactly on the
+   recipe's landmark cells). A 40 x 25 matrix covers a 38 x 24 window at
+   every fine scroll when CSEL and RSEL are 0: the partial column and
+   row at each edge are behind the border.
+2. **A step every N frames.** The step reads the stick, turns the facing
+   one step toward the stick's direction (`facing_turn_step`), moves the
+   camera one map pixel along the facing, and redraws the window from the
+   map into the matrix that is not on display. The player's sprite keeps
+   its X and Y; only its pointer changes, to the pose for `facing >> 1`.
+3. **One dirty byte.** The step stores the fine X, the fine Y and the
+   screen page of the matrix it drew, and sets bit 7 of the page byte.
+   The raster IRQ sees that bit on line 0, writes `$0288`, `$D018`,
+   `$D016` and `$D011` from the block, and clears the bit. The IRQ never
+   reads the map; the map code never writes `$D011`, `$D016` or `$D018`.
+4. **Between steps the technique does nothing.** The step is one unit of
+   work, and the frames around it are the game's.
+
+### Why it works
+
+The camera is one number pair and the registers cannot disagree with
+it: the fine scroll is the low three bits of the camera inverted, the
+window origin is its high bits, and one store moves both. The flip is
+one `$D018` write in the IRQ, atomic from the viewer's side, so the
+window never shows a half-redrawn frame. Because the copy writes the
+matrix that is not on display, it may run over the display's own lines:
+the recipe's 1,000-byte copy ends on line 245 on PAL and 234-237 on
+NTSC, inside the window's lines 55-246 (measured), with no tear.
+
+The player is one sprite at a fixed position with a table of heading
+poses, so turning is one pointer write and the hardware draws it. A
+world of one colour per cell keeps the copy to screen codes; a world
+that colours its cells has to move colour RAM as well, and colour RAM
+is not paged (`eight_way_scroll_double_buffer`).
+
+### Variations
+
+- **Redraw the visible matrix and accept the tear.** One matrix and no
+  `$D018` flip: the copy writes what the beam is reading. On the seven
+  steps in eight where the camera did not cross a cell the bytes are
+  unchanged and nothing shows; the crossing step can tear.
+- **Redraw only what changed.** One pixel a step crosses a cell every
+  eight steps on an axis, and then one row or one column enters the
+  window: 40 bytes for a row, 25 for a column, instead of 1,000. A
+  diagonal step advances both axes at once, so the two crossings can
+  land on the same step and a row and a column both enter then: 65
+  bytes written, the corner cell twice. The step rate and the dirty byte
+  stay as they are.
+- **A step the game chooses.** The rate is a constant: one step every
+  four frames for a light redraw, every eight for a heavy one. What the
+  player sees is the camera moving at that rate, or not at all.
+- **Colour per cell.** Colour RAM is one value in the recipe. Moving it
+  with the window needs its own copy every step and cannot be double
+  buffered.
+
+### Cycle budget
+
+Measured in VICE x64sc 3.10 with CIA 2 timers A and B around the redraw
+and the whole step, screen on, PAL C64C and NTSC 6567R8:
+
+| | PAL | NTSC |
+|---|---|---|
+| Frame | 19,656 cycles | 17,095 cycles |
+| Window redraw, 1,000 bytes | 15,014 (76%) | 14,971 (88%) |
+| Whole step | 17,415 (89%) | 17,491 (102%) |
+| The redraw returns on line | 242-243 | 231-235 |
+| The hand-off lands on line | 0-278 | 0-7 of the next frame |
+| Steps published a frame late | 0 of 49-55 | 55-62 of 55-62 |
+
+Every figure in the table is measured except the two frame lengths and
+the percentages, which are arithmetic (63 cycles a line over 312 lines
+on PAL, 65 over 263 on NTSC).
+
+Which interrupts run the KERNAL service is part of the cost. The recipe
+sends each source its own way: the raster source exits through the bare
+`$EA81` restore, and only the CIA1 source runs `$EA31`, so the jiffy
+clock and the keyboard scan happen once a jiffy instead of once per
+raster interrupt. An earlier build of the recipe let every interrupt
+exit through `$EA31`, and it measured 16,923 cycles a step with the copy
+returning on lines 245 (PAL) and 234-237 (NTSC).
+
+The step's cycle count is not its deadline. The count starts inside
+the step, after the line-0 raster interrupt and any KERNAL work that
+ran before it, and what the step must meet is the next line 0, where
+the IRQ applies the hand-off. So cycles left at the end of a frame are
+not headroom. The recipe reads the line the hand-off landed on and
+counts the steps whose hand-off crossed line 0: on PAL the hand-off
+lands by line 278, 33 lines inside the frame's last line 311, and no
+step is late; on NTSC the step outlives its frame and every step is
+late. A late hand-off loses no step: that step still moved the camera
+and the cadence stays one step in five frames, but the IRQ publishes
+the window at the following line 0, so the old window stays one more
+frame and the new one appears a frame later than it could have.
+
+The step runs once in five frames, so the four frames between steps
+spend none of this. What they do spend is the frame counter's increment
+and the test of the dirty byte in the IRQ, 12 cycles (arithmetic from
+the listing); a plan that counts every cycle adds that to the IRQ's own
+frame cost. The copy is 40 bytes a row in 20 passes of two `lda abs,y`/`sta abs,y`
+pairs: 23 cycles for two bytes, 460 a row (arithmetic from the
+instruction table). The same copy shape with its per-row pointer
+patching measures 503 a row in `row_map_redraw`. This recipe measures
+600 a row on PAL (15,014 cycles over 25 rows) and 599 on NTSC (14,971);
+the rest is the two extra pointer adds the map's 64-byte stride costs
+each row and the badline stalls and sprite fetches the copy runs across
+(measured totals less the arithmetic copy).
+
+### In Pirates! (1987)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (rung 1). The image
+is a cracked copy, and its start-up options menu patched five
+interpreter table entries, so an opcode meaning read from it describes
+that copy. The sailing map is characters in multicolour mode (screen
+$E400, charset $E000, VIC bank 3), with the world map a static
+3,048-byte block at $C000. The ship is two overlaid sprites fixed at
+x=180, y=144 and never leaves the centre: the world scrolls under it.
+Its heading is a sprite-pointer pair, $40+H and $50+H for H=0-15, and a
+left turn decrements H one step. One step is about 102,700 cycles, 5.2
+PAL frames (measured): poll the stick, redraw the window matrix from the
+map ($9BAE), hand the fine scroll over, update the sprites. The hand-off
+is a three-byte block at $9B80: fine X at +$0A, fine Y at +$0B, and the
+screen page with a dirty flag at +$0C. A routine in the IRQ path
+($97BE-$97E1) writes $0288, $D018, $D016 and $D011 from those and clears
+the dirty byte; 898 such applies were traced in one measured window. The
+IRQ never reads the map, and the map code never writes the scroll
+registers. The window is redrawn whole every step into the visible
+matrix, with a second 1,000-byte buffer at $CC00 holding the same window
+one character to the right as the scroll's working copy. Colour RAM
+holds a multicolour index per cell and is written with the window. The
+measured step advanced 2 units of window X and one fine pixel; the
+recipe here redraws into the matrix that is not on display and flips the
+page in the IRQ, which the study's own block already carries as its
+third byte.
+
+### Recipes
+
+- `recipes/kickassembler/centred-sprite-map-scroll.md`: a 64 x 40 map under a ship fixed at the centre of a 38 x 24 window, eight heading poses, a scripted stick, a step every five frames, the redraw and the whole step timed against the frame on PAL and NTSC, and a second pinned run 600,000 cycles later that shows the window moved by exactly the camera's six pixels.
