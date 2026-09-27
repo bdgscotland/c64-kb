@@ -849,6 +849,128 @@ to the raster and sprite recipes landing in Phase 4+.
 
 ---
 
+## bank_swap_trampoline — Bank-swap trampoline
+
+**Complexity:** low
+**Region:** both
+**Requires:** ram_under_kernal
+**Demands:** kernal_rom_out
+**Claims:** none
+**Claims basis:** estimated
+
+### Why
+
+Every call to bank KERNAL out and back must restore the exact `$01` value the
+caller held. A dedicated restore cell works but is a second write target.
+A stack push/pop works but costs stack depth and extra instructions. A
+self-modifying restore avoids both: the entry routine writes the caller's `$01`
+into the immediate operand of the exit's `LDA #` instruction. Exit then loads
+that value straight from its own code and stores it into `$01`. No extra
+memory cell, no stack access.
+
+### How
+
+The pair is two short routines placed in the same page as the banked-out work:
+
+```kickassembler
+// Bank-swap trampoline: entry saves the caller's $01 into the operand
+// of restore's LDA #, then sets the new banking value and returns.
+// restore reads back that saved value and writes it to $01.
+// All callers must enter with the same $01; see nesting note below.
+
+entry:
+        sei
+        lda $01
+        sta restore + 1    // overwrite the # operand of restore's LDA
+        lda #$35           // KERNAL ROM out, I/O in; adapt as needed
+        sta $01
+        rts
+
+restore:
+        lda #$37           // operand overwritten by entry at call time
+        sta $01
+        cli
+        rts
+```
+
+`restore + 1` is the address of the `#$37` byte inside `restore`. Writing the
+caller's `$01` there changes what `restore` loads on its next execution. Any
+routine that needs KERNAL banked out calls `entry` on the way in and `restore`
+on the way out; they share one routine each.
+
+### Why it works
+
+The 6510 PLA never generates a ROM chip-select for write cycles. Writes to the
+ROM ranges always reach the underlying RAM, so the `sta restore + 1` in `entry`
+modifies the RAM byte that will be read as the immediate operand when `restore`
+is next executed, regardless of what `$01` currently selects. The save and the
+restore are one memory location (a code byte), not two.
+
+**Nesting.** The operand holds exactly one value. A second call to `entry`
+before `restore` runs overwrites whatever the first call stored. The mechanism
+is safe only when every caller holds the same `$01` at entry time:
+
+- **Safe:** every caller enters with `$01=$37`. The first call writes `$37` to
+  `restore+1`; a second call also writes `$37`. `restore` always loads `$37`.
+- **Unsafe across different callers:** a caller at `$01=$36` calls `entry` (writes
+  `$36` to `restore+1`), then before its `restore` runs, a second caller at
+  `$01=$37` calls `entry` (writes `$37`, overwriting `$36`). The first caller's
+  `restore` then loads `$37` instead of `$36`.
+- **Unsafe across an interrupt:** if the per-frame IRQ also calls `entry`, it
+  runs between the foreground's `entry` and `restore`. It saves the IRQ's `$01`
+  value (e.g. `$35`) to `restore+1`, overwriting the foreground's saved value.
+  The foreground's `restore` then loads `$35` instead of what the foreground
+  had at entry.
+
+In Pirates! (1987) the trampoline is at `$9509`/`$9523`. The entry is
+`SEI / LDA $01 / STA $9524 / LDA #$04 / STA $01 / RTS`, and `$9524` is the
+operand of the restore's `LDA #` (bytes read from a RAM dump in VICE x64sc
+3.10 on the maintainer's copy, rung 1). Which sites call it, and with which
+`$01`, was not traced; so the study does not show whether its callers
+always meet the invariant. An earlier version of this paragraph called
+the study's instance "nesting-safe" and named `$02D0`/`$02C9` as a
+stack-based pair used by the IRQ. They are neither: see the fixed-value
+variation below.
+
+### Variations
+
+**Stack-based restore.** `PHA` the current `$01` on entry; `PLA` and `STA $01`
+on exit. Safe across any nesting depth and any interrupt. Costs one byte of
+stack and two extra instructions. Use it when the trampoline may be called from
+an interrupt handler or from sites with different `$01` values.
+
+**Fixed restore value.** When both the entry and exit values are known at
+assembly time and all callers share the same entry value, skip the
+self-modification: one `SEI / LDA #NEW / STA $01` before the work and
+`LDA #OLD / STA $01 / CLI` after. Two bytes shorter per site; no self-modifying
+write required. Use when one page holds one copy of the work and the values
+never change. Pirates! uses this form around its disk calls. `$02D0` is
+`SEI / LDA #$35 / STA $01 / RTS`. `$02C9` is
+`SEI / LDA #$37 / STA $01 / CLI / RTS`. The LOAD hook at `$02C3` runs
+`JSR $02D0 / JSR $F006 / JMP $02C9` (bytes read from a RAM dump, rung 1).
+
+### Cycle budget
+
+Entry: SEI (2) + LDA zpg (3) + STA abs (4) + LDA imm (2) + STA zpg (3) + RTS (6) = 20 cycles.
+Restore: LDA imm (2) + STA zpg (3) + CLI (2) + RTS (6) = 13 cycles. Total: 33 cycles per
+banked call round trip, not counting the banked-out work itself.
+Basis: arithmetic from the 6510 instruction table (rung 3).
+
+### Recipes
+
+No standalone recipe. The listing above is an inline fragment; `npm run
+check:listings -- --file docs/techniques/memory-banking.md` assembles it.
+
+In Pirates! (1987) the pair sits at `$9509` (entry) and `$9523` (restore),
+measured in VICE x64sc 3.10 on the maintainer's copy (rung 1). The copy routine
+at `$9514` and the fill routine at `$951D` each call `entry` on the way in and
+`restore` on the way out. The entry's `sta $9524` writes into the immediate
+operand of the `lda #` at `$9523`; the findings confirm the operand byte at
+`$9524` is `$85` (`STA`) when the KERNAL is banked out, showing the write
+landed (rung 1).
+
+---
+
 ## screen_double_buffer_d018 — Screen double buffer via $D018
 
 **Complexity:** medium
