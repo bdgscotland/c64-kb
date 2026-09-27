@@ -922,28 +922,32 @@ is safe only when every caller holds the same `$01` at entry time:
   The foreground's `restore` then loads `$35` instead of what the foreground
   had at entry.
 
-In Pirates! (1987), the per-frame IRQ uses a stack-based swap at `$02D0`/`$02C9`
-(measured in VICE x64sc 3.10 on the maintainer's copy, rung 1), not the
-trampoline. The trampoline at `$9509`/`$9523` is called only from BASIC-level
-code, always with `$01=$37`. The invariant holds and no nesting issue arises.
-The study's phrase "nesting-safe" refers to that invariant, not to general nesting.
+In Pirates! (1987) the trampoline is at `$9509`/`$9523`. The entry is
+`SEI / LDA $01 / STA $9524 / LDA #$04 / STA $01 / RTS`, and `$9524` is the
+operand of the restore's `LDA #` (bytes read from a RAM dump in VICE x64sc
+3.10 on the maintainer's copy, rung 1). Which sites call it, and with which
+`$01`, was not traced; so the study does not show whether its callers
+always meet the invariant. An earlier version of this paragraph called
+the study's instance "nesting-safe" and named `$02D0`/`$02C9` as a
+stack-based pair used by the IRQ. They are neither: see the fixed-value
+variation below.
 
 ### Variations
 
 **Stack-based restore.** `PHA` the current `$01` on entry; `PLA` and `STA $01`
 on exit. Safe across any nesting depth and any interrupt. Costs one byte of
 stack and two extra instructions. Use it when the trampoline may be called from
-an interrupt handler or from sites with different `$01` values. Pirates! uses
-this form for its IRQ path (`$02D0`: SEI / LDA #$35 / STA $01 / RTS;
-`$02C9`: SEI / LDA #$37 / STA $01 / CLI / RTS — fixed values because the IRQ
-always enters from `$37` and always wants `$35`).
+an interrupt handler or from sites with different `$01` values.
 
 **Fixed restore value.** When both the entry and exit values are known at
 assembly time and all callers share the same entry value, skip the
 self-modification: one `SEI / LDA #NEW / STA $01` before the work and
 `LDA #OLD / STA $01 / CLI` after. Two bytes shorter per site; no self-modifying
 write required. Use when one page holds one copy of the work and the values
-never change.
+never change. Pirates! uses this form around its disk calls. `$02D0` is
+`SEI / LDA #$35 / STA $01 / RTS`. `$02C9` is
+`SEI / LDA #$37 / STA $01 / CLI / RTS`. The LOAD hook at `$02C3` runs
+`JSR $02D0 / JSR $F006 / JMP $02C9` (bytes read from a RAM dump, rung 1).
 
 ### Cycle budget
 
