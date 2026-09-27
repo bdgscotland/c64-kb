@@ -3004,5 +3004,17 @@
       "pal": "screenshots/joystick-name-entry.png",
       "ntsc": "screenshots/joystick-name-entry-ntsc.png"
     }
+  },
+  "kickassembler/scene-bytecode-interpreter": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/scene-bytecode-interpreter.png",
+      "ntsc": "screenshots/scene-bytecode-interpreter-ntsc.png"
+    }
   }
 }
