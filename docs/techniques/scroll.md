@@ -1979,9 +1979,14 @@ The step runs once in five frames, so the four frames between steps
 spend none of this. What they do spend is the frame counter's increment
 and the test of the dirty byte in the IRQ, 12 cycles (arithmetic from
 the listing); a plan that counts every cycle adds that to the IRQ's own
-frame cost. The copy is 11.5 cycles a byte plus about 50 a row for the
-self-modified pointers (arithmetic), and the measured figure carries the
-badline stalls and the sprite fetches it runs across.
+frame cost. The copy is 40 bytes a row in 20 passes of two `lda abs,y`/`sta abs,y`
+pairs: 23 cycles for two bytes, 460 a row (arithmetic from the
+instruction table). The same copy shape with its per-row pointer
+patching measures 503 a row in `row_map_redraw`. This recipe measures
+600 a row on PAL (15,014 cycles over 25 rows) and 599 on NTSC (14,971);
+the rest is the two extra pointer adds the map's 64-byte stride costs
+each row and the badline stalls and sprite fetches the copy runs across
+(measured totals less the arithmetic copy).
 
 ### In Pirates! (1987)
 
