@@ -8,7 +8,7 @@ file_formats: [PRG]
 uses_registers: [D000, D001, D010, D011, D012, D015, D016, D017, D018, D019, D01A, D01B, D01C, D01D, D020, D021, D027, DC00, DD04, DD05, DD06, DD07, DD0E, DD0F]
 uses_kernal: []
 claims: [irq_vector_0314 (owns), vic_raster_irq (owns), sprite_0 (owns), cia1_port_a (reads), zero_page $02-$0E+$CC (owns)]
-harness: [cia2_timer_a, cia2_timer_b, $0F-$1B]
+harness: [cia2_timer_a, cia2_timer_b, $0F-$20]
 ram: [$0288, screen=$0400-$07FF, back=$2400-$27FF, colour=$D800-$DBFF]
 kernal_services: [IRQ]
 ---
@@ -68,7 +68,7 @@ BasicUpstart2(start)
 .const STARTX  = 160          // camera start, in map pixels
 .const STARTY  = 64
 
-// zero page. $02-$0E and $CC are the technique, $0F-$1B the harness.
+// zero page. $02-$0E and $CC are the technique, $0F-$20 the harness.
 // The KERNAL service reached through $EA31 may write $01, $91, $A0-$A2,
 // $C0, $C5-$C6, $CB, $CD-$CF and $F3-$F6 (kernal-routines-reference.md);
 // none of those bytes are used here.
@@ -93,6 +93,9 @@ BasicUpstart2(start)
 .const tdiff   = $17          // this call's cycles (2 bytes)
 .const reprow  = $19          // report row pointer (2 bytes)
 .const rline   = $1b          // $D012 when the last redraw returned
+.const eline   = $1c          // line the last hand-off landed on (2 bytes, 0-311)
+.const elmax   = $1e          // the latest such line (2 bytes)
+.const latec   = $20          // steps whose hand-off crossed line 0
 
 start:
     sei
@@ -142,6 +145,11 @@ cloop:
     sta tmaxT
     sta tmaxT+1
     sta rline
+    sta eline
+    sta eline+1
+    sta elmax
+    sta elmax+1
+    sta latec
     lda #$ff
     sta target
     lda #>SCRA
@@ -277,6 +285,32 @@ moved:
     jsr setpose
     jsr report
     jsr swap
+    // 6. the publication deadline: the hand-off must land before line 0
+    lda $d011
+    asl                     // RST8, the line's 9th bit, into carry
+    lda $d012
+    sta eline
+    lda #0
+    rol
+    sta eline+1             // the line the hand-off landed on, 0-311
+    lda eline+1
+    cmp elmax+1
+    bcc nomax
+    bne maxst
+    lda eline
+    cmp elmax
+    bcc nomax
+maxst:
+    lda eline
+    sta elmax
+    lda eline+1
+    sta elmax+1
+nomax:
+    lda frame               // the raster IRQ bumps frame on line 0, so a step
+    cmp lastfrm             // that outlived its frame published one frame late
+    beq ontime
+    inc latec
+ontime:
     inc stepc
     bne !+
     inc stepc+1
@@ -471,6 +505,15 @@ report:
     lda rline
     ldy #16
     jsr puthex
+    lda elmax+1
+    ldy #21
+    jsr puthex
+    lda elmax
+    ldy #23
+    jsr puthex
+    lda latec
+    ldy #28
+    jsr puthex
     rts
 
 puthex:                     // A as two hex digits at (reprow),y
@@ -556,7 +599,7 @@ movey:
 hexd:   .text "0123456789ABCDEF"
 row1txt: .text "X=   Y=   H=   S=    "
 row1txt_end: .byte 0
-row2txt: .text "C=     T=     L=  "
+row2txt: .text "C=     T=     L=   E=     N=  "
 row2txt_end: .byte 0
 
 // the scripted stick: the mask ANDed into $DC00 for that step
@@ -641,15 +684,16 @@ against the character ROM. Screenshot x = VIC x + 8; a screenshot row is
 raster line − 16 on PAL and − 28 on NTSC.
 
 Row 1 of the window is `X=camx Y=camy H=facing S=steps` and row 2 is
-`C=redraw cycles T=step cycles L=line the redraw returned on`, all hex,
-the largest `C` and `T` seen so far.
+`C=redraw cycles T=step cycles L=line the redraw returned on E=line the
+hand-off landed on N=steps published a frame late`, all hex, the largest
+`C`, `T` and `E` seen so far.
 
 | What | PAL 8.0M | PAL 8.6M | NTSC 8.0M | NTSC 8.6M |
 |---|---|---|---|---|
-| Row 1 | `X=7B Y=36 H=04 S=0031` | `X=81 Y=36 H=04 S=0037` | `X=82 Y=36 H=04 S=0038` | `X=89 Y=36 H=04 S=003F` |
-| Row 2 | `C=3AA5 T=4235 L=F3` | `C=3AA5 T=4235 L=F3` | `C=3A7B T=416E L=E6` | `C=3A7B T=416E L=E6` |
-| Fine scroll XSCROLL, YSCROLL | 4, 1 | 6, 1 | 5, 1 | 6, 1 |
-| The four landmark cells | (92,81) (172,129) (252,177) (332,209) | (86,81) (166,129) (246,177) (326,209) | (85,69) (165,117) (245,165) (325,197) | (78,69) (158,117) (238,165) (318,197) |
+| Row 1 | `X=7B Y=36 H=04 S=0031` | `X=81 Y=36 H=04 S=0037` | `X=81 Y=36 H=04 S=0037` | `X=88 Y=36 H=04 S=003E` |
+| Row 2 | `C=3AA6 T=441C L=F3 E=0116 N=00` | `C=3AA6 T=441C L=F3 E=0116 N=00` | `C=3A7C T=446C L=EA E=0007 N=37` | `C=3A7C T=446C L=E6 E=0007 N=3E` |
+| Fine scroll XSCROLL, YSCROLL | 4, 1 | 6, 1 | 6, 1 | 7, 1 |
+| The four landmark cells | (92,81) (172,129) (252,177) (332,209) | (86,81) (166,129) (246,177) (326,209) | (86,69) (166,117) (246,165) (326,197) | (79,69) (159,117) (239,165) (319,197) |
 | The ship's white hull | x 183-200, rows 124-144 | same | x 183-200, rows 112-132 | same |
 
 The landmark cells are the map's inverse-space cells at (row 12, column
@@ -679,17 +723,32 @@ NTSC frames, seven steps (arithmetic): exactly the six and seven pixels
 the landmarks moved. One pixel a step is the move table; the redraw is
 1,000 bytes whether the camera crossed a cell or not.
 
-The redraw cost is against the frame: 15,013 cycles, 76% of the 19,656
-PAL cycles, and 14,971 of the 17,095 NTSC cycles, 88%, once every five
+The redraw cost is against the frame: 15,014 cycles, 76% of the 19,656
+PAL cycles, and 14,972 of the 17,095 NTSC cycles, 88%, once every five
 frames. The frame lengths and the two percentages are arithmetic (63
 cycles a line over 312 lines on PAL, 65 over 263 on NTSC). The whole
-step, stick to hand-off, is 16,949 cycles on PAL and 16,750 on NTSC, so
-on NTSC 345 cycles of the frame are left (arithmetic) and the step runs
-on one frame in five only because the other four frames do none of it.
-The redraw ends on line 243 (PAL) and 230 (NTSC), inside the display's
+step, stick to hand-off, measures 17,436 cycles on PAL and 17,516 on
+NTSC, which on NTSC is longer than the frame itself: the copy runs
+across the display's badlines and sprite fetches and pays for them. The
+redraw ends on line 243 (PAL) and 230-234 (NTSC), inside the display's
 lines 55-246 (measured): the copy runs while the beam is reading the
 window, which is safe only because it writes the matrix that is not on
 display.
+
+What a step has to meet is not a cycle count but a publication
+deadline: the next line 0, where the IRQ applies the hand-off. The
+cycle count starts inside the step, after the line-0 interrupt and any
+KERNAL work that ran before it, so cycles left at the end of a frame
+are not headroom. `E` is the line the hand-off landed on and `N` counts
+the steps whose hand-off crossed line 0 and so reached the IRQ a frame
+late. On PAL the hand-off lands by line 278 at the latest, 33 lines
+before the frame's last line 311 (arithmetic), and none of the 49 and
+55 steps at the two pinned shots is late. On NTSC the step outlives its
+frame: the hand-off lands on line 0-7 of the next frame and every step
+is late, 55 of 55 and 62 of 62 at the pinned shots. A late hand-off
+loses no step: the camera still moves that step and the step count
+still advances one per five frames, but the IRQ publishes the window at
+the following line 0, so the old window stays one more frame.
 
 An earlier build of the listing let every raster interrupt exit through
 `$EA31`, so the KERNAL service ran once per raster interrupt as well as

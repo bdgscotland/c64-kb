@@ -1846,10 +1846,10 @@ one field of slack.
 **Uses kernal:** (none)
 **Requires:** soft_scroll_h, soft_scroll_v, screen_double_buffer_d018
 **Alternative to:** eight_way_scroll_double_buffer (the whole window is redrawn from the map once every few frames and the fine scroll goes to the IRQ through one dirty byte, instead of a matrix prep on every pixel step with the colour RAM copied over four fields; the camera moves at the rate the game chooses and colour RAM is one value for the world)
-**Cost:** cycles_per_frame=16949, every_n_frames=5, bytes_code=1177, bytes_data=3152
+**Cost:** cycles_per_frame=17436, every_n_frames=5, bytes_code=1177, bytes_data=3152
 **Cost basis:** measured-vice
 **Cost bytes basis:** derived-listing
-**Cost measured on:** kickassembler-centred-sprite-map-scroll (one step: the stick read, the turn, the camera move, the 1,000-byte window redraw, the pose write and the report rows, screen on; 16,750 on NTSC; the redraw alone is 15,013 and 14,971)
+**Cost measured on:** kickassembler-centred-sprite-map-scroll (one step: the stick read, the turn, the camera move, the 1,000-byte window redraw, the pose write and the report rows, screen on; 17,516 on NTSC; the redraw alone is 15,014 and 14,972)
 **Claims:** none
 **Claims basis:** derived-listing
 
@@ -1941,13 +1941,15 @@ and the whole step, screen on, PAL C64C and NTSC 6567R8:
 | | PAL | NTSC |
 |---|---|---|
 | Frame | 19,656 cycles | 17,095 cycles |
-| Window redraw, 1,000 bytes | 15,013 (76%) | 14,971 (88%) |
-| Whole step | 16,949 (86%) | 16,750 (98%) |
-| The redraw returns on line | 243 | 230 |
+| Window redraw, 1,000 bytes | 15,014 (76%) | 14,972 (88%) |
+| Whole step | 17,436 (89%) | 17,516 (102%) |
+| The redraw returns on line | 243 | 230-234 |
+| The hand-off lands on line | 0-278 | 0-7 of the next frame |
+| Steps published a frame late | 0 of 49-55 | 55-62 of 55-62 |
 
-Every figure in the table is measured except the two frame lengths,
-which are arithmetic (63 cycles a line over 312 lines on PAL, 65 over
-263 on NTSC).
+Every figure in the table is measured except the two frame lengths and
+the percentages, which are arithmetic (63 cycles a line over 312 lines
+on PAL, 65 over 263 on NTSC).
 
 Which interrupts run the KERNAL service is part of the cost. The recipe
 sends each source its own way: the raster source exits through the bare
@@ -1956,6 +1958,19 @@ clock and the keyboard scan happen once a jiffy instead of once per
 raster interrupt. An earlier build of the recipe let every interrupt
 exit through `$EA31`, and it measured 16,923 cycles a step with the copy
 returning on lines 245 (PAL) and 234-237 (NTSC).
+
+The step's cycle count is not its deadline. The count starts inside
+the step, after the line-0 raster interrupt and any KERNAL work that
+ran before it, and what the step must meet is the next line 0, where
+the IRQ applies the hand-off. So cycles left at the end of a frame are
+not headroom. The recipe reads the line the hand-off landed on and
+counts the steps whose hand-off crossed line 0: on PAL the hand-off
+lands by line 278, 33 lines inside the frame's last line 311, and no
+step is late; on NTSC the step outlives its frame and every step is
+late. A late hand-off loses no step: that step still moved the camera
+and the cadence stays one step in five frames, but the IRQ publishes
+the window at the following line 0, so the old window stays one more
+frame and the new one appears a frame later than it could have.
 
 The step runs once in five frames, so the four frames between steps
 spend none of this. What they do spend is the frame counter's increment
