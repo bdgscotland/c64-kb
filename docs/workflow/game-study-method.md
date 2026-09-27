@@ -394,11 +394,50 @@ can reuse. From the synthesis:
 - Anything too large for the session is a GitHub issue with acceptance
   criteria (CLAUDE.md rule 9).
 
+## 12. What the second study added (Pirates!, 1987)
+
+Pirates! is a BASIC program over machine code, with menus that need a
+fresh press per question and a play start 213,772,067 cycles in. Each
+point below cost a run to find (VICE x64sc 3.10, the maintainer's copy).
+
+- **Edge-triggered menus.** A menu that counts a press only after a
+  release ignores a held value. Give the inject entry `"once": true`: it
+  sets the value on one hit and disables its checkpoint (section 3).
+  Two once-entries are two presses only if the game reads the idle
+  value between them. Pirates!'s setup questions took one-frame presses
+  50 frames apart.
+- **A text search misses indexed and pointer reads.** Searching the
+  trace for `$DC00` found nothing in the fencing scene; its joystick
+  read is `LDA ($61),Y` with the pointer set to `$DC00` just before. Put
+  a load checkpoint on the register (`trace load dc00 dc00`) and read
+  the PC from the hit.
+- **BASIC-driven games.** When BASIC reads the input with `PEEK`, the
+  read runs inside the BASIC ROM (Pirates!: `LDA ($14),Y` at `$B818`),
+  and every screen shares it. Inject at the machine-code routine that
+  fills the value BASIC peeks, not at the ROM.
+- **An "in play" PC may run everywhere.** A loop shared by menus and
+  play gives a false start. Bisect the start with screenshots at a few
+  cycle counts, then gate the check with `after_clock`. Say in the
+  session's `why` that the PC is not play-only.
+- **Long sessions.** 213M cycles of trace wrote a 1.7 GB monitor log;
+  the tools now read it as a stream (#134). Keep hand-written runs
+  under five minutes each and use the tool's staging: autostarting the
+  D64 instead of the extracted file changes every later clock.
+- **A cracked copy can alter the code.** Pirates!'s start-up options
+  menu patched five interpreter table entries. Say so wherever a
+  finding touches them.
+
+It gave four techniques (`scene_bytecode_interpreter`,
+`basic_ml_service_blocks`, `bank_swap_trampoline`,
+`centred_sprite_map_scroll`), the archetype `open_world_modes`, and
+[the Pirates! study](../game-design/studies/pirates.md).
+
 ## See also
 
 - [disassembly-reference](../toolchains/disassembly-reference.md): da65,
   the monitor in batch, forcing a read, packers, pointer dispatch.
-- [The Commando study](../game-design/studies/commando.md) and
+- [The Commando study](../game-design/studies/commando.md),
+  [the Pirates! study](../game-design/studies/pirates.md) and
   [reference-game-sources](../game-design/reference-game-sources.md).
 - [vice-reference](../runtime/vice-reference.md): models and reading the
   exit screenshot.
