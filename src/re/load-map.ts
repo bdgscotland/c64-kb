@@ -462,27 +462,34 @@ export function firstProgramDispatch(
   portHits: Iterable<Hit> = [],
 ): { clock: number | null; unknowns: string[] } {
   // The $00/$01 stores stream past the entries (both are in clock order),
-  // so a long trace costs no array (issue #134).
+  // so a long trace costs no array (issue #134). The stream is closed on
+  // every exit: it reads a log file, and an early return would leave
+  // readLines suspended with the file's descriptor open, keeping a deleted
+  // log's disk space (#134 review).
   const stores = filterHits(portHits, (h) => h.kind === "store" && h.addr <= 0x0001)[Symbol.iterator]();
-  const port = new PortFollower();
-  const unknowns: string[] = [];
-  const named = new Set<number>();
-  let next = stores.next();
-  for (const e of entries) {
-    while (!next.done && next.value.clock <= e.clock) {
-      port.apply(next.value);
-      next = stores.next();
+  try {
+    const port = new PortFollower();
+    const unknowns: string[] = [];
+    const named = new Set<number>();
+    let next = stores.next();
+    for (const e of entries) {
+      while (!next.done && next.value.clock <= e.clock) {
+        port.apply(next.value);
+        next = stores.next();
+      }
+      const rom = romAt(e.handler, port.bits);
+      if (rom === false) return { clock: e.clock, unknowns };
+      if (rom === null && !named.has(e.handler)) {
+        named.add(e.handler);
+        unknowns.push(
+          `$01 not known at the entry to $${e.handler.toString(16).toUpperCase().padStart(4, "0")} at clock ${e.clock}: ROM or RAM handler unknown`,
+        );
+      }
     }
-    const rom = romAt(e.handler, port.bits);
-    if (rom === false) return { clock: e.clock, unknowns };
-    if (rom === null && !named.has(e.handler)) {
-      named.add(e.handler);
-      unknowns.push(
-        `$01 not known at the entry to $${e.handler.toString(16).toUpperCase().padStart(4, "0")} at clock ${e.clock}: ROM or RAM handler unknown`,
-      );
-    }
+    return { clock: null, unknowns };
+  } finally {
+    stores.return?.();
   }
-  return { clock: null, unknowns };
 }
 
 // --- entry_pc: only from a complete trace -----------------------------------

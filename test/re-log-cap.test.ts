@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionSchema, sessionScript, type Session } from "../src/re/session.ts";
 import { reIrqChain } from "../src/tools/re.ts";
+import { reFrameMode } from "../src/tools/re-frame.ts";
 import { sessionPass, type Staged } from "../src/tools/re-session.ts";
 
 const made: string[] = [];
@@ -82,6 +83,16 @@ describe("a log larger than maxLogBytes", () => {
     expect(r.result.unknowns.join("\n")).toMatch(CUT);
   }, 30_000);
 
+  it("c64_re_frame_profile carries pass B's cut into unknowns, even when no pointer needs a third pass", async () => {
+    fakeX64sc();
+    const r = await reFrameMode({ prg_path: dummyPrg() }, { maxLogBytes: 200_000 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // Frame mode drops pass B after reading its pointers; its cut is named
+    // here rather than lost (#134 review).
+    expect(r.result.unknowns.join("\n")).toMatch(/handler discovery pass stopped early/);
+  }, 30_000);
+
   it("a session pass returns, says it was truncated, and names the cut in unknowns", async () => {
     fakeX64sc();
     const prg = dummyPrg();
@@ -93,7 +104,12 @@ describe("a log larger than maxLogBytes", () => {
       screenshot: join(dir(), "s.png"),
       maxLogBytes: 200_000,
     });
-    expect(p.truncated).toBe(true);
-    expect(p.unknowns.join("\n")).toMatch(CUT);
+    try {
+      expect(p.truncated).toBe(true);
+      expect(p.unknowns.join("\n")).toMatch(CUT);
+    } finally {
+      // The run's work directory (vice-batch-*) is the test's to remove.
+      p.dispose();
+    }
   }, 30_000);
 });

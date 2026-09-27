@@ -440,6 +440,25 @@ describe("firstProgramDispatch", () => {
   it("is null with no entries at all", () => {
     expect(firstProgramDispatch([]).clock).toBeNull();
   });
+
+  it("closes its $00/$01 stream when it returns early, so a deleted log keeps no disk space", () => {
+    const closed = { now: false };
+    const stream: Iterable<Hit> = {
+      *[Symbol.iterator]() {
+        try {
+          yield st(0x0900, 0x0001, 10);
+          yield st(0x0900, 0x0001, 30);
+        } finally {
+          closed.now = true;
+        }
+      },
+    };
+    // $1000 is outside every ROM window, so the first entry returns at
+    // once, with the stream still suspended on its second hit.
+    const r = firstProgramDispatch([{ ...irqHit, handler: 0x1000, clock: 20, frame: 0 }], stream);
+    expect(r).toEqual({ clock: 20, unknowns: [] });
+    expect(closed.now).toBe(true);
+  });
 });
 
 const tools = findToolchains();

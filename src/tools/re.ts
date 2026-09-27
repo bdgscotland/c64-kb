@@ -238,20 +238,27 @@ async function traced(
     ...(maxLogBytes !== undefined ? { maxLogBytes } : {}),
   });
   // The hits stay lazy over the run's log (issue #134): the caller scans
-  // them and disposes the run after its last scan.
-  const r = fromEntry(hitsOf(run.log), entry, own);
-  if (!r) {
-    run.dispose();
-    throw new NoEntry(`entry ${hexUp(entry ?? 0)} not reached in ${args.cycles} cycles; raise cycles`);
+  // them and disposes the run after its last scan. Until it takes the run
+  // over, a throw while scanning (a read error) disposes it here, or the
+  // work directory is left behind (#134 review).
+  let taken = false;
+  try {
+    const r = fromEntry(hitsOf(run.log), entry, own);
+    if (!r)
+      throw new NoEntry(`entry ${hexUp(entry ?? 0)} not reached in ${args.cycles} cycles; raise cycles`);
+    const out: Traced = {
+      ...r,
+      entry,
+      truncated: run.truncated,
+      dispose: () => {
+        run.dispose();
+      },
+    };
+    taken = true;
+    return out;
+  } finally {
+    if (!taken) run.dispose();
   }
-  return {
-    ...r,
-    entry,
-    truncated: run.truncated,
-    dispose: () => {
-      run.dispose();
-    },
-  };
 }
 
 const NO_SYS = "entry not known: the PRG has no BASIC SYS line, so clocks and frames count from power-on";
@@ -421,12 +428,27 @@ export async function chainPasses(
     a.dispose();
   }
   const b = await src.trace(execCommands(handlers));
-  const pointers = indirectPointers(b.hits);
-  // Pass A's log is disposed here and pass B's is named by src.unknowns(b)
-  // unless a third pass replaces it, so the cuts the caller would not see
-  // are named here.
-  const notes = [...truncationNotes(a), ...(pointers.length ? truncationNotes(b) : [])];
-  return { handlers, pointers, last: b, notes };
+  // Ownership of `b` moves to the caller with the return; until then a
+  // throw while scanning (a read error) disposes it here, or its work
+  // directory is left behind (#134 review). Pass A's cut is named in
+  // notes, its log being disposed above; the analysed pass names its own
+  // through src.unknowns(b), and a caller that drops a pass carries its
+  // cut itself — frame mode dropped pass B's warning when no pointer asked
+  // for a third pass (#134 review).
+  let taken = false;
+  try {
+    const pointers = indirectPointers(b.hits);
+    const out = {
+      handlers,
+      pointers,
+      last: b,
+      notes: truncationNotes(a, "the vector and stack trace"),
+    };
+    taken = true;
+    return out;
+  } finally {
+    if (!taken) b.dispose();
+  }
 }
 
 export async function reIrqChain(args: SourceArgs, opts: RunOpts = {}): Promise<ReResult<IrqChain>> {
@@ -437,7 +459,13 @@ export async function reIrqChain(args: SourceArgs, opts: RunOpts = {}): Promise<
       const b = pointers.length ? await src.trace(execCommands(handlers, pointers)) : last;
       try {
         const result = analyseIrqChain(b.hits, src.timing, b.start);
-        result.unknowns.push(...src.unknowns(b), ...notes);
+        result.unknowns.push(
+          ...src.unknowns(b),
+          ...notes,
+          // Pass B is dropped when a third pass replaces it: its cut is
+          // named here, src.unknowns(b) naming the analysed pass's own.
+          ...(b === last ? [] : truncationNotes(last, "the handler discovery pass")),
+        );
         return { ok: true, run: src.info(b), result };
       } finally {
         if (b !== last) b.dispose();

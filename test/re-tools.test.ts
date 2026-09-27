@@ -7,11 +7,14 @@ import type { Hit } from "../src/re/monlog.ts";
 import { REGION_TIMING } from "../src/domain/timing.ts";
 import {
   allowedPrg,
+  chainPasses,
   fromEntry,
   parseMarker,
   reFrameProfile,
   reIrqChain,
   truncationNotes,
+  type Source,
+  type Traced,
 } from "../src/tools/re.ts";
 import { reFrameMode } from "../src/tools/re-frame.ts";
 import { resolveX64sc } from "../src/services/vice-bin.ts";
@@ -180,6 +183,36 @@ describe("a run its log cap stopped", () => {
   });
   it("says nothing when the run reached its cycle limit", () => {
     expect(truncationNotes({ ...t, truncated: false })).toEqual([]);
+  });
+});
+
+describe("a pass whose log cannot be read", () => {
+  it("chainPasses disposes it instead of leaving its work directory behind", async () => {
+    const disposed: string[] = [];
+    const pass = (name: string, unreadable: boolean): Traced => ({
+      hits: unreadable
+        ? {
+            [Symbol.iterator]: () => {
+              throw new Error("read error");
+            },
+          }
+        : [],
+      start: 0,
+      entry: null,
+      truncated: false,
+      dispose: () => {
+        disposed.push(name);
+      },
+    });
+    let call = 0;
+    const src: Source = {
+      trace: () => Promise.resolve(pass(call++ === 0 ? "a" : "b", call > 1)),
+      info: () => ({ prg: "p", model: "pal", cycles: 0, entry: null, start_clock: 0, vice: "" }),
+      unknowns: () => [],
+      timing: REGION_TIMING.PAL,
+    };
+    await expect(chainPasses(src)).rejects.toThrow("read error");
+    expect(disposed).toEqual(["a", "b"]);
   });
 });
 

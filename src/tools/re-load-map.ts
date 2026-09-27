@@ -204,13 +204,22 @@ async function chainFromPowerOn(
   }
   let b = await openPass(src, execCommands(handlers), src.fullCycles, unknowns);
   // A handler that is JMP (pointer) (Commando's $4134): a third pass adds
-  // the pointer's bytes, the same as c64_re_irq_chain.
-  const pointers = indirectPointers(b.hits);
-  if (pointers.length) {
-    b.dispose();
-    b = await openPass(src, execCommands(handlers, pointers), src.fullCycles, unknowns);
+  // the pointer's bytes, the same as c64_re_irq_chain. Ownership of `b`
+  // moves to the caller with the return; until then a throw while scanning
+  // (a read error) disposes it here (#134 review).
+  let taken = false;
+  try {
+    const pointers = indirectPointers(b.hits);
+    if (pointers.length) {
+      b.dispose();
+      b = await openPass(src, execCommands(handlers, pointers), src.fullCycles, unknowns);
+    }
+    const out = { chain: analyseIrqChain(b.hits, src.timing, 0), hits: b.hits, dispose: b.dispose };
+    taken = true;
+    return out;
+  } finally {
+    if (!taken) b.dispose();
   }
-  return { chain: analyseIrqChain(b.hits, src.timing, 0), hits: b.hits, dispose: b.dispose };
 }
 
 /** The store-0000-ffff trace, streamed and grouped into writers without holding the log; how it ended, for entry_pc. */

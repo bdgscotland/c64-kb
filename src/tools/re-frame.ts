@@ -86,6 +86,9 @@ export async function reFrameMode(
   if (Number.isNaN(waitPc)) return { ok: false, error: `bad wait_pc: ${args.wait_pc}`, reason: "input" };
   return withSource(args, "frame-profile", opts, async (src) => {
     const { handlers, pointers, last, notes } = await chainPasses(src);
+    // Pass B is read for its pointers here and dropped: its cut is named
+    // below, along with pass A's (notes), the discovery trace's and the
+    // analysed pass's own (#134 review).
     last.dispose();
     const d = await src.trace(discoveryScript, DISCOVERY_LOG_BYTES);
     const { rtis, wait, unknowns } = discoveryOf(d, waitPc);
@@ -103,6 +106,7 @@ export async function reFrameMode(
       result.unknowns.push(
         ...unknowns,
         ...truncationNotes(d, "discovery trace (RTIs and the wait loop)"),
+        ...truncationNotes(last, "the handler discovery pass"),
         ...chain.unknowns,
         ...src.unknowns(f),
         ...notes,
