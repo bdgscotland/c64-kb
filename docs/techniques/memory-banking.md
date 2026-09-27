@@ -857,6 +857,9 @@ to the raster and sprite recipes landing in Phase 4+.
 **Demands:** kernal_rom_out
 **Claims:** none
 **Claims basis:** estimated
+**Cost:** cycles_per_frame=33
+**Cost basis:** arithmetic
+**Cost measured on:** kickassembler-bank-swap-trampoline (one call, instruction-table sum)
 
 ### Why
 
@@ -958,8 +961,19 @@ Basis: arithmetic from the 6510 instruction table (rung 3).
 
 ### Recipes
 
-No standalone recipe. The listing above is an inline fragment; `npm run
-check:listings -- --file docs/techniques/memory-banking.md` assembles it.
+- `recipes/kickassembler/bank-swap-trampoline.md` — nested same-value calls
+  restore `$01` to the caller's `$37`; the screen and border report the check.
+
+### Pitfalls
+
+- The restore operand holds only one saved value. A mixed-value caller or an
+  interrupt that enters before restore overwrites it. See
+  `pitfalls/banking.md#trampoline_restore_operand_overwritten` (rung 3 for the
+  mechanism; Pirates! callers were not traced).
+- Pirates! scenes use fixed pass counts, measured at 89 passes per frame in
+  the duel. That timing depends on the fixed CPU speed; use frame counting
+  when speed portability matters. Source:
+  `game-design/studies/pirates.md`, rung 1.
 
 In Pirates! (1987) the pair sits at `$9509` (entry) and `$9523` (restore),
 measured in VICE x64sc 3.10 on the maintainer's copy (rung 1). The copy routine

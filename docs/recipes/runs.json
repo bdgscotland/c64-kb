@@ -3029,6 +3029,12 @@
       "ntsc": "screenshots/basic-ml-service-blocks-ntsc.png"
     }
   },
+  "kickassembler/bank-swap-trampoline": {
+    "cycles": 8000000,
+    "models": ["pal"],
+    "flags": [],
+    "shots": {"pal": "screenshots/bank-swap-trampoline.png"}
+  },
   "kickassembler/centred-sprite-map-scroll": {
     "cycles": 8000000,
     "models": [
