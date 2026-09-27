@@ -3004,5 +3004,25 @@
       "pal": "screenshots/joystick-name-entry.png",
       "ntsc": "screenshots/joystick-name-entry-ntsc.png"
     }
+  },
+  "kickassembler/centred-sprite-map-scroll": {
+    "cycles": 8000000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": [],
+    "shots": {
+      "pal": "screenshots/centred-sprite-map-scroll.png",
+      "ntsc": "screenshots/centred-sprite-map-scroll-ntsc.png"
+    }
+  },
+  "kickassembler/centred-sprite-map-scroll@later": {
+    "cycles": 8600000,
+    "models": [
+      "pal",
+      "ntsc"
+    ],
+    "flags": []
   }
 }
