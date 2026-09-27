@@ -5,6 +5,20 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
+**A session injection can fire once (data 846, tools 2.20.0).** An
+inject entry held its value on every hit after `after_hits`, so a menu
+that counts a press only after a release (Pirates!'s setup screens) saw
+one press and waited. `"once": true` sets the value on one hit and
+disables the checkpoint in the same monitor command. Measured in VICE
+x64sc 3.10 on `test/fixtures/re/press-count.asm`: two once entries count
+2 presses, one held entry counts 1; with `disable` removed, the test
+fails. `limitcycles` in a session file was capped at 200,000,000; Pirates!
+reaches its first in-game screen at about 221,000,000, so the cap is now
+2,000,000,000 (runs stay bounded by the monitor log size). Implemented by
+MiMo-V2.6-Pro; a Codex review found that `set: {}` with `once` never
+disabled itself (fixed) and that two once entries need a read of the idle
+value between them (documented).
+
 Data 845, schema 40, tools 2.19.0, package 0.29.0. Two branches landed
 together: reverse-engineering step 2 (the Commando study) and the
 run-and-gun starter with the 41 KB gaps its build found. Each numbered
