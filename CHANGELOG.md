@@ -5,6 +5,42 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
+**The second study: Pirates! (data 847).** The KB had no page for how a
+game with many modes is built. The Pirates! teardown found five
+mechanisms, each checked against the game's bytes, a trace or a
+screenshot in VICE x64sc 3.10 on the maintainer's copy (a cracked
+release), and they land as:
+- `scene_bytecode_interpreter` (logic.md): one interpreter runs every
+  scene from byte scripts. Pirates! dispatches through a self-modified
+  `JMP ($A300)` at `$A4EC` and times scenes by pass count (89 a frame).
+  The recipe waits on a frame counter and measures its dispatch: 47
+  cycles per iteration by patched `JMP`, 48 by the `RTS` trick, with the
+  screen blanked.
+- `basic_ml_service_blocks` (logic.md): a BASIC program as the game
+  script over fixed-page machine-code blocks. Its recipe measures the
+  `SYS` overhead at 4,924 cycles on PAL, most of it BASIC parsing the
+  address.
+- `bank_swap_trampoline` (memory-banking.md): the caller's `$01` saved
+  into the restore instruction's own operand. It is safe only while
+  every caller enters with the same `$01`, and never from an interrupt.
+- `centred_sprite_map_scroll` (scroll.md): the ship fixed at the centre
+  of the screen, the map redrawn under it, the fine scroll handed to the
+  IRQ through one dirty byte. It is measured on both models: on NTSC a
+  late step shows the old picture one frame longer and loses no step.
+- The archetype `open_world_modes` and the study
+  `game-design/studies/pirates.md`, whose session file replays the game
+  to the sailing map.
+- The method page's section 12: edge-triggered menus, pointer reads a
+  text search misses, games driven from BASIC, long sessions.
+
+Sonnet wrote tasks 1, 2 and 4-6 after Xiaomi's content filter blocked
+MiMo on this subject; MiMo wrote task 3. Codex reviewed each task, and
+Claude checked each Pirates! fact against a dump or a trace. Two claims
+were corrected before landing: `$02D0`/`$02C9` are the disk hooks'
+fixed-value bank switch, not a stack-based pair used by the IRQ; and
+the interpreter dispatch figures, first worked out on paper, are now
+measured.
+
 **The RE tools ran out of memory on a long session (tools 2.20.1, #134).**
 `re-irq-chain` on the Pirates! session (play at 213,772,067 cycles)
 aborted at a 4 GB heap. That run writes a 1,696,126,422-byte monitor log,
