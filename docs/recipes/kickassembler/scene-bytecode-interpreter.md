@@ -510,8 +510,7 @@ h_poke:
     jsr fetch_byte
     sta poke_ins+2
     jsr fetch_byte   // value -> A
-poke_ins:
-    sta $ffff        // self-modified target
+poke_ins: sta $ffff        // self-modified target
     jmp next_op
 
 h_wait:

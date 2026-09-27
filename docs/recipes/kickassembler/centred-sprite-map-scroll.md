@@ -357,8 +357,7 @@ setpose:                    // the facing is 16 steps, the hull has 8 shapes
     lsr
     clc
     adc #(SPRBLK/64)
-spptr:
-    sta $ffff
+spptr: sta $ffff
     rts
 
 // ---- the raster IRQ: the frame counter and the dirty byte -----------
