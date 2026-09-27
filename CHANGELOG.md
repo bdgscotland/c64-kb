@@ -5,6 +5,20 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
+**The RE tools ran out of memory on a long session (tools 2.20.1, #134).**
+`re-irq-chain` on the Pirates! session (play at 213,772,067 cycles)
+aborted at a 4 GB heap. That run writes a 1,696,126,422-byte monitor log,
+27,839,066 lines and 13,895,239 hits, and three places kept every hit in
+memory. Every RE tool now reads its log as a stream of hits in 1 MiB
+chunks. A run cut by `maxLogBytes` is named in `unknowns` in every tool.
+Measured in VICE x64sc 3.10: the Pirates! run completes in 363 s with a
+405 MB peak, and Commando's chain is identical before and after. A
+regression test writes past the cap and fails against the old code.
+Implemented by MiMo-V2.6-Pro. A Codex review found four leaks, now fixed
+with tests: an unclosed port stream, a dropped cut note, two undisposed
+runs, and the test's own work directory. `graft/`, a local indexer cache,
+is now gitignored.
+
 **Two run-and-gun checks were recorded against blasts that never
 expired.** After the #133 fix (2d3c0f9), `make weapons` read SHOWN 08
 where 10 was expected: the freeze had counted two stale enemy blasts,
