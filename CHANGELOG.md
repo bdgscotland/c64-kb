@@ -5,6 +5,17 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
+**Two run-and-gun checks were recorded against blasts that never
+expired.** After the #133 fix (2d3c0f9), `make weapons` read SHOWN 08
+where 10 was expected: the freeze had counted two stale enemy blasts,
+aged 46 and 182. `make collide` graded itself FAIL: its scripted death
+had come from a blast that stayed alive to age 155. The landing of
+2d3c0f9 did not run either target. The weapons pin is now 08. The
+collide walk is re-cut so the soldier dies on a fresh blast, age 8
+(pool RAM trace), with its other 27 pins unchanged. Every VERIFY_TARGETS
+entry passes on PAL and NTSC (VICE x64sc 3.10). Fixed by MiMo-V2.6-Pro;
+every target re-run by Claude before landing.
+
 **A session injection can fire once (data 846, tools 2.20.0).** An
 inject entry held its value on every hit after `after_hits`, so a menu
 that counts a press only after a release (Pirates!'s setup screens) saw
