@@ -1,0 +1,15 @@
+{
+  "checks": [
+    { "name": "own verdict (border): main.c first_fail_blasts", "type": "verdict" },
+    { "name": "verdict line", "type": "text", "row": 2, "col": 1, "text": "RESULT 01 PASS", "dy": 6 },
+    { "name": "5 enemy grenade blasts in all (3 grenades bursting on blocking cells, 2 spawned by them), every one freed, none left at the freeze", "type": "text", "row": 3, "col": 1, "text": "BORN 05 FREED 05 LIVE 0", "dy": 6 },
+    { "name": "no blast alive past age 20 (obj_age steps 2 a tick: 18 is the last age seen alive), and none over 48 frames from its burst to its free (FR)", "type": "text", "row": 4, "col": 1, "text": "AGE 018 NOW 000 FR 028 HOLD 014", "dy": 6 },
+    { "name": "the 3 grenades burst on blocking cells (NW), the pool held all 11 slots (PEAK), 3 blocking cells found (CELLS), and their blasts were born on frames 150 and 175 (BR)", "type": "text", "row": 5, "col": 1, "text": "NW 03 PEAK 11 CELLS 3 BR 150 175", "dy": 6 },
+    { "name": "9 redraw pairs (nothing thinks on either frame) over the scroll that made them, YSCROLL 1 at the freeze, 5 riflemen filling the pool (the list's row-73 rifleman joins it mid-scroll)", "type": "text", "row": 6, "col": 1, "text": "RD 09 STEPS 073 YS 1 F 5", "dy": 6 },
+    { "name": "no frame lost (metered and whole run), no redraw late, none at any frame", "type": "text", "row": 7, "col": 1, "text": "LOST 00 00 LATE 0 AT 000", "dy": 6 },
+    { "name": "the objects' deadline (OBJ_LATE) skipped no tick on PAL", "type": "text", "row": 2, "col": 19, "text": "SKIP 0000", "dy": 6, "models": ["pal"] },
+    { "name": "the objects' deadline skipped 5 ticks on NTSC (a busy frame is allowed to; the tick runs next frame)", "type": "text", "row": 2, "col": 19, "text": "SKIP 0005", "dy": 6, "models": ["ntsc"] },
+    { "name": "frame meter, the first 200 frames that ran the game's logic", "type": "meter", "row": 8, "col": 1, "frames": 200, "dy": 6 },
+    { "name": "the invalid-mode band: lines 214-222 black across the window", "type": "rect", "colour": 0, "vic_x": 24, "line": 214, "width": 320, "height": 9 }
+  ]
+}

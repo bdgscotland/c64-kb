@@ -12,6 +12,7 @@ import type {
   ToolchainHintOutput,
 } from "../../schemas/tool-outputs.ts";
 import { parseRows, renderDocBlocks, searchChunks, toDocChunk } from "./shared.ts";
+import { readRecipeListing } from "./recipes.ts";
 import type {
   OpcodeLookupResult,
   PalNtscDiffResult,
@@ -136,41 +137,138 @@ export async function palNtscDiff(topic: string, region: PalNtscRegion = "both")
 
 const OSCAR64_BIAS = "oscar64";
 
+const RecipeOfRow = z.object({ name: z.string(), toolchain: z.string(), source_doc: z.string() });
+type RecipeOf = z.infer<typeof RecipeOfRow>;
+
+/** The recipes that implement the technique the intent names ("row_map_redraw", "object pool"); empty when it names none. */
+async function recipesOfIntent(intent: string): Promise<{ technique: string; recipes: RecipeOf[] }> {
+  const technique = intent
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  const f = await getFalkor();
+  const rows = parseRows(
+    RecipeOfRow,
+    await f.roQuery(
+      `MATCH (:Technique {name: $technique})<-[:IMPLEMENTS]-(r:Recipe)
+       RETURN r.name AS name, r.toolchain AS toolchain, r.source_doc AS source_doc ORDER BY name`,
+      { technique },
+    ),
+  );
+  // The recipe named for the technique first: kickassembler-row-map-redraw
+  // is row_map_redraw's own; others merely use it.
+  const own = (r: RecipeOf) => (r.name.endsWith(`-${technique.replace(/_/g, "-")}`) ? 0 : 1);
+  return { technique, recipes: rows.sort((a, b) => own(a) - own(b) || a.name.localeCompare(b.name)) };
+}
+
+type RecipeChoice = { toolchain: string; recipe?: RecipeOf; rationale: string };
+
+/**
+ * The toolchain and recipe for the hint. Oscar64 is the default only while
+ * the technique has an Oscar64 recipe or none at all: its figures stand for
+ * the code they were measured on, so a technique whose only recipe is
+ * KickAssembler is answered in KickAssembler (KB-GAPS 8: row_map_redraw
+ * got Oscar64 and its page's Variations prose, not the recipe's patched
+ * 14-cycles-a-byte loop).
+ */
+function chooseRecipe(toolchain: string | undefined, technique: string, recipes: RecipeOf[]): RecipeChoice {
+  const others = (tc: string) => recipes.filter((r) => r.toolchain !== tc).map((r) => r.name);
+  if (toolchain !== undefined) {
+    const recipe = recipes.find((r) => r.toolchain === toolchain);
+    if (recipe)
+      return {
+        toolchain,
+        recipe,
+        rationale: `Toolchain ${toolchain} requested; ${recipe.name} implements ${technique}.`,
+      };
+    const elsewhere = others(toolchain);
+    return {
+      toolchain,
+      rationale:
+        `Toolchain ${toolchain} requested.` +
+        (elsewhere.length > 0
+          ? ` ${technique} has no ${toolchain} recipe; its recipes: ${elsewhere.join(", ")}.`
+          : ""),
+    };
+  }
+  const primary = recipes.find((r) => r.toolchain === OSCAR64_BIAS);
+  if (primary)
+    return {
+      toolchain: OSCAR64_BIAS,
+      recipe: primary,
+      rationale: `No toolchain specified; ${OSCAR64_BIAS} per c64-kb's primary-toolchain policy, and ${primary.name} implements ${technique}.`,
+    };
+  const [first] = recipes;
+  if (first) {
+    const which =
+      recipes.length === 1
+        ? `its only recipe is ${first.name}`
+        : `its recipes are ${recipes.map((r) => r.name).join(", ")}, ${first.name} first`;
+    return {
+      toolchain: first.toolchain,
+      recipe: first,
+      rationale: `No toolchain specified. ${technique} has no ${OSCAR64_BIAS} recipe; ${which}. Its figures are that code's, so the hint is in ${first.toolchain}.`,
+    };
+  }
+  return {
+    toolchain: OSCAR64_BIAS,
+    rationale: `No toolchain specified; defaulting to ${OSCAR64_BIAS} per c64-kb's primary-toolchain policy. Pass toolchain explicitly to override.`,
+  };
+}
+
+type Listing = NonNullable<ReturnType<typeof readRecipeListing>>;
+type Chunk = ToolchainHintOutput["sources"][number];
+
+/** The hint's text: the recipe's listing, or the search's best chunk, then the rest as context. */
+function hintText(
+  head: string,
+  tc: string,
+  found: { listing: Listing | null; recipe: RecipeOf | undefined; sources: Chunk[] },
+): string {
+  const { listing, recipe, sources } = found;
+  let out = head;
+  let related = sources;
+  if (listing && recipe) {
+    const nl = listing.text.endsWith("\n") ? "" : "\n";
+    out += `## Source listing of ${recipe.name} (${recipe.source_doc}, copy as-is)\n\n\`\`\`${listing.language}\n${listing.text}${nl}\`\`\`\n\n`;
+  } else {
+    const top = sources.at(0);
+    if (!top)
+      return `${out}No idiomatic snippet found in the KB. This is a coverage gap — consider adding a recipe under \`docs/recipes/${tc}/\`.\n`;
+    out += `## Canonical snippet (top match)\n\n${top.text}\n\n`;
+    related = sources.slice(1);
+  }
+  if (related.length > 0) {
+    out += `## Related context\n\n`;
+    for (const s of related) out += `### ${s.source} > ${s.section}\n${s.text}\n\n---\n\n`;
+  }
+  return out;
+}
+
 export async function toolchainHint(
   toolchain: string | undefined,
   intent: string,
 ): Promise<ToolchainHintResult> {
-  const tc = toolchain ?? OSCAR64_BIAS;
+  const { technique, recipes } = await recipesOfIntent(intent);
+  const choice = chooseRecipe(toolchain, technique, recipes);
+  const tc = choice.toolchain;
+  const listing = choice.recipe ? readRecipeListing(choice.recipe.source_doc) : null;
+  const recipe = listing ? choice.recipe : undefined;
   const { chunks: ctx } = await searchChunks({ query: `${tc} ${intent}`, limit: 5 });
 
   getAnalytics().logQuery({ tool: "c64_toolchain_hint", query: `${tc}:${intent}`, resultCount: ctx.length });
 
   const sources = ctx.slice(0, 3).map(toDocChunk);
-  const top = sources.at(0);
-  const related = sources.slice(1);
-
-  const rationale =
-    toolchain === undefined
-      ? `No toolchain specified; defaulting to ${OSCAR64_BIAS} per c64-kb's primary-toolchain policy. Pass toolchain explicitly to override.`
-      : `Toolchain ${tc} requested.`;
-
+  const snippet =
+    listing?.text ?? sources.at(0)?.text ?? "(no snippet found — consider adding a recipe or pattern doc)";
   const structured: ToolchainHintOutput = {
     toolchain: tc,
     intent,
-    snippet: top ? top.text : "(no snippet found — consider adding a recipe or pattern doc)",
-    rationale,
+    snippet,
+    rationale: choice.rationale,
     sources,
+    ...(recipe ? { recipe: recipe.name } : {}),
   };
-
-  let out = `# Toolchain hint: ${tc} — ${intent}\n\n${rationale}\n\n`;
-  if (!top) {
-    out += `No idiomatic snippet found in the KB. This is a coverage gap — consider adding a recipe under \`docs/recipes/${tc}/\`.\n`;
-  } else {
-    out += `## Canonical snippet (top match)\n\n${top.text}\n\n`;
-    if (related.length > 0) {
-      out += `## Related context\n\n`;
-      for (const s of related) out += `### ${s.source} > ${s.section}\n${s.text}\n\n---\n\n`;
-    }
-  }
-  return { structured, text: out };
+  const head = `# Toolchain hint: ${tc} — ${intent}\n\n${choice.rationale}\n\n`;
+  return { structured, text: hintText(head, tc, { listing, recipe, sources }) };
 }

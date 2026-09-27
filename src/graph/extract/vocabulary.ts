@@ -19,6 +19,8 @@ export const COST_VOCABULARY: Record<string, string> = {
   zp_bytes: "zero-page bytes the technique claims",
   irq_slots: "raster or timer interrupts the technique needs per frame",
   sprites_per_line: "the most hardware sprites displayed on one raster line of the technique's lines (0-8)",
+  every_n_frames:
+    "the cycles_per_frame figure is spent on one frame in N (2 or more), not every frame: a coarse-scroll redraw on the frame YSCROLL wraps; a plan budgets that frame on its own",
 };
 // Keys whose value has a hardware ceiling; a figure above it is refused.
 export const COST_MAXIMUM: Partial<Record<string, number>> = { sprites_per_line: 8 };
@@ -33,6 +35,15 @@ export type CostBasis = (typeof COST_BASIS_WORDS)[number];
 
 export function isCostBasis(word: string): word is CostBasis {
   return COST_BASIS_WORDS.some((w) => w === word);
+}
+
+// A game design's **Measured frame:** line takes one more word (schema 40):
+// measured-vice-study, a studied game's frame read by the RE tools in VICE.
+export const MEASURED_FRAME_BASIS_WORDS = [...COST_BASIS_WORDS, "measured-vice-study"] as const;
+export type MeasuredFrameBasis = (typeof MEASURED_FRAME_BASIS_WORDS)[number];
+
+export function isMeasuredFrameBasis(word: string): word is MeasuredFrameBasis {
+  return MEASURED_FRAME_BASIS_WORDS.some((w) => w === word);
 }
 
 // Technique categories the graph accepts. A technique doc whose frontmatter

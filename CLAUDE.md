@@ -201,7 +201,10 @@ in `src/tools/query.ts`; check which before editing either.
   non-empty body gives error 3006, an empty body compiles silently and
   `if (c) A(); f();` becomes `if (c) f();` (local build only; v1.32.273
   and upstream are correct; an earlier version of this line said the
-  macro is always refused); a loop-invariant `array + signed_char` is hoisted and zero-extended
+  macro is always refused); a macro call whose arguments run onto the
+  next line (`CHECK(a == 1 &&` / `b == 2);`) fails with error 3068 then
+  error 3006 (local build only; v1.32.273 and upstream 6cb1a6c build it;
+  keep each call on one line); a loop-invariant `array + signed_char` is hoisted and zero-extended
   (-2 → +254) at every level, upstream too; `a[x]++` after a store indexed by
   `a[x] + 1` can store the wrong value (read `a[x]` into a variable); stores to a
   local `volatile` vanish at -O1/-O2 (use a global that something writes);
@@ -218,7 +221,10 @@ in `src/tools/query.ts`; check which before editing either.
   shifted `<< 8` with one index in a loop that also calls a `__noinline`
   function read the second table at the first one's value (-O1 and up);
   four fixed-address arrays cleared in one loop send one array's stores
-  to another's page (-O1 and up, upstream too: one `memset` each). Status per fault against
+  to another's page (-O1 and up, upstream too: one `memset` each). A case's `gone = a[x] >= 20` compare is dropped at -O1 to -O3 when a sibling case of the same switch adds a `signed char` to an `int` array element, and the object is then never freed (run-and-gun's blast case, ages of 96, #133; local build, v1.32.273 and upstream not installed here; branch in the case: `if (a >= 20) { free(); continue; }`). A `cia1.prb` load between
+  `cia1.pra = 0x7f` and `cia1.pra = 0xff` can be emitted after the second
+  store though `cia1` is `volatile` (every level locally, -O0 on v1.32.273
+  and upstream 6cb1a6c; put the scan in `__asm`). Status per fault against
   upstream HEAD is in #30. The verbatim messages are in each toolchain
   page's "Reading the errors".
 - VICE headless: without `GSETTINGS_SCHEMA_DIR` the GTK build aborts;

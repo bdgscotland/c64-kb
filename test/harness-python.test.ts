@@ -273,6 +273,47 @@ describe("drive.py", () => {
     ]);
     expect(r.out.trim()).toBe("[(1024, 0, 24), (51200, 21, 24), (34816, 3, 3)]");
   });
+
+  it("puts the I/O simulation device on both ports, after -default", () => {
+    const r = py([
+      "-c",
+      `import sys; sys.path.insert(0, sys.argv[1]); import drive
+class Stop(Exception): pass
+def popen(args, **kw): print(args); raise Stop()
+drive.subprocess.Popen = popen
+try: drive.Vice("x.prg")
+except Stop: pass`,
+      harness,
+    ]);
+    const args = JSON.parse(r.out.trim().replace(/'/g, '"')) as string[];
+    const d = args.indexOf("-default");
+    for (const opt of ["-controlport1device", "-controlport2device"]) {
+      expect(args.indexOf(opt)).toBeGreaterThan(d);
+      expect(args[args.indexOf(opt) + 1]).toBe("37");
+    }
+  });
+
+  it("presses port 1 with hold1 and tap1 (joyport 0, active low)", () => {
+    const r = py([
+      "-c",
+      `import sys, struct; sys.path.insert(0, sys.argv[1]); import drive
+class Fake:
+    def cmd(self, code, body=b""): print("cmd", hex(code), struct.unpack("<HH", body))
+    def frames(self, n): print("frames", n)
+    def joy(self, bits): self.cmd(0xa2, struct.pack("<HH", 1, 0xff & ~bits))
+    joy1 = drive.Vice.joy1
+drive.step(Fake(), "hold1", "fire+up")
+drive.step(Fake(), "tap1", "fire")`,
+      harness,
+    ]);
+    expect(r.out.trim().split("\n")).toEqual([
+      "cmd 0xa2 (0, 238)",
+      "cmd 0xa2 (0, 239)",
+      "frames 3",
+      "cmd 0xa2 (0, 255)",
+      "frames 6",
+    ]);
+  });
 });
 
 describe("watch.py", () => {

@@ -16,24 +16,31 @@ This page is a procedure catalogue, not a program: finding a
 PRG's entry point, disassembling with `da65` (cc65 V2.18) driven by an info
 file, walking the KERNAL's interrupt paths, the ROM tables every
 disassembly meets, the byte census, the VICE x64sc 3.10 monitor run in
-batch, this repo's two trace tools (`re-irq-chain`, `re-frame-profile`),
-and finding a `.sid` file's init and play routines.
+batch, this repo's trace tools (`re-load-map`, `re-irq-chain`,
+`re-frame-profile`), a packed game's depack stages, and finding a `.sid`
+file's init and play routines.
 
 Every command block below was run on the reference machine, and its output
 is quoted from that run ("…" marks a cut). The inputs are the VICE ROM
-images and this repo's own recipe PRG
-[kickassembler/irq-chain](../recipes/kickassembler/irq-chain.md), plus a
-`.sid` file whose listing is on this page. Nothing
-here is taken from a commercial program: per
+images, this repo's own recipe PRGs
+[kickassembler/irq-chain](../recipes/kickassembler/irq-chain.md) and
+[kickassembler/cracktro-template](../recipes/kickassembler/cracktro-template.md),
+and a `.sid` file whose listing is on this page. Two sections quote tool
+output on one commercial image, the maintainer's copy of Commando
+(session `game-design/studies/sessions/commando.json`): "Packers and
+loader stubs" and "Dispatch through `JMP (ind)`". They quote addresses,
+clocks and ranges, never its code: per
 [reference-game-sources](../game-design/reference-game-sources.md), a
-commercial disassembly supplies facts, never listings.
+commercial disassembly supplies facts, never listings. An earlier version
+of this paragraph said nothing here came from a commercial program.
 
 The images used:
 
 ```text
-$ shasum kernal-901227-03.bin kickassembler-irq-chain.prg
+$ shasum kernal-901227-03.bin kickassembler-irq-chain.prg kickassembler-cracktro-template.prg
 1d503e56df85a62fee696e7618dc5b4e781df1bb  kernal-901227-03.bin
 026535741c224e80c2dd1d85ad54866a6c2382f6  kickassembler-irq-chain.prg
+87f2e8d0e80206ca7322b3425b09201b6e827ae0  kickassembler-cracktro-template.prg
 ```
 
 The PRG hash is the one KickAssembler 5.25 produced here. It will change
@@ -51,6 +58,8 @@ if the recipe changes. Build it with
 | Disassemble a ROM | `da65 --info kernal.info kernal-901227-03.bin` with `STARTADDR $E000` |
 | Find every reference to an address | the byte census (Python, below) |
 | Watch a running program | x64sc `-moncommands file.mon -monlog -monlogname out.log` |
+| Depack stages and entry of a packed PRG | `node src/cli.ts re-load-map prog.prg` (or `session:<file>`) |
+| Force a value the program reads | `trace exec <next pc>` + `command N "r a = xx"` (below) |
 | Raster IRQ chain of a PRG | `node src/cli.ts re-irq-chain prog.prg` |
 | Cycles between two stores | `node src/cli.ts re-frame-profile prog.prg --start 'store:$D020=$02' --stop 'store:$D020=$05'` |
 | Init and play of a `.sid` | header bytes $0A-$0D, big-endian; confirm with `vsid` and `trace exec` (below) |
@@ -415,7 +424,8 @@ What each command gave:
 ### Batch quirks measured here
 
 - **Numbers are hex.** `ignore 3 49` ignored 73 ($49) hits. Write `ignore 3 31`
-  for 49.
+  for 49, and `ignore 1 3e8` for 1000 (the Commando session skips 1000
+  title polls that way).
 - **An error ends the whole command string.** `d .irq .irq+15 ; … ; del 1`
   failed at `+15` (label arithmetic is refused), so `del 1` never ran and
   the checkpoint fired on every IRQ for the rest of the run.
@@ -423,7 +433,9 @@ What each command gave:
   (`addr: IO  ROM RAM`): nothing has run yet. Call it from a checkpoint
   `command`, as above.
 - **`-monlogname` appends.** A second run to the same log name added to
-  the end of the first run's log. Use a fresh name or delete it first.
+  the end of the first run's log. Delete the log before each run (`rm -f`
+  in the same command line), or use a fresh name; a parser reading an
+  appended log counts the old run's hits as well.
 - **The first log entry is always the reset**, `#1 (Stop on exec fce2)`
   at clock 6, before any checkpoint in the command file.
 - **Labels work.** `ll "labels.vs"` loads a VICE label file (KickAssembler
@@ -434,6 +446,119 @@ What each command gave:
   every hit to stdout (discard it), exits with status 1 on
   `-limitcycles`, and needs `+autostart-delay-random` for runs that land
   on the same raster line each time.
+
+### Forcing a read, `bank cpu`, `disable`, and one `save` per command
+
+Three runs on the recipe PRGs, 2026-09-26, same x64sc command as above
+with `-limitcycles 4000000` (5,000,000 for the cracktro), each log
+deleted first.
+
+**Finding a read and forcing its value.** A program that waits for fire
+reads `$DC00` or `$DC01` somewhere; a `trace load` finds the PC. On the
+cracktro recipe:
+
+```text
+trace load dc00 dc00
+```
+
+```text
+#1 (Trace  load dc00)  250/$0fa,  60/$3c
+.C:0a0b  AD 00 DC    LDA $DC00      - A:7F X:F0 Y:00 SP:f0 ..-..I..    3003522
+```
+
+The load is at $0A0B; A is $7F, nothing pressed. Put the checkpoint on
+the instruction after the load ($0A0E, `AND #$10`), not on the load: a
+value set at the load's own PC is overwritten when the load runs. The
+command `r a = 6f` sets A as if port 2 fire were held:
+
+```text
+trace exec 0a0e 0a0e
+ignore 1 32
+command 1 "r a = 6f"
+trace exec 0d1d 0d1d
+```
+
+```text
+#1 (Trace  exec 0a0e)  250/$0fa,  61/$3d
+.C:0a0e  29 10       AND #$10       - A:7F X:F0 Y:00 SP:f0 ..-..I..    3986323
+Executing: r a = 6f
+#2 (Trace  exec 0d1d)  251/$0fb,   5/$05
+.C:0d1d  A9 00       LDA #$00       - A:00 X:F0 Y:00 SP:f0 ..-..IZ.    3986330
+```
+
+After 50 ($32) ignored hits the injection fired, and the recipe's `exit`
+($0D1D) ran 7 cycles later: `AND` 2, `BNE` not taken 2, `JMP` 3. A trace
+line shows the registers as the checkpoint hit, before its command ran.
+Port 2 values, active low: none $7F, up $7E, down $7D, left $7B, right
+$77, fire $6F. The session file's `inject` list writes these checkpoints
+for `re-session` and the tools that take `session:<file>`.
+
+**`bank cpu`, `disable` inside a command, and a forced store.** On the
+irq-chain recipe, slot 0 loads its colour at $08D0 (`LDA #2`) and stores
+it at $08D2:
+
+```text
+trace exec 08d2 08d2
+command 1 "r a = 07"
+trace store d020 d020
+break exec 08d0
+ignore 3 a
+command 3 "bank cpu ; m 0 1 ; bank ram ; m 0 1 ; disable 2 ; del 3"
+```
+
+```text
+#2 (Trace store d020)   41/$029,  52/$34
+.C:08d2  8D 20 D0    STA $D020      - A:07 X:00 Y:00 SP:ee ..-..I..    2990347
+…
+Executing: bank cpu ; m 0 1 ; bank ram ; m 0 1 ; disable 2 ; del 3
+>C:0000  2f 37         /7
+>C:0000  00 00
+```
+
+- The store wrote 7 (yellow), not 2: the exit screenshot's border is
+  RGB (255, 255, 70) at rows 30 and 60 (lines 46 and 76), measured with
+  PIL, where the unforced recipe's is red, (175, 60, 88).
+- `bank cpu` reads the 6510 port: $00 = $2F, $01 = $37. `bank ram` reads
+  the RAM under it at the same addresses, $00 $00. Read `$00`/`$01` with
+  `bank cpu`.
+- `disable 2` from checkpoint 3's command stopped the store trace. The
+  log holds 10 frames of slot stores (10 each at $08D2, $08DD, $08E8,
+  plus two before the program ran); checkpoint 3 fired on the 11th entry
+  to $08D0, before that frame's store, and checkpoint 1 kept firing to
+  the end of the run (52 hits). `enable N` and `ignore N count` work
+  the same way inside a command; a checkpoint created then disabled at
+  start-up and enabled from another's command acts only after that
+  moment (the Commando teardown enabled its input checkpoints from the
+  play-start PC this way).
+
+**One `save` per `command` string.** Two saves in one string:
+
+```text
+break exec 08d0
+command 1 "save \"a.bin\" 0 0810 081f ; save \"b.bin\" 0 0820 082f ; del 1"
+```
+
+```text
+Executing: save "a.bin" 0 0810 081f ; save "b.bin" 0 0820 082f ; del 1
+Saving file 'a.bin" 0 0810 081f ; save "b.bin' from $0820 to $082f
+```
+
+The filename runs from the first quote to the last, so one file named
+`a.bin" 0 0810 081f ; save "b.bin` was written with the second range, and
+`del 1` never ran. Give each `save` its own checkpoint:
+
+```text
+break exec 08d0
+command 1 "save \"a.bin\" 0 0810 081f ; del 1"
+break exec 08db
+command 2 "save \"b.bin\" 0 0820 082f ; del 2"
+```
+
+```text
+Saving file 'a.bin' from $0810 to $081f
+…
+Saving file 'b.bin' from $0820 to $082f
+```
 
 ## The trace tools: `re-irq-chain` and `re-frame-profile`
 
@@ -481,6 +606,38 @@ $ node src/cli.ts re-frame-profile $TMP/irq-chain.prg --start 'store:$D020=$02' 
 From slot 0's border store to slot 1's: typically 5711 cycles. The monitor
 trace agrees: 2996058 − 2990347 = 5711, and so does the raster position,
 91 lines × 63 + (30 − 52) = 5711 (rung 3 from the rung-1 trace).
+
+### Dispatch through `JMP (ind)`
+
+A game can install one handler at `$0314` that is only `JMP ($xxxx)`,
+and have each raster part write the next part's address into that
+pointer and re-arm `$D012`. A break on the `$0314` handler then shows one
+address for every part. `re-irq-chain` follows the pointer: when the
+handler's first instruction is `JMP (ind)` it adds `pointer` and one
+`dispatch` entry per target. On the Commando session (the run ends at the session's
+`-limitcycles` 60,000,000; play starts at clock 35,080,026, so the chain
+is traced over the last 24,919,974 cycles; no input), cut:
+
+```text
+$ node src/cli.ts re-irq-chain session:docs/game-design/studies/sessions/commando.json
+…
+    "handlers": [ { "handler": 16692, "via": ["irq_0314"], "entries": 6318,
+        "pointer": 1030,
+        "dispatch": [
+          { "target": 16695, "entries": 1264, "entry_lines": [213, 224], "armed_before": [213, 223] },
+          { "target": 16776, "entries": 1265, "entry_lines": [222], "armed_before": [222] },
+          { "target": 16837, "entries": 1264, "entry_lines": [30, 286, 287], "armed_before": [30, 286] },
+          { "target": 17028, "entries": 1264, "entry_lines": [50, 60], "armed_before": [50, 60] },
+          { "target": 17289, "entries": 1261, "entry_lines": [177, 178, …], … } ] } ],
+    "unknowns": []
+```
+
+Handler $4134 (16692) jumps through $0406 (1030) to five parts: $4137,
+$4188, $41C5, $4284 and $4389. The line lists hold every line an entry
+was seen on; the study page (`game-design/studies/commando.md`) says
+which are the steady chain. The 6510 has no `JMP (abs,X)`, so a table
+dispatch is either this rewritten pointer or a self-modified `JSR`, as
+the irq-chain recipe does at `call`.
 
 ## A `.sid` file: init and play
 
@@ -754,18 +911,98 @@ tell a player which pages are free.
 
 ## Packers and loader stubs
 
-Not run here: this repo has no packed PRG. The method, rung 4:
+Measured 2026-09-26 on the maintainer's Commando image (c64hq crack; file
+`commando`, sha1 0c19361689f6c977afe2e00e80be303a3d16be5b, loads at
+$0801, 43,004 bytes) in VICE x64sc 3.10, PAL C64C. The stage facts are
+the memory-map teardown's, from traces of every store to `$0001` and
+every store to $0000-$FFFF from power-on (rung 1); `re-load-map` gives
+the same stages and entry. An earlier version of this section was rung 4
+("this repo has no packed PRG") and its depack step was wrong; see the
+last list.
 
-- **Signs.** A SYS target right after the stub; a copy loop that moves the
-  program's tail to high memory or the stack page; `$01` set to $34 or
-  $35 (all RAM, or I/O only); an end address near $FFFF. A custom loader
-  also writes $DD00 and waits on its bits (the serial bus).
-- **Identify.** Unp64 (external) names many packers and depacks by
-  emulation.
-- **Depack in VICE.** Trace stores over the destination range, then break
-  on the first execute inside memory that was written after load; that is
-  the unpacked entry. Save the range from there. `memmapshow` from a
-  checkpoint (above) shows which bytes were written and then executed.
+`re-load-map` traces every store from power-on to one frame after the
+program's first interrupt dispatch, and groups the stores by writer: PCs
+within 256 bytes whose code was written at about the same time. A writer
+whose code is in the stack page gets a stage number, in clock order. Cut:
+
+```text
+$ node src/cli.ts re-load-map session:docs/game-design/studies/sessions/commando.json
+…
+    "load": 2049, "end": 45052,
+    "stubs": [
+      { "addr": 2049, "sys": 2217, "text": "COMPUTERBRAINS", "line": 2049, … },
+      { "addr": 2277, "sys": 2066, "text": "C.C.S.", "line": 65535, … },
+      { "addr": 40589, "sys": 2061, "text": "", "line": null, … } ],
+    "writers": [ …
+      { "id": "w20", "pc_range": { "start": 257, "end": 422 }, "stores": 435169,
+        "first_clock": 3404411, "last_clock": 8916816, "in_stack_page": true,
+        "ram_under_io": [], "stage": 1, … },
+      { "id": "w22", "pc_range": { "start": 41818, "end": 41840 }, "stores": 4160,
+        "dest_ranges": [ …, { "start": 53248, "end": 57343 } ],
+        "ram_under_io": [ { "start": 53248, "end": 57343 } ], "stage": null, … },
+      { "id": "w23", "pc_range": { "start": 260, "end": 414 }, "stores": 528765,
+        "first_clock": 8992780, "last_clock": 15190653, "in_stack_page": true,
+        "dest_ranges": [ …, { "start": 2048, "end": 53247 }, { "start": 57344, "end": 65535 } ],
+        "ram_under_io": [], "stage": 2, … },
+      { "id": "w30", "pc_range": { "start": 24338, "end": 24382 },
+        "dest_ranges": [ …, { "start": 54276, "end": 54276 }, …, { "start": 54296, "end": 54296 } ],
+        "ram_under_io": [], "stage": null, … }, … ],
+    "entry_pc": 2128,
+    "first_program_dispatch_clock": 15243156,
+    "unknowns": [ "arm write at $e5ad: $D011 never written before it, so the armed line is unknown", … ]
+```
+
+The run took 30 s. What it and the teardown traces show:
+
+| Step | Clock | What happens |
+|---|---|---|
+| Stub 1 | 2,970,808 | RUN → `SYS 2217`; a crack intro from the PRG's tail |
+| Stage 1 set-up | 3,395,238 | `$01` = $38 (all RAM); 256 bytes of pointers and depacker copied to $00FB-$01FA; JMP $00FF |
+| Stage 1 (w20, $0101-$01A6) | 3,404,411-8,916,816 | Moves the packed block up to end at $B37C, then decodes forward into ($39) from $0801; output $0801-$B37C. `DEC $01`, BASIC CLR, RUN the new line |
+| Stub 2 | 8,922,425 | `SYS 2066`; `$01` = $38; 4,096 bytes copied raw to $D000-$DFFF (w22) |
+| Stage 2 (w23, $0104-$019E) | 8,992,780-15,190,653 | Decodes backward into ($39) from $FFFF down to $0800; put-byte at $018C, in the stack page, skips $DFxx → $CFxx |
+| Entry | ~15.19 M | $0850 (`entry_pc` 2128) |
+| First dispatch | 15,243,156 | The game's raster handler, on the title |
+
+- **The output pointer is BASIC's line number.** Both stages write
+  through ($39), and $39/$3A is where BASIC keeps the current line
+  number. The stubs never set it: stub 1's line number is 2049 = $0801,
+  stub 2's is 65535 = $FFFF, and running each line put its number there
+  (`line` in the stubs above; snapshots read $0801 at stage 1's start and
+  $FFFF at $0812). Read a stub's line number as a possible address.
+- **The backward stage skips I/O.** Stage 2 fills $0800-$CFFF and
+  $E000-$FFFF (w23's two destination ranges) and never $D000-$DFFF; the
+  4 KB there came raw from stub 2, before it.
+- **A store to $D4xx is not always the SID.** w22's 4,096 stores covered
+  $D000-$DFFF with `$01` = $38, and `ram_under_io` covers the whole range:
+  its $D400-$D7FF stores are charset bytes in RAM. w30, the game's sound
+  code, stored to $D404 … $D418 with `ram_under_io` empty: those reached
+  the SID. The tool follows every store to `$0001` to tell them apart; a
+  store made while `$01` is unknown gives `ram_under_io` null and an
+  unknowns line.
+- **Vector bytes in the output are not installs.** The backward stage
+  writes $FFFA-$FFFF on its way down. `transient_vectors` lists each
+  vector value no interrupt ever went through (here $FFFE and $FFFA
+  written as 0 seven times each); the writer that stored it says whether
+  it was a depacker.
+- **Timing.** Stage 1 about 5.51 M cycles, stage 2 about 6.21 M; RUN to
+  entry about 12.2 M cycles, 12.4 s PAL (rung 3 from the clocks). Run a
+  session or trace with `-limitcycles` well past that: the Commando
+  session uses 60,000,000.
+
+Corrections to the rung-4 method this section replaced:
+
+- It said to break on "the first execute inside memory that was written
+  after load" and call that the entry. On Commando that is stage 1's own
+  copy in the stack page, copied there from clock 3,395,238 and run from
+  3,404,400. The
+  entry is the first PC run in program memory after the last stage's last
+  store: `entry_pc`, which searches $0200-$9FFF and $C000-$CFFF only, and
+  says so in `unknowns` when it cannot see the entry.
+- It listed `$01` = $34 or $35 as the sign. Commando's stages used $38:
+  bits 0-2 clear, all RAM, the same map as $34.
+- Unp64 is still not installed here; the tool above replaced it for this
+  image.
 
 ## Relocatability and naming
 
@@ -828,3 +1065,5 @@ External: none was run on the reference machine. Descriptions are rung 4.
   vectors and routines found above.
 - [c64-file-formats](../formats/c64-file-formats.md): PRG and PSID headers.
 - [cc65](cc65-reference.md): the suite that ships da65.
+- [game-study-method](../workflow/game-study-method.md): the whole
+  sequence for taking a commercial game apart, as run on Commando.

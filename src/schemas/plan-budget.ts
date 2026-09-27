@@ -4,33 +4,42 @@
  */
 
 import { z } from "zod";
-import { CostBasisSchema } from "./cost-basis.ts";
+import { CostBasisSchema, MeasuredFrameBasisSchema, StudiedFromSchema } from "./cost-basis.ts";
 
 // c64_plan_budget (schema 27, tools 2.0.0): an ad-hoc set of techniques,
 // each in a phase, budgeted per phase and region by planBudget
 // (src/domain/budget.ts). A missing figure is never zero: it is listed in
 // unknown and to_measure, and the verdict is "undetermined".
 const BudgetVerdictSchema = z.enum(["fits", "over", "undetermined"]);
+const ContributorSchema = z.object({
+  name: z.string(),
+  low: z.number().int(),
+  high: z.number().int(),
+  every_frame: z.boolean(),
+  basis: CostBasisSchema,
+  charge: z.enum(["cycles_per_frame", "per_line", "band", "per_item"]),
+  // Present when low and high are one call's figure times this many (#37),
+  // or, on a per_item charge (#95), the items counted.
+  calls: z.object({ low: z.number().int(), high: z.number().int() }).optional(),
+  // per_item only (#95): low = base + calls.low × each, high = base + calls.high × each.
+  per_item: z.object({ base: z.number().int(), each: z.number().int() }).optional(),
+  measured_on: z.string().nullable(),
+  conditions: z.string().nullable(),
+});
 const PlanPhaseSchema = z.object({
   phase: z.enum(["play", "transition", "init"]),
   region: z.enum(["PAL", "NTSC"]),
   frame: z.number().int(),
   members: z.array(z.string()),
-  contributors: z.array(
-    z.object({
-      name: z.string(),
-      low: z.number().int(),
-      high: z.number().int(),
-      every_frame: z.boolean(),
-      basis: CostBasisSchema,
-      charge: z.enum(["cycles_per_frame", "per_line", "band", "per_item"]),
-      // Present when low and high are one call's figure times this many (#37),
-      // or, on a per_item charge (#95), the items counted.
-      calls: z.object({ low: z.number().int(), high: z.number().int() }).optional(),
-      // per_item only (#95): low = base + calls.low × each, high = base + calls.high × each.
-      per_item: z.object({ base: z.number().int(), each: z.number().int() }).optional(),
-      measured_on: z.string().nullable(),
-      conditions: z.string().nullable(),
+  contributors: z.array(ContributorSchema),
+  // Run-and-gun gap 1: members whose Cost states every_n_frames, spent on one
+  // frame in N. Not in low or high; frame_high is the frame each runs on.
+  occasional: z.array(
+    ContributorSchema.extend({
+      every_n_frames: z.number().int(),
+      frame_high: z.number().int(),
+      // Summed members that take interrupts every frame: their IRQ work lands on this frame, uncounted.
+      irq_members: z.array(z.string()),
     }),
   ),
   excluded: z.array(
@@ -70,7 +79,7 @@ const DesignMeasuredSchema = z.object({
   region: z.enum(["PAL", "NTSC"]),
   worst: z.number().int(),
   typical: z.number().int().nullable(),
-  basis: CostBasisSchema,
+  basis: MeasuredFrameBasisSchema,
   source: z.string(),
   predicted: z
     .object({
@@ -100,12 +109,21 @@ const PlanDesignSchema = z.object({
   composes: z.array(ComposesSchema),
   source_doc: z.string(),
   measured: z.array(DesignMeasuredSchema),
+  // Schema 40 (tools 2.18.0): a studied design is a released game the RE
+  // tools measured; nothing is predicted for it.
+  kind: z.enum(["built", "studied"]),
+  studied_from: StudiedFromSchema.nullable(),
 });
 // One GameDesign of the archetype c64_game_briefing resolved: whole games
 // built on it, what they compose per phase, and what their frame measured.
 export const BriefingDesignSchema = z.object({
   name: z.string(),
   title: z.string(),
+  // Schema 40 (tools 2.18.0): "studied" is a released game measured in
+  // VICE, studied, not buildable here; source_doc is its page.
+  kind: z.enum(["built", "studied"]),
+  studied_from: StudiedFromSchema.nullable(),
+  source_doc: z.string(),
   realised_by: z.array(z.string()),
   composes: z.array(ComposesSchema),
   measured: z.array(

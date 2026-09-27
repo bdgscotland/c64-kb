@@ -341,6 +341,7 @@ estimates. Before #72 one basis word covered the whole Cost line, so it said `de
 **Cost:** cycles_per_frame=16600, cycles_per_frame_typical=8995, irq_slots=17
 **Cost basis:** arithmetic
 **Cost measured on:** kickassembler-sprite-multiplex-game (worst frame: arithmetic, a reversed sort, CPU cycles only; typical: the largest whole frame of sort, build and IRQs in 2,142 frames of play, timed wall-clock by a probe build, NTSC, screen on)
+**Cost includes:** sprite_slot_parking
 **Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
 **Claims basis:** derived-listing
 **Alternative to:** sprite_multiplex_24 (sprites anywhere on screen, a sort that stays cheap on game frames and IRQ code the game owns and can budget; the Oscar64 vspr path takes one IRQ per reused sprite and about 20 % of a PAL frame for 24 sprites)
@@ -469,6 +470,17 @@ read (arithmetic from the probe): at most 13 IRQs on PAL and 14 on NTSC
 give 8,785 and 8,995. `cycles_per_frame_typical=8995` is the NTSC figure.
 The smallest frame was 6,874 on PAL and 7,039 on NTSC.
 
+Both figures hold a parking slot policy (`sprite_slot_parking`), hence
+the Cost includes line. A parked slot is one more actor to the sort and
+the build, with no test in the IRQs; the 24-actor worst case counts more
+slots than a 16-slot game parks (arithmetic). The run-and-gun starter runs
+the two as one multiplexer of 16 slots, parked at Y 255 where its build's
+reject step drops them: its whole logic frame, sort, build and every IRQ
+included, is at most 3,049 cycles on PAL with one sprite shown and 15
+parked (templates/run-and-gun, measured in VICE x64sc). An earlier version
+had no includes line, and `c64_plan_budget` added parking's 5,334, its own
+recipe's whole fixed-group multiplexer, on top (run-and-gun KB-GAPS 3).
+
 ### Sources
 
 Cadaver, "Sprite multiplexing", https://cadaver.github.io/rants/sprite.html
@@ -485,6 +497,181 @@ families). cadaver/c64gameframework, https://github.com/cadaver/c64gameframework
 ### Recipes
 
 - `recipes/kickassembler/sprite-multiplex-game.md`
+
+---
+
+## sprite_slot_parking — Unused virtual sprites parked at a blank shape and off-screen X, so the multiplexer never tests "in use"
+
+**Complexity:** medium
+**Region:** both
+**Uses registers:** D000, D001, D010, D012, D015, D019, D01A, D027
+**Uses kernal:** (none)
+**Demands:** midframe_raster_irqs, changes_sprite_set
+**Cost:** cycles_per_frame=5334, irq_slots=3
+**Cost basis:** arithmetic
+**Cost measured on:** kickassembler-sprite-slot-parking (worst frame, CPU cycles only: 16 slots in groups of 8, 4 and 4, group writes 414 + 218 measured with CIA2 timer A, screen off, group C taken as equal to B; 317 cycles of interrupt entry through $FF48, re-arm and $EA81 exit for the three parts by arithmetic; the insertion sort of 16 distinct Ys in reverse order, 4,155 measured, plus 12 for its JSR/RTS; the sprite DMA of parked slots not included, 358 more for the recipe's six at Y 0 on PAL)
+**Claims:** sprite_0-7 (owns), vic_raster_irq (owns)
+**Claims basis:** derived-listing
+
+### Why
+
+Parking is a slot policy, not a multiplexer of its own: the multiplexer
+that writes the slots can be this page's fixed groups or
+`sprite_multiplex_game`, whose Cost line holds it. The run-and-gun starter
+parks its free slots under `sprite_multiplex_game` (templates/run-and-gun,
+`mux.asm`). An earlier version of this page named `sprite_multiplex_game`
+as an alternative, and `c64_check_compatibility` then called the pair a
+hard `unit_contention` on `sprite_0-7` and `vic_raster_irq` (run-and-gun
+KB-GAPS 4). What the fixed groups trade against that multiplexer is under
+"When not to use it".
+
+A multiplexer with a fixed number of virtual sprites has to do something
+with the slots nothing is using. Testing "in use" in the IRQ code makes its
+cost depend on what is on screen, and a skipped hardware sprite keeps the
+shape the previous group wrote into it, so a correct skip must also clear
+its `$D015` bit, mid-frame, in every group. Parking avoids both: a free slot
+is made harmless as data, and the sort and IRQ loops handle every slot the
+same way.
+
+### How
+
+1. **Park a slot when its object dies.** Set its pointer to an all-zero
+   shape block, its X to 356 (`$164`, bit 8 set) and its Y to a fixed
+   parking line. X 356 is under the right border on PAL and NTSC; the blank
+   shape hides it even if the border is opened.
+2. **Sort all slots every frame** by Y, parked ones included.
+3. **Write all slots in fixed groups.** With 16 slots: entries 0-7 to
+   sprites 0-7 below the last sprite line, entries 8-11 to sprites 0-3 at
+   Y(entry 3) + 22, entries 12-15 to sprites 4-7 at Y(entry 7) + 22. No
+   entry is tested; `$D015` stays `$FF`.
+4. **Choose the parking Y** so parked entries sort where no real sprite
+   needs a hardware sprite. At Y 0 they sort first, draw their blank shape
+   in the top border, and let the first reuse group fire early. With
+   `sprite_multiplex_game`'s build instead of fixed groups, park below the
+   build's cut (Variations).
+5. **Unpark by writing every field in the same frame.** Pointer, X and Y
+   together; a slot whose Y is copied a frame after its X shows for one
+   frame at the parking Y (Commando does this, below).
+
+### Why it works
+
+A parked entry is an ordinary sprite to the VIC-II: it is switched on and
+drawn for 21 lines, with nothing to see. It takes a hardware sprite for
+those 21 lines, and the parking Y decides which lines. It also takes sprite
+DMA: the VIC-II fetches its blank data on every one of those lines and
+stalls the CPU, as for a visible sprite. The IRQ code runs the same
+instructions every frame, so its cost is a constant that can be scheduled.
+
+Measured in `recipes/kickassembler/sprite-slot-parking.md` (VICE x64sc
+3.10, CIA2 timer A, screen off): writing one sorted entry costs 50 cycles
+with no test; group A (8 entries) 414 and group B (4 entries) 218,
+whatever the entries hold. The same group A with an "in use" test and the
+`$D015` mask a correct skip needs costs 66 cycles per entry in use and 11
+per entry skipped: 554 with all 8 in use, 225 with 6 of 8 parked. Parking
+saves 16 cycles on every entry in use and 140 on group A's worst case; it
+spends 39 more than a skip on every parked entry. Counting instructions
+only, parking is the cheaper of the two for group A while fewer than 2.5
+of its 8 entries are parked, about 32 % (554 - 55p = 414; arithmetic from
+the measured figures; 29 % per entry, 16 / 55).
+
+Sprite DMA changes that comparison. A skip that clears the `$D015` bit
+stops the fetches; a parked sprite is still fetched. Measured in a probe
+build (VICE x64sc 3.10, CIA2 timer A across lines 0-174, sprites at Y 0
+and X 356 on the blank shape, `$D015` set against clear): one parked
+sprite costs 105 cycles a frame on PAL, six cost 358 and eight 442; on
+NTSC (6567R8) 70, 253 and 309, a difference not explained here. With
+that added, group A with one parked entry is 414 + 105 = 519 cycles on PAL
+against 499 for the skip, and 414 + 70 = 484 on NTSC; with six parked,
+772 on PAL against 225 (arithmetic from the measured figures). So a skip
+with a `$D015` clear takes fewer cycles once one entry is parked on PAL
+and two on NTSC, before the cost of merging `$D015` mid-frame in groups B
+and C, which was not measured. What parking buys is an IRQ cost that does
+not change and no `$D015` merge, not cycles.
+
+A frame of the recipe's group writes is 414 + 218 + 218 = 850 cycles
+(group C is group B's code with another mask), plus 107, 107 and 103
+cycles of interrupt, `$FF48` dispatch, re-arm and `$EA81` exit for the
+three parts (arithmetic from the listing): 1,167. The sort runs every
+frame: 965 cycles for 16 entries already in order and 4,155 for 16
+distinct Ys in reverse order, both measured, plus 12 for the JSR/RTS. The
+worst frame is 1,167 + 4,167 = 5,334 cycles, the Cost line; the recipe's
+own frames, whose objects move only in X, are 1,167 + 977 = 2,144. The
+DMA of parked slots comes on top of both. An earlier version of this page gave
+1,170 on the Cost line, which left out the sort, and said a parked entry
+takes nothing but a hardware sprite, which left out its DMA.
+
+### Variations
+
+- **Park below a building multiplexer's cut.** `sprite_multiplex_game`
+  walks the sorted list and copies each accepted slot into a table. Give
+  that walk a cut, the lowest Y the game shows, and have it stop at the
+  first sorted Y past the cut; write `$D015` from the number accepted.
+  Park at a Y past the cut. Parked slots then sort last and the walk stops
+  at the first of them: no hardware sprite, no 50-cycle write, and no
+  sprite DMA, because their hardware sprites are off. The sort still
+  compares them. The recipe's build has neither the cut nor the `$D015`
+  mask (it enables all eight); without them a parked Y is an ordinary
+  sprite to the build. FIREBASE (`templates/run-and-gun/src/mux.asm`)
+  parks at Y 255 with the cut at Y 187. Measured in VICE x64sc 3.10, PAL,
+  through the harness's `drive.py` 60 frames after the title's fire press:
+  11 of the 16 slots held Y 255, `mux_shown` read 5 and `$D015` read `$1F`,
+  five sprites on. Parked at Y 0 in fixed groups, each of those 11 would be
+  fetched: 105 cycles a frame of DMA for one on PAL, 358 for six (above).
+
+### When not to use it
+
+- **Many slots idle most of the time.** Each parked entry costs a full
+  50-cycle write and its sprite DMA. With 12 of 16 slots free, the group
+  writes alone are 16 × 50 = 800 cycles against 4 × 50 = 200 for a compact
+  list of the 4 active ones; the list's build pass has to cost less than
+  the 600 difference (arithmetic, rung 3; the build pass was not measured
+  here).
+- **More than eight sprites on one band.** The fixed groups have no
+  reject step and no rotation. `sprite_multiplex_game` rejects a ninth
+  sprite and guards against a late IRQ.
+
+### Pitfalls
+
+**A parked Y inside a busy band steals hardware sprites.** Parked entries
+sort among the real ones and each holds a hardware sprite for 21 lines.
+In the recipe, `PARK_Y = 90` puts six parked entries among real sprites at
+Y 80-98: two real sprites are pushed to entries whose group fires after
+their Y, and group C's line passes while group B is still writing, so the
+chain runs a frame late. The screen then shows 4 or 6 of the 10 sprites,
+alternating, never all 10 (measured in VICE x64sc, four consecutive
+frames). The loss itself is `sprite_dma_overflow` in `pitfalls/sprite.md`.
+
+**A group line derived from a parked entry.** The reuse lines come from
+Y(entry 3) and Y(entry 7). When those entries are parked, the lines follow
+the parking Y, not the screen; pick parking Ys that keep every line after
+the previous group and before the next group's first real sprite.
+
+### In Commando (1985)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (rung 1; the teardown
+of the game's sprite subsystem). Commando keeps 16 virtual sprites: the
+player, three player shots, a grenade and an 11-slot pool. All 16 are
+Shell-sorted by Y every frame except on coarse-scroll frames, and three
+raster parts write them to the hardware sprites in groups of 8, 4 and 4
+without testing any slot. A free slot is parked: pointer to an all-zero
+shape block, X 356, and a fixed Y from a table, 194 for slots 0-3, 40 for
+4-7 and 30 for 8-15. The eight slots parked at Y 30 sort first and fill
+the first group, so with few objects the second part fires at line 50 (882
+of 1,312 frames). The game has no overload handling: a sprite that misses
+its hardware sprite is not drawn, and stays missing for as long as the
+pile-up lasts (measured over five consecutive frames).
+
+Two consequences were measured. A shot slot is unparked with its new X
+one frame before its display Y leaves the parking line, so a new bullet
+shows for one frame at Y 194. In 1,321 frames no visible object at Y 193
+or more (on or below line 193) reached sprites 4-7, which the game never blanks before its
+status panel; that the parked shot slots at Y 194 are what keeps them out
+is inferred (rung 4), not measured. Sprite work there costs about 5,400
+cycles a frame, half of it the sort.
+
+### Recipes
+
+- `recipes/kickassembler/sprite-slot-parking.md`
 
 ---
 
@@ -2138,6 +2325,29 @@ register coordinates still test correctly against each other. A flipped
 expanded frame uses the expanded width: `48 - 2 * offset - 2 * box_width`
 (arithmetic from the two rules, not measured here). Scaling the box in
 compiled C with variable shifts took 158 cycles a box in that recipe.
+
+**Half the pool a frame, with a deadline.** In a game frame that already
+runs the objects, the weapons and a 16-slot multiplexer, the pass above
+did not fit. Measured in the run-and-gun starter (`templates/run-and-gun`,
+`src/collide.c`, `make weapons` on NTSC, VICE x64sc 3.10): every object
+against every box with 16-bit boxes cost 1,379 cycles at one moment with
+interrupts off and lost 16 frames. What fitted, step by step: test half
+the pool a frame by pool index against the frame count's low bit (778
+cycles); skip the pass when nothing that hits is live (568); keep each
+bullet's box from its draw, no call and no shifts (1 frame still lost);
+skip a pass that would start after line 100, keeping its half for the next
+frame, never twice in a row (0 lost). The pair test itself rejects first on
+one byte of Y in sprite-line coordinates (Y + row: every shown slot is at
+Y 0-187 and a box is at most 21 high, so it cannot alias in 8 bits,
+arithmetic), then a window of lines, then 16-bit X. The result: 465 cycles for one
+pass of four objects, 660 a frame on average in `make weapons` and 750 in a
+full 11-slot wave (VICE profiler, `prof flat`, NTSC). The tunnelling bound:
+an object is tested every second frame, so a bullet at 5 pixels a frame
+moves 10 between tests, and three frames (15) after a skipped pass; the
+smallest shootable box and a bullet share 17 lines, so nothing passes
+through (arithmetic from the speeds; check it against your fastest shot
+and smallest box). A deadline read from `$D012` must act only on frames
+that began on time in a metered build (`templates/_harness/meter/frame_meter.h`).
 
 **Guard.** A fighter's guard replaces the body box with a guard box: `fighter_guard_state` below, and the pattern of that name in `game-design/enemy-behaviour-and-difficulty.md`.
 

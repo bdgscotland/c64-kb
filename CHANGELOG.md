@@ -5,9 +5,230 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 844, schema 39, tools 2.16.0, package 0.29.0.
+Data 847, schema 40, tools 2.20.1, package 0.29.0.
 
-**#110 step 1: the racing starter's road edges move on every raster line; `slanted_glyph_road` (data 844).** The maintainer's "shady" road stepped its width once per character row. The starter now draws the width from glyphs computed when it is assembled (321 left glyphs in three character sets, their mirrors at id + $80, the road's centre held on a 4-pixel boundary so a row's characters depend only on its width), the bend per line from XSCROLL and, on tight bends, whole-column shear with glyphs built at run time into a dynamic set per road copy; grass, road and rumble-strip bands come from registers on every line and move at the frame rate. Measured in VICE x64sc 3.10: every road line's stores on cycles 5, 9 and 13 (the PROBE build's probe on cycle 19 at screenshot x 49 on every visible line at eight cycle counts on PAL and six on NTSC), `roadcheck` redrawing all 96 lines of the still from the machine's own tables pixel for pixel on both models, a picture every 3.04 PAL frames (3.5 for the stepped road, 9.2 for the work-in-progress per-picture glyph drawing), no lost step and no late sync in the autopilot's race, 34 pinned checks a model and seven mutants caught. Five faults found on the way are on the new technique page as pitfalls: a block ending in a write is a cycle off under sprite 2's DMA; `ADC` sets V so `BVC` into a slide falls through; a double IRQ's first handler needs a CLI margin larger than any interrupt-off window in the main loop (the starter's first IRQ moved from line 103 to 101); Y-indexed tables must not cross a page; and in 40 columns XSCROLL's shifted-in pixels show the background as a sawtooth wherever a bend reaches the window's edge, so the starter runs in 38 columns (the maintainer saw it at top speed on the first play). From the same play: the bends were "choppy, too sharp", a kink at each segment boundary walking down the road; the curvature is now eased between segment middles, four samples a segment, and drawn at half the scale, so a bend builds and fades. The harness's `make run` no longer forces the numpad joystick over the user's vicerc. `char_row_road` now says the starter no longer implements it.
+**#110 step 1: the racing starter's road edges move on every raster line; `slanted_glyph_road` (data 847).** The maintainer's "shady" road stepped its width once per character row. The starter now draws the width from glyphs computed when it is assembled (321 left glyphs in three character sets, their mirrors at id + $80, the road's centre held on a 4-pixel boundary so a row's characters depend only on its width), the bend per line from XSCROLL and, on tight bends, whole-column shear with glyphs built at run time into a dynamic set per road copy; grass, road and rumble-strip bands come from registers on every line and move at the frame rate. Measured in VICE x64sc 3.10: every road line's stores on cycles 5, 9 and 13 (the PROBE build's probe on cycle 19 at screenshot x 49 on every visible line at eight cycle counts on PAL and six on NTSC), `roadcheck` redrawing all 96 lines of the still from the machine's own tables pixel for pixel on both models, a picture every 3.04 PAL frames (3.5 for the stepped road, 9.2 for the work-in-progress per-picture glyph drawing), no lost step and no late sync in the autopilot's race, 34 pinned checks a model and seven mutants caught. Five faults found on the way are on the new technique page as pitfalls: a block ending in a write is a cycle off under sprite 2's DMA; `ADC` sets V so `BVC` into a slide falls through; a double IRQ's first handler needs a CLI margin larger than any interrupt-off window in the main loop (the starter's first IRQ moved from line 103 to 101); Y-indexed tables must not cross a page; and in 40 columns XSCROLL's shifted-in pixels show the background as a sawtooth wherever a bend reaches the window's edge, so the starter runs in 38 columns (the maintainer saw it at top speed on the first play). From the same play: the bends were "choppy, too sharp", a kink at each segment boundary walking down the road; the curvature is now eased between segment middles, four samples a segment, and drawn at half the scale, so a bend builds and fades. The harness's `make run` no longer forces the numpad joystick over the user's vicerc. `char_row_road` now says the starter no longer implements it.
+**The RE tools ran out of memory on a long session (tools 2.20.1, #134).**
+`re-irq-chain` on the Pirates! session (play at 213,772,067 cycles)
+aborted at a 4 GB heap. That run writes a 1,696,126,422-byte monitor log,
+27,839,066 lines and 13,895,239 hits, and three places kept every hit in
+memory. Every RE tool now reads its log as a stream of hits in 1 MiB
+chunks. A run cut by `maxLogBytes` is named in `unknowns` in every tool.
+Measured in VICE x64sc 3.10: the Pirates! run completes in 363 s with a
+405 MB peak, and Commando's chain is identical before and after. A
+regression test writes past the cap and fails against the old code.
+Implemented by MiMo-V2.6-Pro. A Codex review found four leaks, now fixed
+with tests: an unclosed port stream, a dropped cut note, two undisposed
+runs, and the test's own work directory. `graft/`, a local indexer cache,
+is now gitignored.
+
+**Two run-and-gun checks were recorded against blasts that never
+expired.** After the #133 fix (2d3c0f9), `make weapons` read SHOWN 08
+where 10 was expected: the freeze had counted two stale enemy blasts,
+aged 46 and 182. `make collide` graded itself FAIL: its scripted death
+had come from a blast that stayed alive to age 155. The landing of
+2d3c0f9 did not run either target. The weapons pin is now 08. The
+collide walk is re-cut so the soldier dies on a fresh blast, age 8
+(pool RAM trace), with its other 27 pins unchanged. Every VERIFY_TARGETS
+entry passes on PAL and NTSC (VICE x64sc 3.10). Fixed by MiMo-V2.6-Pro;
+every target re-run by Claude before landing.
+
+**A session injection can fire once (data 846, tools 2.20.0).** An
+inject entry held its value on every hit after `after_hits`, so a menu
+that counts a press only after a release (Pirates!'s setup screens) saw
+one press and waited. `"once": true` sets the value on one hit and
+disables the checkpoint in the same monitor command. Measured in VICE
+x64sc 3.10 on `test/fixtures/re/press-count.asm`: two once entries count
+2 presses, one held entry counts 1; with `disable` removed, the test
+fails. `limitcycles` in a session file was capped at 200,000,000; Pirates!
+reaches its first in-game screen at about 221,000,000, so the cap is now
+2,000,000,000 (runs stay bounded by the monitor log size). Implemented by
+MiMo-V2.6-Pro; a Codex review found that `set: {}` with `once` never
+disabled itself (fixed) and that two once entries need a read of the idle
+value between them (documented).
+
+Data 845, schema 40, tools 2.19.0, package 0.29.0. Two branches landed
+together: reverse-engineering step 2 (the Commando study) and the
+run-and-gun starter with the 41 KB gaps its build found. Each numbered
+tools and data on its own (2.18.0 and 844 on the study branch); the
+landed numbers are one past both.
+
+**The RE tools can reach a released game's play and measure it (tools
+2.18.0).** Before this, `c64_re_irq_chain` and `c64_re_frame_profile`
+took a `.prg` inside the repo and measured from its entry, so a game's
+title was measured as play, and a D64 had to be unpacked by hand. New:
+- Images by SHA-1 from the local, uncommitted `data/games/manifest.json`,
+  a PRG or a file on a D64 (unpacked with c1541, always from a copy); a
+  hash mismatch or an unlisted file is refused.
+- `c64_re_session` replays a session file
+  (`docs/game-design/studies/sessions/`): register injections at the
+  game's own input read get past a title that waits for fire, and an
+  `in_play` check gives the clock play starts. Commando's session sets
+  `A = $6F` at `$0FB5`; play starts at clock 35,080,026 (VICE x64sc 3.10,
+  PAL C64C).
+- `c64_re_irq_chain` and `c64_re_frame_profile` take `session` beside
+  `prg_path` and analyse from the in-play clock.
+- `c64_re_snapshot` dumps 64 KB of RAM and `$D000-$DFFF` at a chosen hit
+  of the in-play PC and decodes the VIC-II bank, screen, charset, bitmap,
+  sprite pointers and CPU port.
+- `c64_re_load_map` groups every store from power-on by the code that
+  made it: loader stubs, depack stages, stores to RAM under I/O, the
+  entry. On Commando it separates the two stack-page depack stages that
+  earlier came out as one writer `$0073-$01A6`.
+- `c64_re_coverage` maps RAM run as code, read as data or only written
+  over a number of frames of play.
+- `c64_re_frame_profile` frame mode: no markers; each interrupt is closed
+  by the RTI at its stack depth, and each frame splits into handlers, main
+  loop and the idle wait (`wait_pc`), with a `**Measured frame:**` line.
+  Commando had no timer of its own, so its frame could not be measured
+  before. On the session: `$41C5` 1,097, `$4284` 442, `$4389` 457, `$4137`
+  255, `$4188` 1,031 cycles (medians), matching the teardown's monitor
+  traces within 3 %.
+- `runBatch` takes `maxLogBytes` and stops VICE when the log passes it,
+  and passes `-raminitrandomchance 0`: VICE `-default` flips power-on RAM
+  bits with a per-run seed, so two snapshots at clock 35,080,026 differed
+  at `$07EA` (`$FB` against `$FF`); four runs gave two RAM images without
+  the flag and one with it. Launchers outside `runBatch` are #126.
+
+Found in the final review and fixed at landing: a run the log cap stopped
+early said nothing (each tool's `unknowns` now names it, and frame mode
+names a cut discovery trace); `c64_re_coverage` zapped the memory map at
+the in-play PC's first exec, ignoring `in_play.after_clock`, and on a PRG
+whose entry was never reached measured from clock 0 instead of refusing
+`no-entry` as the other tools do.
+
+**The Commando study (data 844).** `docs/game-design/studies/commando.md`
+is the first studied design (`commando_1985`, `vertical_run_and_gun`):
+the five-part raster chain through `JMP ($0406)`, bank 3 with the screen
+at `$E000`, the memory map, and two measured frames (normal 13,664
+cycles worst, redraw 18,797 worst: 19,656 minus the measured idle wait).
+Its observations file and session sit beside it; the image stays on the
+maintainer's machine. No public disassembly is known, so no claim has a
+rung-2 check. `docs/workflow/game-study-method.md` is the sequence run
+on it, every command quoted with its output. A new lint rule,
+`study_expression`, keeps a studied page to facts: it refuses fenced
+blocks of two or more 6502 lines, hex runs of 16 bytes or more, and,
+when the local manifest resolves the image, any 8-byte run found in the
+game. `check:listings` runs it on `docs/game-design/studies/`.
+
+**disassembly-reference's packer section was unmeasured and gave a wrong
+entry rule (data 844).** It said the first execute in memory written after
+load is the entry; on Commando that finds the stack-page depacker, and
+`$01` was `$38`, not `$34`/`$35`. The section now holds Commando's two
+stages as `c64_re_load_map` measured them. Also measured and added
+(x64sc 3.10): forcing a register with `command N "r a = xx"`, `bank cpu`
+for `$00`/`$01` (`bank ram` reads `$00 $00`), `disable N` inside its own
+command, one `save` per command string (two on one line wrote one file
+with the rest in its name), `-monlog` appends, and `ignore` counts are
+hex.
+
+**vertical_run_and_gun, ten techniques and the FIREBASE starter (data
+845).** Commando's shape had no archetype: the vertical shooter's
+scroll runs on its own, Commando's follows a soldier on foot. The new
+archetype `vertical_run_and_gun` has a fingerprint of fifteen
+techniques, ten of them new, each with a recipe measured on PAL and
+NTSC: `threshold_scroll_v`, `row_map_redraw`, `invalid_mode_band`,
+`sprite_slot_parking`, `char_attribute_flags`, `facing_turn_step`,
+`grenade_lob`, `checkpoint_respawn`, `area_end_gate_wave` and
+`sfx_voice_takeover`. `templates/run-and-gun` (FIREBASE) is its starter:
+a playable slice with enemies from map rows, aimed fire and grenades,
+checkpoint restarts, the area-end wave, a tune under five effects, and a
+title, attract demo, name entry and high-score table. Its `make check`
+passes on PAL and NTSC, and `verify-templates --selftest` passes all
+starters.
+
+**41 gaps the FIREBASE build found, each fixed (data 845, tools 2.19.0).**
+`templates/run-and-gun/KB-GAPS.md` gives, per gap, what the tool said,
+what was true, the measurement and the fixing commit.
+- `c64_plan_budget` summed `row_map_redraw`'s 13,304 cycles into every
+  frame (36,916-47,124 for FIREBASE, whose logic frames measure 3,049 PAL
+  at most). A new Cost key, `every_n_frames`, puts such a member on its
+  own frame (output `occasional[]`). It also counted the multiplexer
+  twice: `sprite_multiplex_game`'s Cost now includes
+  `sprite_slot_parking`.
+- `c64_check_compatibility` set parking against its own multiplexer
+  (INCOMPATIBLE for every plan from the archetype), and implied
+  `tile_map_render` and `lfsr_random` as prerequisites that are only
+  examples. A technique a Cost line includes is no longer a hard
+  conflict.
+- `c64_pitfalls_for` returns a technique page's own Pitfalls section
+  (`page_pitfalls`), tells "no Pitfall node" apart from "no such
+  technique", and moves pitfalls other techniques trigger through a
+  shared register to `left_out` (`threshold_scroll_v` had 16, among them
+  the FPP and linecrunch ones).
+- `c64_game_briefing` proposed a raycaster for "walls" and a tile renderer
+  for "map": a brief word the fingerprint already answers now proposes
+  nothing, and the proposal limit counts the fingerprint. It gains
+  `design_patterns[]` (the front end, state machine and level patterns
+  whose **Applies to:** line names the archetype), and
+  `c64_technique_lookup` names a game-design pattern.
+- `c64_toolchain_hint` answered `row_map_redraw` in Oscar64 with prose;
+  an intent naming a technique now gets its recipe's listing, in
+  KickAssembler when that is the only recipe. The briefing's split also
+  hands off a technique costing a quarter of a PAL frame or more measured
+  only on another toolchain's recipe.
+- Pages and recipes: `row_map_redraw` (start once the row is fetched, the
+  two-bytes-a-pass loop, sprite DMA off the lead, the redraw pair, a
+  once-a-frame player beside it), `object_pool` and `decimal_print` costs
+  (380 cycles read as eight enemies; a BCD score budgeted at 1,361),
+  `sfx_voice_takeover` (Cost without the tune, NTSC tempo, the 256-byte
+  pattern window), `sprite_slot_parking` with a building multiplexer,
+  the band split's exact-line poll, `char_attribute_flags` in multicolour,
+  `grenade_lob` and walls, `per_frame_hitbox` in a full frame,
+  `checkpoint_respawn`'s redraw, `area_end_gate_wave`'s gathered wave; new
+  `aimed_shot_octant` (8 and 16 directions, the velocity tables) and
+  `joystick_name_entry`, each with a recipe.
+- Harness: `drive.py` presses port 1 and says `$DC00` bits 5-7 read 0;
+  `meter_init` masked interrupts across its whole calibration (a KERNAL
+  IRQ lost), and then hung on NTSC in a program whose IRQ covers lines
+  256-262 (fixed; 10 of 10 starters pass `--selftest`); the meter's header
+  names the late frames a meter build has.
+- CLAUDE.md gains two Oscar64 gotchas: a macro call whose arguments span
+  lines (error 3068), and a `volatile` CIA load emitted after a later
+  store.
+
+
+**A studied game is a GameDesign (schema 40, tools 2.18.0, data 844).**
+A page in `docs/game-design/studies/` with frontmatter `kind: studied`
+describes a released game the RE tools measured in VICE. GameDesign gains
+`kind` (built by default), and on a studied design `studied_from`,
+`irq_chain` and `memory_map` as JSON from the new `**Studied from:**`,
+`**IRQ chain:**` and `**Memory map:**` lines; `**Measured frame:**` takes
+the basis `measured-vice-study`, refused on a built page. Two edges: `STUDIES`
+to the Production of the studied title, and `DIVERGES_FROM` to a technique
+with `direction` extra or missing, from `**Diverges from archetype:**`.
+Both are MATCHed, never created; a miss is warned about and counted in the
+ingest summary. Each study line is refused whole on a malformed part.
+`c64_game_briefing`'s `designs[]` gains `kind`, `studied_from` and
+`source_doc`, and lists a studied design as "studied, not buildable here"
+with its page; `c64_plan_budget` takes a studied design, budgets no
+members, and prints its measured frame as not predicted, since no recipe
+here builds it. Before this a studied game had no place in the graph:
+`**Studied from:**` was prose and `measured-vice-study` refused the line.
+`CONVENTIONS-game-designs.md` "Studied designs" and `ONTOLOGY.md` define
+the lines. The Commando study lands with it (below); an earlier version of
+this entry said no study page did.
+
+**`c64_re_irq_chain` sees through a `JMP (pointer)` handler (tools
+2.17.0; numbered 2.15.0 on its branch before main reached 2.16.0).** Commando's only interrupt handler is `$4134: JMP ($0406)`;
+each raster part rewrites `$0406/$0407`, so all 11,374 entries landed on
+`$4134` and its five parts a frame were invisible. When a handler's first
+instruction is `JMP ($xxxx)`, a third run traces the pointer's two bytes:
+each entry gains `target`, each handler `pointer` and `dispatch` (entries,
+lines and armed lines per target). Measured in VICE x64sc 3.10, PAL, 60M
+cycles (image not in the repo): `$41C5` on line 30, `$4284` on 50/52,
+`$4389` on 192, `$4137` on 213, `$4188` on 222, about 2,275 entries each.
+The study page's 50/60 and 161-198 come from other runs (the session's
+1,264 frames and a 1,500-frame monitor trace, standing and walking), not
+this one.
+Three more faults, ported from the unmerged `re-irq-dispatch` branch:
+stores logged at an interrupt's clock are applied before its dispatch is
+read (VICE logs the handler's first exec before them); the banking comes
+from `$00` with `$01` (`CpuPort`), so a RAM `$FFFE` value is no candidate
+while the KERNAL is mapped (Commando listed `$0000`, `$0334` and `$CA53`
+as installed handlers); `$FFFE` and `$FFFA` naming one RAM handler are
+both in `via` and the interrupt is named under unknowns.
+sprite-multiplex-game and raster-bars give the same result as before.
 
 **A sprite stretcher over the badlines, a $D012 poll that cannot enter one, and a hires FLI measured (data 843).** The disk demo's sprite stretcher was rebuilt on the text screen's own badlines after its FLD background turned out to paint bus noise (data 842), and what the rebuild measured over 151 traced frames is now on the stretcher's page as a variation: a badline forces every sprite's row to advance, so a row lasts at most eight lines and the rows are spread by an accumulator that counts the forced advances; a `$D012` poll re-syncs on the sprite stall every line, exit read at cycles 1 to 7 whatever sprites still fetch; and the poll cannot enter the badline itself, which is the new pitfall `d012_poll_cannot_enter_badline_under_sprites` in `pitfalls/raster-and-badline.md`, with the line-before handling and the wait-by-number that the trace confirmed. `fli_image` gains a hires four-page variation from the demo's title part: every line forced, pixel-exact against its converter on both models, 12,841 cycles a frame on PAL, and an honest open question about a first build that forced every second line and broke where UFLI does not.
 

@@ -14,9 +14,9 @@ export const pitfallsForTool = defineTool({
 
 Purpose: Surfaces the gotchas a developer will hit when using a particular register, routine, or technique, and the pitfalls a technique exists to cure. Intended as a proactive "what can go wrong?" check before implementing a technique.
 
-Inputs: 'topic' is the entity name to look up. The tool tries three interpretations in order: (1) Register — matched by canonical name, hex address, or alias (e.g. "D012", "$D012"); (2) KernalRoutine — matched by canonical name (e.g. "CHROUT"); (3) Technique — matched by snake_case name (e.g. "stable_raster_irq"); (4) LibraryFunction — an Oscar64 c64/ header function, matched by name without regard to case (e.g. "krnio_open", "vic_waitLine"), which answers with the pitfalls of every KERNAL routine and register it WRAPS (schema 37), each carrying 'via'. The first interpretation that returns at least one Pitfall wins.
+Inputs: 'topic' is the entity name to look up. The tool tries three interpretations in order: (1) Register — matched by canonical name, hex address, or alias (e.g. "D012", "$D012"); (2) KernalRoutine — matched by canonical name (e.g. "CHROUT"); (3) Technique — matched by snake_case name (e.g. "stable_raster_irq"); (4) LibraryFunction — an Oscar64 c64/ header function, matched by name without regard to case (e.g. "krnio_open", "vic_waitLine"), which answers with the pitfalls of every KERNAL routine and register it WRAPS (schema 37), each carrying 'via'. The first interpretation that returns at least one Pitfall wins; a Technique also wins with none when the graph or a technique page holds it, so "no pitfall names it" is not reported as "no such thing".
 
-Output: {topic, topic_kind, pitfalls[{name, title, severity, region, category, triggered_by[], mitigated_by[]}]}. topic_kind is the winning interpretation (Register | KernalRoutine | Technique | LibraryFunction) or "search" if no direct match was found. pitfalls is ordered severity-descending. Each pitfall's triggered_by list contains all entities that trigger it, not just the queried entity; mitigated_by lists the techniques whose application is its Fix (CONVENTIONS-pitfalls.md **Mitigated by techniques:**). Read the two lists separately: sprite_dma_overflow is triggered by a naive multiplexer and mitigated by a correct one.
+Output: {topic, topic_kind, pitfalls[{name, title, severity, region, category, triggered_by[], mitigated_by[]}]}. topic_kind is the winning interpretation (Register | KernalRoutine | Technique | LibraryFunction) or "search" if no direct match was found. pitfalls is ordered severity-descending. Each pitfall's triggered_by list contains all entities that trigger it, not just the queried entity; mitigated_by lists the techniques whose application is its Fix (CONVENTIONS-pitfalls.md **Mitigated by techniques:**). Read the two lists separately: sprite_dma_overflow is triggered by a naive multiplexer and mitigated by a correct one. For a Technique: page_pitfalls {source, items[]} is the technique page's own Pitfalls section (prose, one item per bullet or paragraph), and left_out[{name, owners[]}] names pitfalls reached through a register it uses that other techniques trigger and this one neither is nor requires (fpp_write_outside_window reaches every $D011 user through SCROLY); they are not in pitfalls.
 
 When no direct match is found, topic_kind is "search" and pitfalls is empty. Use c64_search or c64_technique_lookup to explore related content.
 
@@ -24,7 +24,7 @@ Examples: {"topic": "D012"} → pitfalls triggered by $D012 (raster line registe
 
 See also: c64_failure_diagnose to match symptoms to known failure patterns. c64_technique_lookup for a technique's full profile (registers, KERNAL calls, recipes).
 
-Limitations: Returns only pitfalls indexed in Phase 5 (28 nodes across 8 categories). Topics with no direct graph match fall back to "search" — run c64_search for fuzzy queries.`,
+Limitations: Topics with no direct graph match fall back to "search" — run c64_search for fuzzy queries.`,
   inputSchema: {
     topic: z
       .string()

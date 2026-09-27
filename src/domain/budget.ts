@@ -22,6 +22,8 @@
  *   included members, and a technique that holds the CPU on every line of a
  *   stated raster band is charged band lines × line length, with its
  *   REQUIRES closure inside that band not added.
+ * - Work spent on one frame in N is budgeted on its own frame
+ *   (budget-occasional.ts), not added to every frame.
  * - Phases (play, transition, init) are budgeted alone.
  * - With the screen on, unless every summed figure says it was measured
  *   with the screen on, the badlines outside any band charge and any stated
@@ -43,20 +45,14 @@ import {
 } from "./timing.ts";
 import { assumptionsFor, lockedTo, measuredScreenOn, phaseNotes } from "./budget-notes.ts";
 import { countedFigures, perItemCharge } from "./budget-items.ts";
+import { everyNFrames, occasionalFrames, type BudgetOccasional } from "./budget-occasional.ts";
+import { bytesOf, heldEverywhere, weakestOf, type BytesBudget } from "./budget-bytes.ts";
 import type { CallCount } from "./calls.ts";
 
 export const BUDGET_PHASES = ["play", "transition", "init"] as const;
 export type BudgetPhase = (typeof BUDGET_PHASES)[number];
 export type BudgetBasis = "measured-vice" | "derived-listing" | "arithmetic" | "estimated";
 type BudgetVerdict = "fits" | "over" | "undetermined";
-
-// Strongest first; the weakest basis in a sum is named beside it.
-const BASIS_STRENGTH: readonly BudgetBasis[] = [
-  "measured-vice",
-  "derived-listing",
-  "arithmetic",
-  "estimated",
-];
 
 // Display lines a sprite set is assumed to cover when the caller states
 // sprites per line but not the lines: the whole 200-line display, a ceiling.
@@ -69,6 +65,8 @@ export interface BudgetCost {
   cycles_per_item?: number | undefined;
   /** Cycles of a frame with no items, beside cycles_per_item (#95); absent is 0. */
   cycles_item_base?: number | undefined;
+  /** The frame figure is spent on one frame in this many, not every frame (run-and-gun gap 1). */
+  every_n_frames?: number | undefined;
   cycles_per_line?: number | undefined;
   lines_active?: number | undefined;
   bytes_code?: number | undefined;
@@ -152,6 +150,8 @@ export interface PhaseBudget {
   frame: number;
   members: string[];
   contributors: BudgetContributor[];
+  /** Members spent on one frame in N: not in low or high, each budgeted on its own frame. */
+  occasional: BudgetOccasional[];
   excluded: BudgetExcluded[];
   unknown: string[];
   not_found: string[];
@@ -180,17 +180,6 @@ interface FixedLosses {
   floor: number;
 }
 
-interface BytesBudget {
-  sum: number;
-  contributors: { name: string; bytes: number; basis: BudgetBasis }[];
-  excluded: { name: string; bytes: number; reason: "whole_program" }[];
-  /** Members whose work, and so code, is inside another member's figure that states bytes. */
-  inside: { name: string; by: string }[];
-  without_bytes: string[];
-  /** The weakest byte basis among the contributors, beside the sum (#72). */
-  weakest_basis: BudgetBasis | null;
-}
-
 export interface PlanBudget {
   region: "PAL" | "NTSC" | "both";
   screen: "on" | "off";
@@ -199,16 +188,6 @@ export interface PlanBudget {
   bytes: BytesBudget;
   verdict: BudgetVerdict;
   assumptions: string[];
-}
-
-const WHOLE_PROGRAM = /\bwhole\s+(?:prg|program)\b/i;
-
-function weakestOf(bases: BudgetBasis[]): BudgetBasis | null {
-  let weakest: BudgetBasis | null = null;
-  for (const b of bases) {
-    if (weakest === null || BASIS_STRENGTH.indexOf(b) > BASIS_STRENGTH.indexOf(weakest)) weakest = b;
-  }
-  return weakest;
 }
 
 /** The line ranges of a band that occur on this machine (NTSC has 263 lines), or null for none. */
@@ -364,9 +343,12 @@ function verdictOf(p: {
   fixed: number;
   frame: number;
   open: boolean;
+  occasional: readonly BudgetOccasional[];
 }): BudgetVerdict {
-  if (p.floor > p.frame) return "over";
-  if (!p.open && p.high + p.fixed <= p.frame) return "fits";
+  // A one-in-N member's own frame holds at least its low figure and the floor.
+  if (p.floor > p.frame || p.occasional.some((o) => o.low + p.floor > p.frame)) return "over";
+  const occasionalFit = p.occasional.every((o) => o.frame_high <= p.frame);
+  if (!p.open && occasionalFit && p.high + p.fixed <= p.frame) return "fits";
   return "undetermined";
 }
 
@@ -443,6 +425,7 @@ function fixedLossesFor(
 
 interface Sorted {
   contributors: BudgetContributor[];
+  occasional: Omit<BudgetOccasional, "frame_high" | "irq_members">[];
   excluded: BudgetExcluded[];
   unknown: string[];
   not_found: string[];
@@ -481,7 +464,7 @@ function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
     return;
   }
   // The multi-frame test above is on one call; the sum takes every call.
-  into.contributors.push({
+  const contributor: BudgetContributor = {
     name: m.name,
     ...charge,
     ...countedFigures(m, charge),
@@ -489,7 +472,10 @@ function sortMember(m: BudgetMember, region: VideoRegion, into: Sorted): void {
     basis: m.cost?.basis ?? "estimated",
     measured_on,
     conditions: m.cost?.conditions ?? null,
-  });
+  };
+  const everyN = everyNFrames(m, charge.charge);
+  if (everyN === null) into.contributors.push(contributor);
+  else into.occasional.push({ ...contributor, every_n_frames: everyN });
 }
 
 function budgetPhase(inp: PhaseInputs): PhaseBudget {
@@ -499,6 +485,7 @@ function budgetPhase(inp: PhaseInputs): PhaseBudget {
   const skip = absorbed(members, region);
   const sorted: Sorted = {
     contributors: [],
+    occasional: [],
     excluded: [...skip.values()],
     unknown: [],
     not_found: [],
@@ -517,8 +504,22 @@ function budgetPhase(inp: PhaseInputs): PhaseBudget {
     .map((c) => c.name);
   const low = contributors.reduce((s, c) => s + c.low, 0);
   const high = contributors.reduce((s, c) => s + c.high, 0);
-  const fixed_losses = fixedLossesFor(contributors, inp, byName);
-  const floor = contributors.filter((c) => c.every_frame).reduce((s, c) => s + c.low, 0) + fixed_losses.floor;
+  // The one-in-N members are passed too, so their bands and screen-on figures
+  // count for the frames they run on. A known approximation: one of them
+  // measured with the screen on also zeroes the every-frame floor
+  // (heldSomewhere), though its figure is not summed into every frame.
+  const fixed_losses = fixedLossesFor([...contributors, ...sorted.occasional], inp, byName);
+  const everyFrame = contributors.filter((c) => c.every_frame).reduce((s, c) => s + c.low, 0);
+  const floor = everyFrame + fixed_losses.floor;
+  const losses = fixed_losses.badlines + fixed_losses.sprite_dma;
+  const irqMembers = contributors
+    .filter((c) => !c.every_frame && (byName.get(c.name)?.cost?.irq_slots ?? 0) > 0)
+    .map((c) => c.name);
+  const occasional = occasionalFrames(
+    sorted.occasional,
+    { everyFrame, losses, irqMembers },
+    includesDisplayStalls,
+  );
   const open = unknown.length > 0 || not_found.length > 0 || excluded.some((e) => e.reason === "multi_frame");
   const result: PhaseBudget = {
     phase,
@@ -526,6 +527,7 @@ function budgetPhase(inp: PhaseInputs): PhaseBudget {
     frame,
     members: members.map((m) => m.name),
     contributors,
+    occasional,
     excluded,
     unknown,
     not_found,
@@ -535,83 +537,20 @@ function budgetPhase(inp: PhaseInputs): PhaseBudget {
     high,
     floor,
     worst_only,
-    verdict: verdictOf({ floor, high, fixed: fixed_losses.badlines + fixed_losses.sprite_dma, frame, open }),
-    weakest_basis: weakestOf(contributors.map((c) => c.basis)),
+    verdict: verdictOf({
+      floor,
+      high,
+      fixed: fixed_losses.badlines + fixed_losses.sprite_dma,
+      frame,
+      open,
+      occasional,
+    }),
+    weakest_basis: weakestOf([...contributors, ...occasional].map((c) => c.basis)),
     irq_slots,
     notes: [],
   };
   result.notes = phaseNotes(result, screen);
   return result;
-}
-
-/** Members absorbed in every phase they are budgeted in, with the member that holds them. */
-function heldEverywhere(phases: PhaseBudget[]): Map<string, string> {
-  const held = new Map<string, string>();
-  const free = new Set<string>();
-  for (const p of phases) {
-    const inside = new Map(
-      p.excluded.filter((e) => e.reason !== "multi_frame" && e.by).map((e) => [e.name, e.by ?? ""]),
-    );
-    for (const name of p.members) {
-      const by = inside.get(name);
-      if (by === undefined) free.add(name);
-      else if (!held.has(name)) held.set(name, by);
-    }
-  }
-  for (const name of free) held.delete(name);
-  return held;
-}
-
-/** The byte figures' basis: their own line where the page states one (#72), else the Cost basis. */
-function bytesBasisOf(c: BudgetCost): BudgetBasis {
-  return c.bytes_basis ?? c.basis;
-}
-
-function hasBytes(c: BudgetCost | undefined): c is BudgetCost {
-  return c?.bytes_code !== undefined || c?.bytes_data !== undefined;
-}
-
-/**
- * Bytes over the members, once each. A member whose work is inside another
- * member's figure is inside its code too when that member states bytes
- * measured on its recipe; it is listed, not summed, and does not make the
- * sum a floor.
- */
-function bytesOf(members: BudgetMember[], held: Map<string, string>): BytesBudget {
-  const out: BytesBudget = {
-    sum: 0,
-    contributors: [],
-    excluded: [],
-    inside: [],
-    without_bytes: [],
-    weakest_basis: null,
-  };
-  const byName = new Map(members.map((m) => [m.name, m]));
-  const seen = new Set<string>();
-  for (const m of members) {
-    if (seen.has(m.name) || !m.found) continue;
-    seen.add(m.name);
-    const by = held.get(m.name);
-    const holder = by === undefined ? undefined : byName.get(by)?.cost;
-    if (by !== undefined && hasBytes(holder) && !WHOLE_PROGRAM.test(holder.conditions ?? "")) {
-      out.inside.push({ name: m.name, by });
-      continue;
-    }
-    const c = m.cost;
-    if (!hasBytes(c)) {
-      out.without_bytes.push(m.name);
-      continue;
-    }
-    const bytes = (c.bytes_code ?? 0) + (c.bytes_data ?? 0);
-    if (c.conditions && WHOLE_PROGRAM.test(c.conditions)) {
-      out.excluded.push({ name: m.name, bytes, reason: "whole_program" });
-      continue;
-    }
-    out.sum += bytes;
-    out.contributors.push({ name: m.name, bytes, basis: bytesBasisOf(c) });
-  }
-  out.weakest_basis = weakestOf(out.contributors.map((c) => c.basis));
-  return out;
 }
 
 function regionsFor(members: BudgetMember[], asked: BudgetOptions["region"]): VideoRegion[] {

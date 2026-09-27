@@ -42,6 +42,7 @@ build in play on PAL.
 <td align="center"><a href="templates/demo/README.md"><img src="docs/figures/starters/demo.png" width="220" alt="Logo, sprite sine chain, raster bars and a scroller"></a><br><sub>Demo (KickAssembler)</sub></td>
 <td align="center"><a href="templates/beat-em-up/README.md"><img src="docs/figures/starters/beat-em-up.png" width="220" alt="The hero kicking the brute on the street"></a><br><sub>Beat-em-up</sub></td>
 <td align="center"><a href="templates/racing/README.md"><img src="docs/figures/starters/racing.png" width="220" alt="Racing into a right-hander at full speed, two opponents ahead"></a><br><sub>Pseudo-3D racer</sub></td>
+<td align="center"><a href="templates/run-and-gun/README.md"><img src="docs/figures/starters/run-and-gun.png" width="220" alt="The soldier's grenade bursting on a grenadier in the jungle"></a><br><sub>Vertical run-and-gun</sub></td>
 </tr>
 </table>
 
@@ -191,7 +192,7 @@ This copies the starter and the shared harness (`templates/_harness/`)
 into the new directory. It writes `.mcp.json` and `local.mk` pointing at
 this checkout, then runs the starter's headless check to prove the copy
 works. `npm run new-project -- --list` names the starters: `shmup-vertical`,
-`platformer`, `action-puzzle`, `adventure`, `beat-em-up`, `racing`, `demo`, and two
+`platformer`, `action-puzzle`, `adventure`, `beat-em-up`, `racing`, `run-and-gun`, `demo`, and two
 minimal templates that show the harness rather than a game: `hello`
 (Oscar64 calling KickAssembler) and `hello-kick` (KickAssembler only).
 
@@ -250,7 +251,7 @@ The MCP server and the CLI call the same functions.
 | `c64_techniques_for` | Techniques filtered by category, chip, region, register, recipe, prerequisite or the hardware unit they claim |
 | `c64_recipe_lookup` | One recipe: metadata, the page, the machines it was verified on, the hardware units its listing claims |
 | `c64_recipes_for` | Recipes filtered by toolchain, region, technique, file format or verified machine |
-| `c64_toolchain_hint` | An idiomatic snippet for a toolchain and intent; Oscar64 by default |
+| `c64_toolchain_hint` | An idiomatic snippet for a toolchain and intent; Oscar64 by default. An intent that names a technique gets its recipe's listing, in KickAssembler when that technique's only recipe is KickAssembler |
 
 **Avoid mistakes**
 
@@ -283,8 +284,12 @@ the CLI exits 1 on a definite finding.
 | `c64_ingest_doc` | Writes a page under `docs/` and ingests it at once |
 | `c64_coverage`, `c64_suggest_links`, `c64_report_gap` | Coverage per category, suggested missing edges, and a record of a query that found nothing |
 | `c64_run_game` | Runs an Oscar64 build (it needs the `.dbj` debug file) in VICE through [vice-mcp](https://github.com/simen/vice-mcp), drives it, and returns a state trace and the screen. It needs vice-mcp built (`VICE_MCP_PATH`) and `x64sc`; the repo's windowless VICE is used when present |
-| `c64_re_irq_chain` | Runs a `.prg` headless in `x64sc` and reports its interrupt chain: every vector write, every raster line armed, and every handler entry with its line, cycle and frame. The PRG must be inside the repo or the temp directory. It needs the windowless `x64sc` (`npm run vice:headless`) |
-| `c64_re_frame_profile` | Runs a `.prg` headless in `x64sc` and times every occurrence of a region between a start and stop marker, in CPU cycles: worst, typical (median), count, unpaired starts and samples over one frame. The PRG must be inside the repo or the temp directory. It needs the windowless `x64sc` (`npm run vice:headless`) |
+| `c64_re_session` | Replays a session file (`docs/game-design/studies/sessions/`) headless in `x64sc` and reports the clock the game reached play. A session names a game image by SHA-1 in the local, uncommitted `data/games/manifest.json` (a PRG, or a file on a D64), and sets registers at the game's own input reads to get past a title that waits for fire. It needs the windowless `x64sc` (`npm run vice:headless`) |
+| `c64_re_snapshot` | Replays a session to play and dumps all 64 KB of RAM and the I/O area at a chosen moment; decodes the VIC-II bank, screen, charset, bitmap, sprite pointers and the CPU port |
+| `c64_re_load_map` | Runs a `.prg` or a session from power-on under a store trace and groups every store by the code that made it: loader stubs, depack stages, stores to RAM under I/O, and the entry point |
+| `c64_re_coverage` | Runs a `.prg` or a session and maps which RAM the CPU ran as code, read as data or only wrote, over a number of frames of play |
+| `c64_re_irq_chain` | Runs a `.prg` or a session headless in `x64sc` and reports its interrupt chain: every vector write, every raster line armed, and every handler entry with its line, cycle and frame; a `JMP (pointer)` handler is split into its targets. A `.prg` must be inside the repo or the temp directory. It needs the windowless `x64sc` (`npm run vice:headless`) |
+| `c64_re_frame_profile` | Runs a `.prg` or a session headless in `x64sc`. Region mode times every occurrence of a region between a start and stop marker, in CPU cycles: worst, typical (median), count, unpaired starts and samples over one frame. Frame mode needs no markers: it times each interrupt handler per frame and splits the rest of the frame into main-loop work and the idle wait, giving a `**Measured frame:**` line for a game that has no timer of its own. A `.prg` must be inside the repo or the temp directory. It needs the windowless `x64sc` (`npm run vice:headless`) |
 | `c64_claims_watch` | Runs a `.prg` headless in `x64sc` under a store trace and checks every store against the hardware units the program declares: a recipe's `claims:` keys, its techniques' Claims lines, explicit claims and the KERNAL routines it calls. Lists each undeclared store with its unit, addresses and PCs. Same PRG and VICE rules as the two above |
 
 The CLI has a command for every tool except the `c64_coverage` row and
@@ -345,7 +350,8 @@ SuperCPU and Ultimate II+.
 ## Toolchains
 
 - **Oscar64** is the default; `c64_toolchain_hint` answers with it unless
-  asked for another.
+  asked for another, or unless the technique asked about has only a
+  KickAssembler recipe, when it answers with that recipe's listing.
 - **KickAssembler** is for work where C costs too many cycles: stable
   raster interrupts, border opening, FLI, multiplexers. KickAssembler
   5.25 is the version verified here.

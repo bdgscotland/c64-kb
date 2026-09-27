@@ -4,33 +4,50 @@
  * 2026-09-23-reverse-engineering-design.md). Read-only: each call has its
  * own work directory and x64sc process and holds no port.
  *
- * Paths: in this step only PRGs inside the repository or the OS temp
- * directory are accepted (this repo's recipes and templates, and test
- * builds). Third-party images come in by sha1 through a local manifest in
- * the next step.
+ * Inputs: a PRG inside the repository or the OS temp directory (this
+ * repo's recipes and templates, and test builds), or a session file
+ * (src/tools/re-session.ts): a third-party image by sha1 through the local
+ * manifest, replayed to play by register injection. With a session the
+ * analysis starts at the in-play clock, never on the title, and the model
+ * and run length come from the session file.
  */
 import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
-import { REGION_TIMING, videoRegion } from "../domain/timing.ts";
+import { REGION_TIMING, videoRegion, type RegionTiming } from "../domain/timing.ts";
 import { analyseRegion, regionCommands, type Marker, type Profile } from "../re/frame-profile.ts";
 import {
   analyseIrqChain,
   execCommands,
+  indirectPointers,
   liveHandlers,
   storeCommands,
   type IrqChain,
 } from "../re/irq-chain.ts";
-import { readHits, type Hit } from "../re/monlog.ts";
+import { filterHits, findHit, hitsOf, type Hit } from "../re/monlog.ts";
 import { readPrg } from "../re/prg.ts";
-import { runBatch, ViceBatchError, type Model } from "../services/vice-batch.ts";
+import { runBatch, truncatedNote, ViceBatchError, type Model } from "../services/vice-batch.ts";
 import { resolveX64sc } from "../services/vice-bin.ts";
+import { MonitorScript, parseHex, sessionScript, type Session } from "../re/session.ts";
+import {
+  notInPlay,
+  screenshotPath,
+  sessionOf,
+  sessionPass,
+  SESSIONS_DIR,
+  withImage,
+  type Refusal,
+  type RunOpts,
+  type SessionRef,
+  type SessionResult,
+  type Staged,
+} from "./re-session.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 
-interface RunInfo {
+export interface RunInfo {
   prg: string;
   model: Model;
   cycles: number;
@@ -38,9 +55,11 @@ interface RunInfo {
   entry: number | null;
   start_clock: number;
   vice: string;
+  /** The session file's name, for a session-driven run. */
+  session?: string;
+  image?: SessionResult["image"];
 }
-export type ReResult<T> =
-  { ok: true; run: RunInfo; result: T } | { ok: false; error: string; reason: string };
+export type ReResult<T> = { ok: true; run: RunInfo; result: T } | Refusal;
 
 const common = {
   prg_path: z.string().describe("Absolute path to a .prg inside this repository or the OS temp directory"),
@@ -52,7 +71,7 @@ const common = {
     .number()
     .int()
     .min(100_000)
-    .max(200_000_000)
+    .max(2_000_000_000)
     .default(8_000_000)
     .describe("Run length in CPU cycles (-limitcycles)"),
   disk_path: z
@@ -60,13 +79,76 @@ const common = {
     .optional()
     .describe("A .d64 attached as drive 8. The disk is copied; writes are discarded"),
 };
-export const IrqChainInput = common;
-export const FrameProfileInput = {
+/** The PRG-only inputs (c64_claims_watch). */
+export const PrgRunInput = common;
+const sourced = {
   ...common,
+  // No defaults here: with a session the file is the authority, and a value
+  // the caller gave that differs from it is refused, so an omitted value
+  // must stay undefined. For a PRG the defaults are pal and 8,000,000.
+  model: z
+    .enum(["pal", "ntsc"])
+    .optional()
+    .describe(
+      "pal = VICE -default (C64C: 8565, 8580, 8521); ntsc = -model ntsc. Default pal; with a session, omit it or match the file",
+    ),
+  cycles: z
+    .number()
+    .int()
+    .min(100_000)
+    .max(2_000_000_000)
+    .optional()
+    .describe(
+      "Run length in CPU cycles (-limitcycles). Default 8000000; with a session, omit it or match its limitcycles",
+    ),
+  disk_path: z
+    .string()
+    .optional()
+    .describe(
+      "A .d64 attached as drive 8. The disk is copied; writes are discarded. Not with a session (a D64 image is attached itself)",
+    ),
+  prg_path: z
+    .string()
+    .optional()
+    .describe("Absolute path to a .prg inside this repository or the OS temp directory; or give session"),
+  session: z
+    .string()
+    .optional()
+    .describe(
+      `A session file (a repo path under ${SESSIONS_DIR}/): the image by sha1, replayed to play; the analysis starts at its in-play clock and takes model and cycles from the file. Exactly one of prg_path and session`,
+    ),
+};
+export const IrqChainInput = sourced;
+export const FrameProfileInput = {
+  ...sourced,
+  mode: z
+    .enum(["region", "frame"])
+    .default("region")
+    .describe(
+      "region: time start to stop markers. frame: per raster frame, cycles in each interrupt handler, main loop and idle wait, no markers",
+    ),
   start: z
     .string()
-    .describe('Start marker: "store:$DC0F=$11" (a store of that value) or "pc:$2000" (an executed PC)'),
-  stop: z.string().describe('Stop marker, same forms: "store:$DC0F=$00"'),
+    .optional()
+    .describe(
+      'Region mode: start marker, "store:$DC0F=$11" (a store of that value) or "pc:$2000" (an executed PC)',
+    ),
+  stop: z.string().optional().describe('Region mode: stop marker, same forms: "store:$DC0F=$00"'),
+  wait_pc: z
+    .string()
+    .optional()
+    .describe(
+      'Frame mode: the first instruction of the main loop\'s frame wait, "$402A"; its exit is found from a full trace. Without it main and idle are one figure',
+    ),
+};
+export const LoadMapInput = {
+  ...sourced,
+  session: z
+    .string()
+    .optional()
+    .describe(
+      `A session file (a repo path under ${SESSIONS_DIR}/): the image by sha1. Unlike the other RE tools, the analysis always starts from power-on (clock 0), not the in-play clock: a load map wants what was written long before play, often long before the session's own in_play. model and cycles must still match the file when given (the session is the authority); the full-memory trace itself commonly stops well short of the file's own limitcycles, at the first program dispatch plus one frame`,
+    ),
 };
 
 export function allowedPrg(p: string): string | null {
@@ -83,13 +165,40 @@ export function parseMarker(s: string): Marker | null {
   return pc ? { pc: parseInt(pc[1] ?? "", 16) } : null;
 }
 
-async function collect(log: string): Promise<Hit[]> {
-  const out: Hit[] = [];
-  for await (const h of readHits(log)) out.push(h);
-  return out;
+/**
+ * The entry clock: the first exec of the SYS target, or 0 for a PRG with
+ * none. Null when a SYS target exists and never ran: the caller refuses,
+ * never counting from power-on instead. Every hit is returned, those
+ * before the entry included; the entry checkpoint's own hits are dropped
+ * only when the tool added it (`own`), not when a caller's marker asked for
+ * it. The hits come back lazy (issue #134): the log is scanned again, never
+ * held.
+ */
+export function fromEntry(
+  hits: Iterable<Hit>,
+  entry: number | null,
+  own: boolean,
+): { start: number; hits: Iterable<Hit> } | null {
+  if (entry === null) return { start: 0, hits };
+  const first = findHit(hits, (h) => h.kind === "exec" && h.addr === entry);
+  if (!first) return null;
+  return {
+    start: first.clock,
+    hits: own ? filterHits(hits, (h) => !(h.kind === "exec" && h.addr === entry)) : hits,
+  };
 }
 
 class NoEntry extends Error {}
+
+/** A session replay that did not reach play: its refusal, carried out of the passes. */
+class NotInPlay extends Error {
+  refusal: Refusal;
+
+  constructor(refusal: Refusal) {
+    super(refusal.error);
+    this.refusal = refusal;
+  }
+}
 
 /** The PRG's BASIC SYS target and the exec checkpoint that finds its first run. */
 function entryCommand(prg: string, commands: string): { cmd: string; entry: number | null; own: boolean } {
@@ -101,34 +210,24 @@ function entryCommand(prg: string, commands: string): { cmd: string; entry: numb
   return { cmd: own ? line + "\n" : "", entry, own };
 }
 
-/**
- * The entry clock: the first exec of the SYS target, or 0 for a PRG with
- * none. Null when a SYS target exists and never ran: the caller refuses,
- * never counting from power-on instead. Every hit is returned, those
- * before the entry included; the entry checkpoint's own hits are dropped
- * only when the tool added it (`own`), not when a caller's marker asked for it.
- */
-export function fromEntry(
-  hits: Hit[],
-  entry: number | null,
-  own: boolean,
-): { start: number; hits: Hit[] } | null {
-  if (entry === null) return { start: 0, hits };
-  const first = hits.find((h) => h.kind === "exec" && h.addr === entry);
-  if (!first) return null;
-  return {
-    start: first.clock,
-    hits: own ? hits.filter((h) => !(h.kind === "exec" && h.addr === entry)) : hits,
-  };
-}
-
 const hexUp = (n: number) => "$" + n.toString(16).toUpperCase().padStart(4, "0");
+
+/** A pass's checkpoints: a block of lines, or a builder given the script and the PC the analysis starts at. */
+type Build = string | ((m: MonitorScript, startPc: number | null) => void);
+
+function scriptOf(build: Build, startPc: number | null, m = new MonitorScript()): MonitorScript {
+  if (typeof build === "string") m.add(build);
+  else build(m, startPc);
+  return m;
+}
 
 async function traced(
   prg: string,
   args: { model: Model; cycles: number; disk_path?: string | undefined },
-  commands: string,
-): Promise<{ hits: Hit[]; start: number; entry: number | null }> {
+  build: Build,
+  maxLogBytes?: number,
+): Promise<Traced> {
+  const commands = scriptOf(build, readPrg(readFileSync(prg)).sys ?? null).text();
   const { cmd, entry, own } = entryCommand(prg, commands);
   const run = await runBatch({
     prg,
@@ -136,14 +235,29 @@ async function traced(
     cycles: args.cycles,
     model: args.model,
     ...(args.disk_path ? { disk: args.disk_path } : {}),
+    ...(maxLogBytes !== undefined ? { maxLogBytes } : {}),
   });
+  // The hits stay lazy over the run's log (issue #134): the caller scans
+  // them and disposes the run after its last scan. Until it takes the run
+  // over, a throw while scanning (a read error) disposes it here, or the
+  // work directory is left behind (#134 review).
+  let taken = false;
   try {
-    const r = fromEntry(await collect(run.log), entry, own);
+    const r = fromEntry(hitsOf(run.log), entry, own);
     if (!r)
       throw new NoEntry(`entry ${hexUp(entry ?? 0)} not reached in ${args.cycles} cycles; raise cycles`);
-    return { ...r, entry };
+    const out: Traced = {
+      ...r,
+      entry,
+      truncated: run.truncated,
+      dispose: () => {
+        run.dispose();
+      },
+    };
+    taken = true;
+    return out;
   } finally {
-    run.dispose();
+    if (!taken) run.dispose();
   }
 }
 
@@ -164,55 +278,223 @@ function info(
   };
 }
 
-function refusal(e: unknown): { ok: false; error: string; reason: string } {
+export function refusal(e: unknown): Refusal {
   if (e instanceof ViceBatchError) return { ok: false, error: e.message, reason: e.reason };
   if (e instanceof NoEntry) return { ok: false, error: e.message, reason: "no-entry" };
+  if (e instanceof NotInPlay) return e.refusal;
   throw e;
 }
 
-export async function reIrqChain(args: {
-  prg_path: string;
-  model: Model;
-  cycles: number;
+export interface Traced {
+  /** Lazily read from the run's monitor log: scans re-read the file, never hold the hits (issue #134). */
+  hits: Iterable<Hit>;
+  start: number;
+  entry: number | null;
+  /** maxLogBytes stopped the run before its cycle limit: hits after the cut are missing. */
+  truncated: boolean;
+  /** Removes the run's work directory; call it after the last scan of `hits`. */
+  dispose(): void;
+}
+
+/** The unknowns line for a run its log cap stopped early; none when it ran to its cycle limit. */
+export function truncationNotes(t: Traced, what = "trace"): string[] {
+  return t.truncated ? [truncatedNote(what)] : [];
+}
+
+/** Where a tool's passes run: a PRG from its entry, or a session from its in-play clock. */
+export interface Source {
+  /** One run; maxLogBytes stops it once the log passes that size (a full-memory trace). */
+  trace(build: Build, maxLogBytes?: number): Promise<Traced>;
+  info(t: Traced): RunInfo;
+  /** What the run itself could not settle (an injection that never fired, no SYS line). */
+  unknowns(t: Traced): string[];
+  timing: RegionTiming;
+}
+
+export interface SourceArgs {
+  prg_path?: string | undefined;
+  /** A session path, or (tests) an already-parsed session. */
+  session?: string | Session | undefined;
+  model?: Model | undefined;
+  cycles?: number | undefined;
   disk_path?: string | undefined;
-}): Promise<ReResult<IrqChain>> {
-  const prg = allowedPrg(args.prg_path);
+}
+
+function prgSource(prg: string, given: SourceArgs, opts: RunOpts): Source {
+  const args = { ...given, model: given.model ?? "pal", cycles: given.cycles ?? 8_000_000 };
+  return {
+    trace: (c, max) => traced(prg, args, c, max ?? opts.maxLogBytes),
+    info: (t) => info(prg, args, t),
+    unknowns: (t) => [...(t.entry === null ? [NO_SYS] : []), ...truncationNotes(t)],
+    timing: REGION_TIMING[videoRegion(args.model)],
+  };
+}
+
+function sessionSource(staged: Staged, l: SessionRef, opts: RunOpts): Source {
+  const { session: s, name } = l;
+  const { prg, image } = staged;
+  const shot = screenshotPath(l.shot, opts.shotDir);
+  const entry = readPrg(readFileSync(prg)).sys ?? null;
+  const pending: string[] = [];
+  const args = { model: s.machine.model, cycles: s.limitcycles };
+  return {
+    trace: async (c, max) => {
+      const m = scriptOf(c, parseHex(s.in_play.pc), sessionScript(s));
+      const p = await sessionPass(staged, s, m, {
+        screenshot: shot,
+        maxLogBytes: max ?? opts.maxLogBytes,
+      });
+      if (p.play_clock === null) {
+        p.dispose();
+        throw new NotInPlay(notInPlay(s, shot));
+      }
+      pending.splice(0, pending.length, ...p.unknowns);
+      return {
+        hits: p.hits,
+        start: p.play_clock,
+        entry,
+        truncated: p.truncated,
+        dispose: () => {
+          p.dispose();
+        },
+      };
+    },
+    info: (t) => ({ ...info(l.label, args, t), session: name, image }),
+    // The pass names its own log cut in unknowns (sessionPass), so no
+    // truncation note is added here.
+    unknowns: () => [...pending],
+    timing: REGION_TIMING[videoRegion(s.machine.model)],
+  };
+}
+
+/**
+ * Runs `body` against the input's source. Exactly one of prg_path and
+ * session; a session resolves its image first and disposes of it after.
+ */
+/** A value the caller gave that the session file contradicts; the file is the authority. */
+export function conflict(args: SourceArgs, s: Session): string | null {
+  const out: string[] = [];
+  if (args.model !== undefined && args.model !== s.machine.model)
+    out.push(`model ${args.model}, but the session file says ${s.machine.model}`);
+  if (args.cycles !== undefined && args.cycles !== s.limitcycles)
+    out.push(`cycles ${args.cycles}, but the session file says limitcycles ${s.limitcycles}`);
+  if (args.disk_path !== undefined)
+    out.push("disk_path, but a session attaches its own D64 image and takes no other disk");
+  return out.length ? `with a session: ${out.join("; ")}` : null;
+}
+
+/**
+ * Runs `body` against the input's source. Exactly one of prg_path and
+ * session; a session resolves its image first and disposes of it after.
+ * The source is built inside the guard, so a throw while building it (a
+ * PRG that cannot be read) is a refusal too.
+ */
+export async function withSource<T>(
+  args: SourceArgs,
+  tool: string,
+  opts: RunOpts,
+  body: (src: Source) => Promise<ReResult<T>>,
+): Promise<ReResult<T>> {
+  const guarded = async (make: () => Source) => {
+    try {
+      return await body(make());
+    } catch (e) {
+      return refusal(e);
+    }
+  };
+  if ((args.prg_path === undefined) === (args.session === undefined))
+    return { ok: false, error: "give exactly one of prg_path and session", reason: "input" };
+  if (args.session !== undefined) {
+    const l = sessionOf(args.session, tool);
+    if (!l.ok) return l;
+    const bad = conflict(args, l.session);
+    if (bad) return { ok: false, error: bad, reason: "input" };
+    return withImage(l.session, opts.manifestPath, (staged) => guarded(() => sessionSource(staged, l, opts)));
+  }
+  const prg = allowedPrg(args.prg_path ?? "");
   if (!prg) return { ok: false, error: `not an allowed .prg: ${args.prg_path}`, reason: "path" };
-  const frame = REGION_TIMING[videoRegion(args.model)].cycles_per_frame;
+  return guarded(() => prgSource(prg, args, opts));
+}
+
+/** The irq-chain tool's first two passes: the handlers the vectors held, and the pointers any JMP (pointer) handler reads. */
+export async function chainPasses(
+  src: Source,
+): Promise<{ handlers: number[]; pointers: number[]; last: Traced; notes: string[] }> {
+  const a = await src.trace(storeCommands());
+  let handlers: number[];
   try {
-    const a = await traced(prg, args, storeCommands());
-    const handlers = liveHandlers(a.hits, a.start);
-    const b = await traced(prg, args, execCommands(handlers));
-    const result = analyseIrqChain(b.hits, frame, b.start);
-    if (b.entry === null) result.unknowns.push(NO_SYS);
-    return { ok: true, run: info(prg, args, b), result };
-  } catch (e) {
-    return refusal(e);
+    handlers = liveHandlers(a.hits, a.start);
+  } finally {
+    a.dispose();
+  }
+  const b = await src.trace(execCommands(handlers));
+  // Ownership of `b` moves to the caller with the return; until then a
+  // throw while scanning (a read error) disposes it here, or its work
+  // directory is left behind (#134 review). Pass A's cut is named in
+  // notes, its log being disposed above; the analysed pass names its own
+  // through src.unknowns(b), and a caller that drops a pass carries its
+  // cut itself — frame mode dropped pass B's warning when no pointer asked
+  // for a third pass (#134 review).
+  let taken = false;
+  try {
+    const pointers = indirectPointers(b.hits);
+    const out = {
+      handlers,
+      pointers,
+      last: b,
+      notes: truncationNotes(a, "the vector and stack trace"),
+    };
+    taken = true;
+    return out;
+  } finally {
+    if (!taken) b.dispose();
   }
 }
 
-export async function reFrameProfile(args: {
-  prg_path: string;
-  model: Model;
-  cycles: number;
-  disk_path?: string | undefined;
-  start: string;
-  stop: string;
-}): Promise<ReResult<Profile>> {
-  const prg = allowedPrg(args.prg_path);
-  if (!prg) return { ok: false, error: `not an allowed .prg: ${args.prg_path}`, reason: "path" };
+export async function reIrqChain(args: SourceArgs, opts: RunOpts = {}): Promise<ReResult<IrqChain>> {
+  return withSource(args, "irq-chain", opts, async (src) => {
+    const { handlers, pointers, last, notes } = await chainPasses(src);
+    try {
+      // A handler that is JMP (pointer): a third pass adds the pointer's bytes.
+      const b = pointers.length ? await src.trace(execCommands(handlers, pointers)) : last;
+      try {
+        const result = analyseIrqChain(b.hits, src.timing, b.start);
+        result.unknowns.push(
+          ...src.unknowns(b),
+          ...notes,
+          // Pass B is dropped when a third pass replaces it: its cut is
+          // named here, src.unknowns(b) naming the analysed pass's own.
+          ...(b === last ? [] : truncationNotes(last, "the handler discovery pass")),
+        );
+        return { ok: true, run: src.info(b), result };
+      } finally {
+        if (b !== last) b.dispose();
+      }
+    } finally {
+      last.dispose();
+    }
+  });
+}
+
+export async function reFrameProfile(
+  args: SourceArgs & { start?: string | undefined; stop?: string | undefined },
+  opts: RunOpts = {},
+): Promise<ReResult<Profile>> {
+  if (args.start === undefined || args.stop === undefined)
+    return { ok: false, error: "region mode needs start and stop markers", reason: "marker" };
   const start = parseMarker(args.start);
   const stop = parseMarker(args.stop);
   if (!start || !stop)
     return { ok: false, error: `bad marker: ${!start ? args.start : args.stop}`, reason: "marker" };
-  const frame = REGION_TIMING[videoRegion(args.model)].cycles_per_frame;
-  try {
-    const t = await traced(prg, args, regionCommands({ start, stop }));
-    const hits = t.hits.filter((h) => h.clock >= t.start);
-    const result = analyseRegion(hits, { start, stop }, frame, t.start);
-    if (t.entry === null) result.unknowns.push(NO_SYS);
-    return { ok: true, run: info(prg, args, t), result };
-  } catch (e) {
-    return refusal(e);
-  }
+  return withSource(args, "frame-profile", opts, async (src) => {
+    const t = await src.trace(regionCommands({ start, stop }));
+    try {
+      const hits = filterHits(t.hits, (h) => h.clock >= t.start);
+      const result = analyseRegion(hits, { start, stop }, src.timing, t.start);
+      result.unknowns.push(...src.unknowns(t));
+      return { ok: true, run: src.info(t), result };
+    } finally {
+      t.dispose();
+    }
+  });
 }

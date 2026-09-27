@@ -117,6 +117,8 @@ const EDGE_LINES: readonly [label: string, rel: string, kind: TrackedEdge, from?
   ["instance_of", "INSTANCE_OF", "instance_of"],
   ["realised_by", "REALISED_BY", "realised_by"],
   ["exemplified_by", "EXEMPLIFIED_BY", "exemplified_by"],
+  ["studies", "STUDIES", "studies"],
+  ["diverges_from", "DIVERGES_FROM", "diverges_from"],
   ["requires_device", "REQUIRES_DEVICE", "requires_device"],
   ["wraps", "WRAPS", "wraps"],
 ];

@@ -20,7 +20,28 @@
 // time: badline and sprite DMA steals and any interrupt that lands inside a
 // bracket are counted. The empty bracket's own count is measured at init
 // (the least of four tries, each at raster line 0, where no DMA falls) and
-// subtracted from every bracket.
+// subtracted from every bracket. meter_init waits for line 0 four times
+// (66,054 cycles in one PAL run, 55,403 NTSC, VICE store trace) and masks
+// interrupts only from line 256 to line 0 of each (56 lines PAL, 7 NTSC): an
+// IRQ that comes then is delayed, not lost. An earlier version masked the
+// whole calibration and lost one KERNAL timer IRQ in the same trace.
+// A program whose own IRQ covers lines 256-262 every frame never shows the
+// wait that window unmasked (run-and-gun on NTSC, which hung there): after
+// two frames without it the bracket is taken at the top of the frame,
+// masked for the bracket only (meter_zero 11 on PAL and NTSC either way).
+//
+// Two kinds of frame start late in a meter build, and never in the release:
+// the first frames after meter_init (its four waits for line 0 take more
+// than three frames, so the loop's next wake is not on its usual line), and
+// the frame after the one that records frame `hold` (that call also runs the
+// median selection; with the frame's work it overran a frame in
+// run-and-gun, whose main.c exempts it from the lost-frame count). Code that
+// reads the raster line to decide (a deadline that skips work past line N)
+// takes a different path on those frames in AUTOPILOT only, and the graded
+// run stops matching the release: run-and-gun's objects deadline changed its
+// graded walk until it acted only on frames that began on time (main.c
+// objects_on_time: the frame counter is the one the loop woke for and the
+// line is the wake line's).
 //
 // frames  = frames recorded. Recording stops at `hold` (1 to 255): make hold
 //           the play frames of the autopilot script, so no idle frame counts.

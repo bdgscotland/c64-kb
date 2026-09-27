@@ -807,7 +807,7 @@ Any arguments must be passed through zero-page locations or globals the assembly
 
 **Prefer `unsigned` and 8-bit types.** Signed arithmetic (signed shifts, signed compares, signed multiply) generates more code than unsigned equivalents. The compiler narrows 16-bit operations to 8-bit when it can prove the range fits, but it cannot do so through global variables or pointer-accessed values without help. Add `__assume(x < 256)` where you know the range, and declare loop counters as `char` or `byte` rather than `int`.
 
-The next nine were found by compiling and running this knowledge base's own recipes with Oscar64 (build 2026-05-19, commit c1270bc) and VICE; see `scripts/check-listings.ts`.
+The next twelve were found by compiling and running this knowledge base's own recipes and starter templates with Oscar64 (build 2026-05-19, commit c1270bc) and VICE; see `scripts/check-listings.ts` (an earlier version of this sentence said nine; two entries had been added without it).
 
 **A call through a `const` function pointer initialised with a literal address crashes the compiler.** `static void (* const f)(void) = (void (*)(void))0x1003; f();` is a segmentation fault at every `-O` level, with no diagnostic. Casting the pointer without calling it is fine, so `rirq_call(&slot, 0, (void *)0x1003)` works; for a direct call use `__asm { jsr $1003 }`.
 
@@ -825,9 +825,13 @@ The next nine were found by compiling and running this knowledge base's own reci
 
 **Stores to a local `volatile` are deleted at `-O1` and `-O2`.** A `volatile char sink;` inside a function loses every store: a single `sink = 5;`, and a loop that only stores to it, compile to nothing, so a delay loop or a benchmark sink placed between a CIA timer start and stop leaves an empty timing window. C11 5.1.2.3 makes every access to a volatile object a side effect, so this is a miscompile. `-O0` keeps the stores; a global `volatile` is kept at `-O2`. Measured with Oscar64 1.32.271 (local build c1270bc) and Oscar64 HEAD 9a902f6 from the `-g` listings (tested here, #30). Use a global `volatile`, or write through a `volatile` pointer to a fixed address.
 
+**A volatile load can be moved past a later volatile store.** `char j = cia1.pra; cia1.pra = 0x7f; if (!(cia1.prb & 0x10)) j &= ~0x20; cia1.pra = 0xff;`, with `j` then used under another `if`, compiles to `LDA $DC00`, `STA $DC00` (`#$7F`), `STA $DC00` (`#$FF`), `LDA $DC01`. The row is read after the store that deselects column 7, so a key scan never sees SPACE. Every field of `cia1` is `volatile` (`include/c64/cia.h`), so C forbids the move. Built here from `error-sources/oscar64/volatile-store-load-reorder.c` (below) and read in the `.asm`: the local build (1.32.271 + c1270bc) reorders at `-O0`, `-O1`, `-O2`, `-O3` and `-Os`; released v1.32.273 and upstream 6cb1a6c reorder at `-O0` only. Found in the run-and-gun starter, where the port read was a small function inlined into the main loop at `-O2` and SPACE never threw a grenade. Reading `cia1.prb` into a local before the `if` fixes 1.32.273 and upstream but not the local build at `-O1` and above. Write a store-then-load sequence on a port in `__asm` and check the order in the `.asm` listing. There is no diagnostic.
+
 **Two byte tables read with one index can have the second load indexed by the first load's value.** In a loop that also calls a `__noinline` function, `cx[c] = (unsigned)sx[c] << 8; cy[c] = (unsigned)sy[c] << 8;` (with `sx`, `sy` `const char` tables and `cx`, `cy` `unsigned` arrays) compiles to `LDA sx,Y / STA cx+1,X / TAY / LDA sy,Y`: the value loaded from `sx` replaces the index before `sy` is read. Without the call in the loop the `TAY` is not emitted and the code is right. Measured with a 22-line test in VICE x64sc on Oscar64 1.32.271 (local build c1270bc): border red at `-O1`, `-O2`, `-O3` and `-Os`, green at `-O0`; found by the `car-contact` recipe's draft. Not tested on upstream HEAD (#30). Storing the values as 8.8 words, so no shift is needed, compiles correctly (the recipe's workaround). There is no diagnostic.
 
 **Several fixed-address arrays cleared in one loop can have one array's stores sent to another's page.** `for (unsigned i = 0; i < 1024; i++) { A[i] = 32; B[i] = 32; C[i] = 32; D[i] = 32; }` with `A`..`D` at `$C000`, `$C400`, `$E800` and `$C800` compiles to one pointer shared by three of the arrays. Its high byte is set to `B`'s page before the inner loop and overwritten inside it for `D` and `C`, so from the second byte on, `B`'s stores land at `$E8xx`. Measured with a 12-line test in VICE x64sc on Oscar64 1.32.271 (local build c1270bc): border green at `-O0`, red at `-O1`, `-O2`, `-O3` and `-Os`. The #39 platformer's review saw the same on upstream HEAD 9a902f6. Found by the platformer starter, whose blank row showed `@` and `$FF` garbage. Clear each array in its own loop or with its own `memset`. There is no diagnostic (#30).
+
+**A case's expiry compare is dropped when a sibling case adds a `signed char` to an `int` array element.** In a switch inside a loop, `case 2: x[i] += vx[i]; ...` (an `int` array element incremented by a `signed char`) makes a later case lose its compare: `case 6: { char a = age[i] + 2; age[i] = a; gone = a >= 20; p = 0xc9 + ((a >> 2) & 1); break; }` compiles the add and the pose arithmetic, but no compare with 20 and no branch to the free, so an object past its limit is never freed. The `default:` case's own `gone = age[i] >= 24` in the same switch compiles correctly. Measured on Oscar64 1.32.271 (local build, upstream 709bd70 + c1270bc) from `error-sources/oscar64/switch-case-compare-dropped.c` (below): the compare is absent from the `.asm` at `-O1`, `-O2` and `-O3` and present at `-O0`; in VICE x64sc the program's border is red at `-O2` (the object aged past 20 and stayed), green at `-O0`. Released v1.32.273 and upstream HEAD are not installed here, so this shape is not tested on them. Writing `x[i] += 2` in the sibling case, or deleting that line, brings the compare back; `x[i] += (signed char)v` with `char v` still loses it. Found in the run-and-gun starter (issue #133), where objects.c's K_BLAST case lost `gone = obj_age[i] >= 20` and enemy grenade blasts stayed on screen to age 96, still hurting the player. Branch in the case instead of carrying the result to the code after the switch — `if (a >= 20) { obj_free(i); continue; }` — and the compare is emitted at every level (the fix the starter uses). There is no diagnostic.
 
 **GCC attribute syntax is not accepted.** `__attribute__((unused))` is a parse error; use `(void)x;` for a deliberately unused read. Oscar64's own qualifiers are keywords (`__interrupt`, `__zeropage`, `__striped`, `__export`, ...).
 
@@ -849,6 +853,9 @@ and writes no PRG. Paths are printed absolute; they are shortened here.
 | (no error; exit 0) | `asm-addressing-mode.c`, second form | `sta #5`, `inc #5` and `jmp #$1000` are accepted. The `.asm` listing shows the opcode byte emitted as `ff` (`INV`), so the program executes an invalid opcode at run time. Only the indirect forms above are diagnosed | Read the `.asm` listing of any `__asm` block once; look for `INV` |
 | `crt.c(30, 5) : error 3025: Function declaration differs 'main'` | `void-main.c` | `void main(void)`: the startup code in `include/crt.c` calls `main` as `int main(void)`, so the error is reported in crt.c, not in your file | Declare `int main(void)` and return a value |
 | `error 3005: Struct member identifier not found 'border'` | `unknown-vic-field.c` | A field name `vic.h` does not have. The border colour register is `vic.color_border`, the background `vic.color_back` | Read the struct in `include/c64/vic.h`, or the [headers reference](oscar64-headers-reference.md) |
+| (no error; exit 0) | `volatile-store-load-reorder.c` | Built with the local build (1.32.271 + c1270bc), v1.32.273 and upstream 6cb1a6c, not build 2026-05-19. The `$DC01` load is emitted after the `cia1.pra = 0xff` store that follows it in the source (Pitfalls, "A volatile load can be moved past a later volatile store") | Put a store-then-load on a port in `__asm`; read the `.asm` for the order |
+| `error 3068: Invalid define expansion closing argument` at the macro's opening line, then one or more `error 3006` lines (`Term starts with invalid token '')''`, `')' expected`, `';' expected`) on the next | `macro-args-span-lines.c` | Local build (1.32.271 + c1270bc) only, not build 2026-05-19: a function-like macro call whose argument list continues on the next line, here `CHECK(a == 1 &&` / `b == 2);`. Any macro and any break point fails the same way (`ADD(1,` / `2)`, `ID(a` / `+ b)`), at `-O0` to `-O3`; exit 20, no PRG. v1.32.273 and upstream 6cb1a6c build it (exit 0, PRG written); the macro-argument rework between 709bd70 and v1.32.273 is the likely fix (not bisected) | Keep each macro call on one line: put a long test in a local first (`char t = a == 1 && b == 2; CHECK(t);`, which builds) |
+| (no error; exit 0) | `switch-case-compare-dropped.c` | Local build (1.32.271 + c1270bc); v1.32.273 and upstream are not installed here. At `-O1` to `-O3` a switch case's `gone = a[x] >= 20` compare is dropped when a sibling case adds a `signed char` to an `int` array element: the case's add and pose arithmetic are emitted, the compare is not, and the object is never freed (Pitfalls, "A case's expiry compare is dropped when a sibling case adds a `signed char` to an `int` array element") | Branch in the case (`if (a >= 20) { free_obj(i); continue; }`); read the `.asm` for the compare |
 
 One thing seen while building this section is a crash, not an error. With
 `while (border_calls) ;` as the idle loop in `main.c` (a global `char`,
@@ -925,6 +932,42 @@ int main(void)
 {
     vic.border = 5;
     return 0;
+}
+```
+
+`volatile-store-load-reorder.c`
+
+```text
+#include <c64/cia.h>
+char state, prev;
+__noinline void a(char j) { *(volatile char *)0xd020 = j; }
+int main(void)
+{
+    for (;;) {
+        char j = cia1.pra;
+        cia1.pra = 0x7f;
+        if (!(cia1.prb & 0x10))
+            j &= ~0x20;
+        cia1.pra = 0xff;
+        if (state)
+            a(j);
+        prev = j;
+    }
+    return 0;
+}
+```
+
+`macro-args-span-lines.c`
+
+```text
+#define CHECK(c) do { if (!(c)) fail = 1; } while (0)
+char fail;
+int main(void)
+{
+    char a = 1, b = 2;
+    CHECK(a == 1 &&
+          b == 2);
+    return fail;
 }
 ```
 

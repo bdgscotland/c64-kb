@@ -14,8 +14,9 @@
  * Which handler an interrupt runs depends on the vectors at that moment:
  * $FFFE (or $FFFA for an NMI) when RAM holds a handler there, and the
  * KERNAL's $0314 (or $0318) when the KERNAL is mapped and dispatches
- * through $FF48 (or $FE43). The trace does not know the banking, so both
- * are candidates, and the entry is the first candidate executed within
+ * through $FF48 (or $FE43). `mapped` is the banking $00/$01 give (true
+ * mapped, false banked out); null when the trace cannot tell, and then
+ * both are candidates. The entry is the first candidate executed within
  * DISPATCH_WINDOW cycles of the push.
  */
 import type { Hit } from "./monlog.ts";
@@ -51,15 +52,18 @@ export interface Candidate {
  * written by the program is read from ROM, so only the KERNAL's RAM vector
  * counts; one that holds the KERNAL's own entry point likewise.
  */
-export function candidates(value: (v: VectorName) => number | null): Candidate[] {
+export function candidates(
+  value: (v: VectorName) => number | null,
+  mapped: boolean | null = null,
+): Candidate[] {
   const out: Candidate[] = [];
   for (const [hw, soft] of [
     ["irq_fffe", "irq_0314"],
     ["nmi_fffa", "nmi_0318"],
   ] as const) {
-    const h = value(hw);
+    const h = mapped === true ? null : value(hw);
     if (h !== null && h !== KERNAL_TARGET[hw]) out.push({ handler: h, vector: hw });
-    const s = value(soft);
+    const s = mapped === false ? null : value(soft);
     if (s !== null) out.push({ handler: s, vector: soft });
   }
   return out;

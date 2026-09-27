@@ -32,3 +32,6 @@ scripts/__pycache__/
 
 # Local tool builds (a windowless VICE from `npm run vice:headless`)
 .tools/
+
+# Per-worktree cache of the graft indexer (session queries and index state)
+graft/

@@ -12,6 +12,7 @@ import { CLAIM_MODES, type Claim } from "../../../graph/claims.ts";
 import { parseRows } from "../shared.ts";
 import { inputPairs, pairKey, type CompatibilityFacts, type TechniqueFacts } from "./facts.ts";
 import { RASTER_IRQ_PITFALL, SPRITE_PITFALL } from "./state-rules.ts";
+import { followIncludes } from "../../../domain/budget.ts";
 
 const EdgeRow = z.object({ name: z.string(), target: z.string().nullable() });
 
@@ -41,6 +42,29 @@ async function fetchRequires(f: FalkorService, inputs: readonly string[]): Promi
     );
   }
   return requires;
+}
+
+const IncludesRow = z.object({
+  name: z.string(),
+  includes: z
+    .unknown()
+    .transform((v) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [])),
+});
+
+/**
+ * **Cost includes:** of each input, followed through every page's line as
+ * c64_plan_budget follows it (run-and-gun gap 4): a includes b, b includes
+ * c, so a holds c.
+ */
+async function fetchIncludes(f: FalkorService, inputs: readonly string[]): Promise<Map<string, string[]>> {
+  const rows = parseRows(
+    IncludesRow,
+    await f.roQuery(
+      `MATCH (t:Technique) WHERE t.cost_includes IS NOT NULL RETURN t.name AS name, t.cost_includes AS includes`,
+    ),
+  );
+  const direct = new Map(rows.map((r) => [r.name, r.includes]));
+  return new Map(inputs.map((n) => [n, followIncludes(n, (x) => direct.get(x) ?? [])]));
 }
 
 const FactsRow = z.object({
@@ -309,9 +333,10 @@ export async function fetchCompatibilityFacts(techniques: readonly string[]): Pr
       fetchRecipeDevices(f, techniques),
     ],
   );
-  const [serialPitfalls, recipeKernalOut] = await Promise.all([
+  const [serialPitfalls, recipeKernalOut, includes] = await Promise.all([
     fetchSerialPitfalls(f),
     fetchRecipeKernalOut(f, techniques),
+    fetchIncludes(f, techniques),
   ]);
   await fetchClaims(f, facts);
   const kernalClobbers = await fetchKernalClobbers(f, facts);
@@ -327,5 +352,6 @@ export async function fetchCompatibilityFacts(techniques: readonly string[]): Pr
     recipeDevices,
     serialPitfalls,
     recipeKernalOut,
+    includes,
   };
 }
