@@ -3898,6 +3898,9 @@ here).
 **Uses registers:** D41B, DC00
 **Demands:** (none)
 **Requires:** (none)
+**Cost:** cycles_per_frame=47
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-scene-bytecode-interpreter (one dispatch iteration, display blanked)
 
 One small interpreter runs every animated scene from a byte stream. Each
 opcode covers one action — set a sprite position, poke a register, wait
@@ -4076,6 +4079,17 @@ passes of the duel window.
   [C] in `data/re/pirates/SYNTHESIS.txt` were checked by the controller
   against bytes or traces.
 
+### Pitfalls
+
+- `fetch_byte` sets Y to zero for `(ZPC),Y`; a handler that fetches a second
+  operand loses its sprite offset unless it saves and restores it. Documented
+  by the technique and recipe listing (rung 1, built and measured in VICE).
+- Sprite shapes in VIC bank 0 or 2 at `$1000-$1FFF` resolve to character ROM.
+  See `pitfalls/banking.md#vic_bank_visibility_collision` (rung 1).
+- Pirates! times scenes by pass counts: 89 passes per frame in the measured
+  duel trace. Use a raster frame counter when speed must survive a CPU-speed
+  change. Source: `game-design/studies/pirates.md`, rung 1.
+
 ---
 
 ## basic_ml_service_blocks — BASIC program as game script, calling machine-code service blocks
@@ -4084,6 +4098,9 @@ passes of the duel window.
 **Uses registers:** (none)
 **Demands:** (none)
 **Requires:** (none)
+**Cost:** cycles_per_frame=3381
+**Cost basis:** measured-vice
+**Cost measured on:** kickassembler-basic-ml-service-blocks (one 50-cell draw call)
 
 A BASIC program is the game logic. Fixed-address machine-code blocks handle
 drawing, input and memory management. BASIC calls them with `POKE` (pass
@@ -4204,3 +4221,13 @@ the town program was not identified (open item).
   gitignored).
 - `data/re/pirates/menus/findings.txt` — window routine disassembly and
   the BASIC line that calls it (local, gitignored).
+
+### Pitfalls
+
+- Keep the BASIC string heap below fixed-address service blocks. Pirates!
+  caps `FRETOP` and `MEMSIZ` at `$8E00` before using blocks at `$9500+`;
+  `VARTAB` is the end of the tokenized BASIC program, not the heap limit.
+  Source: `game-design/studies/pirates.md`, rung 1 (VICE RAM dump).
+- VIC banks 0 and 2 shadow `$1000-$1FFF` with character ROM, so asset bytes
+  placed there are not visible as RAM to the VIC. See
+  `pitfalls/banking.md#vic_bank_visibility_collision` (rung 1).

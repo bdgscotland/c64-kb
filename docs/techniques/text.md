@@ -908,6 +908,11 @@ interrupts off and the display on, on PAL (NTSC in brackets):
 **Requires:** petscii_screen_code_conversion, joystick_edge_detect, text_input_line
 **Cost:** cycles_per_frame=833
 **Cost basis:** measured-vice
+**Cost measured on:** oscar64-text-window-menu (worst menu-step frame, CIA2 timer A; screen on)
+
+The 833-cycle figure is measured, not estimated: the recipe times each menu
+step with CIA2 timer A from raster line 250, disables interrupts during the
+count, and keeps the worst step. It measured 833 cycles on PAL and NTSC.
 
 ### Why
 

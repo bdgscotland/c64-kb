@@ -171,7 +171,7 @@ over 2048 bytes does the same job.
 **Severity:** high
 **Region:** both
 **Triggered by registers:** DD00, D018
-**Triggered by techniques:** vic_bank_select, char_rom_under_vic, screen_ram_relocation, screen_double_buffer_d018, bitmap_relocation, standard_bitmap, multicolor_bitmap, koala_format, fli_image, afli_image, ifli_image, mci_interlace_bitmap, charset_animation, big_font_2x2, dycp_scroller, sprite_cache_flip, sprite_animation_table, wireframe_pipeline, eight_way_scroll_double_buffer, hires_plot, bresenham_line, solid_vector_3d
+**Triggered by techniques:** vic_bank_select, char_rom_under_vic, screen_ram_relocation, screen_double_buffer_d018, bitmap_relocation, standard_bitmap, multicolor_bitmap, koala_format, fli_image, afli_image, ifli_image, mci_interlace_bitmap, charset_animation, big_font_2x2, dycp_scroller, sprite_cache_flip, sprite_animation_table, wireframe_pipeline, eight_way_scroll_double_buffer, hires_plot, bresenham_line, solid_vector_3d, scene_bytecode_interpreter, basic_ml_service_blocks
 
 ### Symptom
 
@@ -474,6 +474,87 @@ custom_nmi:
 - Technique `ram_under_kernal` — covers using $E000-$FFFF as RAM,
   the custom interrupt vector setup, and cycle budget implications of losing the
   KERNAL IRQ chain.
+
+---
+
+## basic_vartab_overwrites_service_blocks — BASIC program growth reaches fixed-address machine-code services
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** basic_ml_service_blocks
+
+### Symptom
+
+After a BASIC phase is loaded or edited, a `SYS` call into a fixed-address
+service block runs corrupted code. The BASIC program's VARTAB can grow into
+the service block's address range.
+
+### Mechanism
+
+Pirates! has a measured duel program ending at `$3B53` with VARTAB `$3DDD`,
+and a different town program ending at `$847B` with VARTAB `$85AD`; its
+service blocks begin at `$9500`. These measurements are from the VICE RAM
+dump documented in `game-design/studies/pirates.md` (rung 1). The BASIC
+string-heap cap (`FRETOP`/`MEMSIZ`) is a separate constraint.
+
+### Fix
+
+Check the loaded program's VARTAB against every fixed service address. Keep
+the program below the blocks or relocate the blocks when the program grows.
+
+### Worked example
+
+```text
+Pirates! town VARTAB: $85AD
+First service block:  $9500
+```
+
+### Cross-references
+
+- `techniques/logic.md#basic_ml_service_blocks`
+- `game-design/studies/pirates.md`
+
+---
+
+## trampoline_restore_operand_overwritten — A second caller overwrites the trampoline's saved bank value
+
+**Severity:** high
+**Region:** both
+**Triggered by techniques:** bank_swap_trampoline
+
+### Symptom
+
+After a banked call returns, `$01` contains another caller's value. The
+failure can appear only when callers use different incoming bank values or
+an interrupt uses the same trampoline.
+
+### Mechanism
+
+The trampoline saves `$01` in one immediate operand. A later entry overwrites
+that byte before the earlier caller restores it. The self-modifying listing
+and its recipe demonstrate this single operand (rung 3, instruction and
+listing analysis); the recipe measures the safe same-value case in VICE.
+Pirates!'s actual callers were not traced, so no claim is made that its use
+is safe or unsafe.
+
+### Fix
+
+Use a stack-saved value when callers can differ or an interrupt can enter.
+Otherwise enforce one incoming `$01` value and exclude interrupt entry for
+the whole banked interval.
+
+### Worked example
+
+```asm
+// Unsafe: a later caller overwrites restore+1 before this restore.
+lda $01
+sta restore + 1
+```
+
+### Cross-references
+
+- `techniques/memory-banking.md#bank_swap_trampoline`
+- `recipes/kickassembler/bank-swap-trampoline.md`
 
 ---
 

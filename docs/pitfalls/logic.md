@@ -224,3 +224,42 @@ circle r = 40 at (220, 56), seed at the centre
 - Technique `paint_program_brush_and_fill` (`docs/techniques/bitmap-modes.md`): the scanline fill and the undo copy
 - Recipe `docs/recipes/oscar64/paint-fill.md`: the two fills and the undo between them
 - Techniques `midpoint_circle` and `bresenham_line` (`docs/techniques/bitmap-modes.md`): the 8-connected outlines
+
+---
+
+## bytecode_fetch_clobbers_y — A second operand fetch resets the handler's Y offset
+
+**Severity:** medium
+**Region:** both
+**Triggered by techniques:** scene_bytecode_interpreter
+
+### Symptom
+
+A bytecode handler reads its later operand correctly but writes to the wrong
+sprite register because Y no longer contains the sprite's register offset.
+
+### Mechanism
+
+`fetch_byte` uses `LDA (ZPC),Y` and sets Y to zero. Calling it again replaces
+the handler's earlier Y value. This behavior is documented in
+`techniques/logic.md` and the recipe listing; it follows from the addressing
+sequence (rung 3, listing analysis).
+
+### Fix
+
+Save the sprite offset in zero page before the second fetch, then reload it
+with `LDY` immediately before the indexed sprite-register store.
+
+### Worked example
+
+```asm
+sty sprite_offset
+jsr fetch_byte
+ldy sprite_offset
+sta $d000,y
+```
+
+### Cross-references
+
+- `techniques/logic.md#scene_bytecode_interpreter`
+- `recipes/kickassembler/scene-bytecode-interpreter.md`
