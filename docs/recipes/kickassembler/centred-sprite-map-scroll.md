@@ -607,7 +607,9 @@ row2txt_end: .byte 0
     .if (i < 16) .return $fb        // left held: the facing turns 0 -> 12
     .if (i < 40) .return $ff        // centred: the heading is held
     .if (i < 56) .return $f7        // right held: the facing turns 12 -> 4
-    .return $ff
+    .if (i < 72) .return $ff        // centred: the ship sails right
+    .if (i < 88) .return $fe        // up held: the facing turns 4 -> 0
+    .return $ff                     // centred: the ship sails up
 }
 scripttbl: .fill 256, script(i)
 
@@ -678,7 +680,7 @@ java -jar "$KICKASS_JAR" centred-sprite-map-scroll.asm -o centred-sprite-map-scr
 `screenshots/centred-sprite-map-scroll-ntsc.png` (8,000,000 cycles), and
 `screenshots/centred-sprite-map-scroll-later.png` and
 `screenshots/centred-sprite-map-scroll-later-ntsc.png` (8,600,000), all
-four pinned in `recipes/runs.json`. Verified in VICE x64sc 3.10 (PAL
+pinned in `recipes/runs.json`. Verified in VICE x64sc 3.10 (PAL
 c64c: 8565/8580/8521, and ntsc: 6567R8), measured with PIL and decoded
 against the character ROM. Screenshot x = VIC x + 8; a screenshot row is
 raster line − 16 on PAL and − 28 on NTSC.
@@ -715,9 +717,10 @@ above from the pixels and prints pass or fail for each of these claims:
   ship's box did not move at all.
 
 All pass on both models. The numbers agree with the constants: the
-scripted stick holds left for steps 0-15, centred 16-39, right 40-55 and
-centred after, so the facing turns 0 to 12 in four steps and 12 back to
-4 in eight, and holds 4 at every pinned shot. The 600,000 cycles between
+scripted stick holds left for steps 0-15, centred 16-39, right 40-55,
+centred 56-71, up 72-87 and centred after, so the facing turns 0 to 12
+in four steps, 12 back to 4 in eight, and 4 to 0 in four. It holds 4 at
+the four shots of the first pair and 0 at the vertical pair. The 600,000 cycles between
 the shots are 30.5 PAL frames, six steps at five frames each, and 35.1
 NTSC frames, seven steps (arithmetic): exactly the six and seven pixels
 the landmarks moved. One pixel a step is the move table; the redraw is
@@ -757,6 +760,46 @@ every raster interrupt carried a keyboard scan. The handler now sends
 each source its own way, the raster source to the bare `$EA81` exit,
 and the figures above are from that build; the earlier one read
 `C=3AA5 T=421B L=F5` on PAL and `C=3A7C T=416E L=EA` on NTSC.
+
+Two more pinned runs cover the vertical axis and the deadline. `@up`
+(10,800,000) and `@uplater` (11,400,000) are the same build with the
+scripted stick holding up from step 72, so the camera moves up;
+`@frame1`, `@frame2` and `@frame3` (8,068,380, 8,085,475 and 8,102,570
+on NTSC) are three consecutive frames around one publication.
+
+| What | PAL up | PAL uplater | NTSC up | NTSC uplater |
+|---|---|---|---|---|
+| Row 1 | `X=94 Y=2F H=00 S=004E` | `X=94 Y=29 H=00 S=0054` | `X=94 Y=25 H=00 S=0058` | `X=94 Y=1E H=00 S=005F` |
+| Row 2 | `C=3AA6 T=441C L=F2 E=0116 N=00` | `C=3AA6 T=441C L=F2 E=0116 N=00` | `C=3A7C T=446C L=EA E=0007 N=58` | `C=3A7C T=446C L=EB E=0007 N=5F` |
+| The landmark cells | (67,88) (147,136) (227,184) (307,216) | (67,94) (147,142) (227,190) (307,222) | (67,86) (147,134) (227,182) | (67,93) (147,141) (227,189) |
+| The ship's white hull | x 181-202, rows 126-143 | same | x 181-202, rows 114-131 | same |
+
+The landmarks moved (0, +6) on PAL and (0, +7) on NTSC, the difference of
+the two camera positions in each pair: the window moves vertically here
+and horizontally in the pair above. On NTSC the fourth landmark is
+clipped by the window's bottom edge at these cameras and the script says
+so rather than counting it. The hull points up (facing 0) in all four.
+
+| Consecutive frames, NTSC | frame1 | frame2 | frame3 |
+|---|---|---|---|
+| Row 1 | `X=82 Y=36 H=04 S=0038` | `X=82 Y=36 H=04 S=0038` | `X=83 Y=36 H=04 S=0039` |
+| The landmark cells | (85,69) (165,117) (245,165) (325,197) | same | (84,69) (164,117) (244,165) (324,197) |
+
+frame1 and frame2 are the same window. The step that moved the camera to
+(131,54) published its hand-off a frame late, so the old window stayed
+one frame more and frame3 shows it one pixel to the left, one step on.
+No step is lost. Every frame is whole: each report's camera puts every
+landmark at its exact position, which is the check the script runs on
+every shot, and the pair check across consecutive frames reports the
+identical pair and the one-step pair as such.
+
+A capture note. `-exitscreenshot` can land mid-frame and the picture is
+then the top of one frame and the bottom of the next; the script catches
+it, because the two halves carry different cameras. One capture at
+11,000,000 on NTSC read the report at YSCROLL 5 and put the landmarks
+below the split one pixel higher, and the landmark check failed; the
+captures at 10,800,000 and 11,400,000 are whole. Every figure above
+comes from a capture that passes every check.
 
 Off by one: with the report written from matrix column 0, the first
 field decoded as a space on every shot. With CSEL 0 the display window
