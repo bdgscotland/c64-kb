@@ -7,7 +7,7 @@ kind: studied
 
 How Pirates! is put together, measured with the RE tools in VICE x64sc 3.10
 (`-default`: PAL C64C, VIC-II 8565, SID 8580, CIA 8521). The image is the
-maintainer's copy of the "nostalgia" crack on a D64; it is not in this
+maintainer's copy, a cracked release on a D64; it is not in this
 repository (`game-design/reference-game-sources.md`). The page holds
 addresses, raster lines, cycle counts and layouts, never the game's code,
 graphics, map or text bytes. The copy is cracked; its start-up options menu
