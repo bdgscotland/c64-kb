@@ -25,7 +25,7 @@
  * are formed in finish().
  */
 import { CpuPort } from "../claims/units.ts";
-import { storedValue, type Hit } from "./monlog.ts";
+import { filterHits, storedValue, type Hit } from "./monlog.ts";
 import type { IrqChain, Obs } from "./irq-chain.ts";
 
 interface Range {
@@ -461,13 +461,18 @@ export function firstProgramDispatch(
   entries: IrqChain["entries"],
   portHits: Iterable<Hit> = [],
 ): { clock: number | null; unknowns: string[] } {
-  const stores = [...portHits].filter((h) => h.kind === "store" && h.addr <= 0x0001);
+  // The $00/$01 stores stream past the entries (both are in clock order),
+  // so a long trace costs no array (issue #134).
+  const stores = filterHits(portHits, (h) => h.kind === "store" && h.addr <= 0x0001)[Symbol.iterator]();
   const port = new PortFollower();
   const unknowns: string[] = [];
   const named = new Set<number>();
-  let next = 0;
+  let next = stores.next();
   for (const e of entries) {
-    for (let h = stores[next]; h && h.clock <= e.clock; h = stores[++next]) port.apply(h);
+    while (!next.done && next.value.clock <= e.clock) {
+      port.apply(next.value);
+      next = stores.next();
+    }
     const rom = romAt(e.handler, port.bits);
     if (rom === false) return { clock: e.clock, unknowns };
     if (rom === null && !named.has(e.handler)) {
@@ -521,13 +526,13 @@ const ENTRY_RANGES = "$0200-$9FFF and $C000-$CFFF";
  * by the byte cap gives an unknown even when a hit was read before the
  * stop: nothing is reported from an incomplete trace.
  */
-export async function entryFromHits(
-  hits: Iterable<Hit> | AsyncIterable<Hit>,
+export function entryFromHits(
+  hits: Iterable<Hit>,
   window: { from: number; stage: number },
   truncated: boolean,
-): Promise<{ pc: number } | { unknown: string }> {
+): { pc: number } | { unknown: string } {
   if (truncated) return { unknown: "entry_pc unknown: the entry pass was stopped early" };
-  for await (const h of hits) if (h.kind === "exec" && h.clock > window.from) return { pc: h.pc };
+  for (const h of hits) if (h.kind === "exec" && h.clock > window.from) return { pc: h.pc };
   return {
     unknown: `entry_pc unknown: no PC in ${ENTRY_RANGES} ran within a frame after stage ${window.stage}'s last store (clock ${window.from}); an entry in $A000-$BFFF, $D000-$DFFF or $E000-$FFFF RAM is not traced`,
   };

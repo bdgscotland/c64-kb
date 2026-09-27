@@ -60,7 +60,7 @@ describe("entry clock", () => {
   it("starts at the first exec of the SYS target and drops the tool's own entry hits", () => {
     const r = fromEntry(trace, 0x080d, true);
     expect(r?.start).toBe(10);
-    expect(r?.hits.map((h) => h.clock)).toEqual([5, 20]);
+    expect([...(r?.hits ?? [])].map((h) => h.clock)).toEqual([5, 20]);
   });
   it("keeps entry hits when the caller traced that PC itself (a marker at the SYS address)", () => {
     expect(fromEntry(trace, 0x080d, false)?.hits).toHaveLength(4);
@@ -172,7 +172,7 @@ function assemble(source: string): string {
 const PAL_FRAME = REGION_TIMING.PAL.cycles_per_frame;
 
 describe("a run its log cap stopped", () => {
-  const t = { hits: [], start: 0, entry: 0x080e };
+  const t = { hits: [], start: 0, entry: 0x080e, dispose: () => undefined };
   it("names the cut in unknowns", () => {
     expect(truncationNotes({ ...t, truncated: true })).toEqual([
       "trace stopped early: the monitor log reached its size cap before the cycle limit, so later hits are missing",

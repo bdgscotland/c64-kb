@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import { decodeCpuPort, decodeSnapshot, decodeVicState } from "../src/re/vic-state.ts";
 import { SessionSchema, type Session } from "../src/re/session.ts";
-import { reSnapshot } from "../src/tools/re.ts";
+import { reSnapshot } from "../src/tools/re-snapshot.ts";
 import { resolveX64sc } from "../src/services/vice-bin.ts";
 import { findToolchains } from "../scripts/lib/toolchains.ts";
 

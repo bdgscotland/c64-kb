@@ -42,7 +42,7 @@
  * is two entries, or one once-entry and then nothing).
  */
 import { z } from "zod";
-import type { Hit } from "./monlog.ts";
+import { filterHits, type Hit } from "./monlog.ts";
 
 const HEX_ADDR = /^\$?[0-9a-f]{1,4}$/i;
 const HEX_BYTE = /^\$?[0-9a-f]{1,2}$/i;
@@ -206,8 +206,8 @@ export class MonitorScript {
   }
 
   /** The hits of checkpoints a tool asked for; a hit with no checkpoint number is kept. */
-  toolHits(hits: Hit[]): Hit[] {
-    return hits.filter((h) => this.isToolHit(h));
+  toolHits(hits: Iterable<Hit>): Iterable<Hit> {
+    return filterHits(hits, (h) => this.isToolHit(h));
   }
 }
 

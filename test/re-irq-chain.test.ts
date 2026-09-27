@@ -367,9 +367,9 @@ describe("monitor commands", () => {
   });
 });
 
-const fixture = async (name: string): Promise<Hit[]> => {
+const fixture = (name: string): Hit[] => {
   const out: Hit[] = [];
-  for await (const h of readHits(join(import.meta.dirname, "fixtures", "re", name))) out.push(h);
+  for (const h of readHits(join(import.meta.dirname, "fixtures", "re", name))) out.push(h);
   return out;
 };
 
@@ -379,13 +379,13 @@ describe("a handler that is JMP (pointer) (fixture jmp-indirect.monlog)", () => 
   // $0314 -> irq ($0843) = JMP ($033C); parts $0846, $085D, $0874 each re-arm
   // $D012 (120, 200, 50) and point $033C at the next.
   const ENTRY = 2970521; // the fixture's first exec of the SYS target $080E
-  it("finds the pointer and traces both its bytes in the next pass", async () => {
-    const hits = await fixture("jmp-indirect.monlog");
+  it("finds the pointer and traces both its bytes in the next pass", () => {
+    const hits = fixture("jmp-indirect.monlog");
     expect(indirectPointers(hits)).toEqual([0x033c]);
     expect(execCommands([0x0843], [0x033c])).toContain("trace store 033c 033d");
   });
-  it("reports each entry against the part the pointer named at that moment", async () => {
-    const r = analyseIrqChain(await fixture("jmp-indirect.monlog"), PAL_TIMING, ENTRY);
+  it("reports each entry against the part the pointer named at that moment", () => {
+    const r = analyseIrqChain(fixture("jmp-indirect.monlog"), PAL_TIMING, ENTRY);
     expect(r.handlers).toEqual([
       expect.objectContaining({
         handler: 0x0843,

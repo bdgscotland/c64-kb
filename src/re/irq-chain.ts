@@ -288,6 +288,9 @@ function onArm(s: State, h: Hit): void {
 
 function onInterrupt(s: State, h: Hit): void {
   s.out.interrupts++;
+  // The interrupt waits for an entry: registered here rather than by a scan
+  // before the walk, which saw the same pushes in the same order.
+  s.pending.push(h.clock);
   if (s.port && s.mapped() === null)
     s.out.unknowns.push(
       `$00/$01 not known at the interrupt at clock ${h.clock}; both the KERNAL and the RAM vectors are candidates`,
@@ -486,7 +489,7 @@ function observeClock(s: State, hs: Hit[]): void {
 }
 
 /** Runs of consecutive hits that share a clock. */
-function* byClock(all: Hit[]): Generator<[number, Hit[]]> {
+function* byClock(all: Iterable<Hit>): Generator<[number, Hit[]]> {
   let run: Hit[] = [];
   for (const h of all) {
     if (run.length && run[0]?.clock !== h.clock) {
@@ -512,20 +515,23 @@ function* byClock(all: Hit[]): Generator<[number, Hit[]]> {
 const UNTIMED: RegionTiming = { cycles_per_line: 1, lines_per_frame: 1, cycles_per_frame: 1 };
 
 function walk(hits: Iterable<Hit>, timing: RegionTiming, startClock: number): State {
-  const all = [...hits];
-  const ref = findFrameRef(all, startClock);
+  // Three scans of the same iterable, never one array: `hits` is usually a
+  // log file read hit by hit (hitsOf), and the full hit set of a long
+  // session is gigabytes of objects (issue #134). An interrupt's push is
+  // registered by onInterrupt as its clock is observed, which is the same
+  // list the old pre-scan built.
+  const ref = findFrameRef(hits, startClock);
   const s = new State(
     timing,
     startClock,
     ref ?? { clock: startClock, line: 0, cycle: 0 },
-    indirectPointers(all),
+    indirectPointers(hits),
   );
   if (!ref)
     s.out.unknowns.push(
       `no hit at or after clock ${startClock} logged a raster line and cycle; frames numbered from the start clock`,
     );
-  s.pending = all.filter((h) => h.clock >= startClock && isInterruptPush(h)).map((h) => h.clock);
-  for (const [clock, hs] of byClock(all)) {
+  for (const [clock, hs] of byClock(hits)) {
     if (clock >= startClock) observeClock(s, hs);
     else {
       trackPointers(s, hs);

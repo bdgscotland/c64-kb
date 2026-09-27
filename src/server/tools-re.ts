@@ -3,17 +3,9 @@ import { z } from "zod";
 import { waitLabel, type FrameBudget, type Profile, type Stat } from "../re/frame-profile.ts";
 import type { IrqChain } from "../re/irq-chain.ts";
 import { DISPATCH_WINDOW } from "../re/interrupts.ts";
-import {
-  FrameProfileInput,
-  IrqChainInput,
-  reFrameProfile,
-  reIrqChain,
-  reSnapshot,
-  SnapshotInput,
-  type ReResult,
-  type SnapshotResult,
-} from "../tools/re.ts";
+import { FrameProfileInput, IrqChainInput, reFrameProfile, reIrqChain, type ReResult } from "../tools/re.ts";
 import { reFrameMode } from "../tools/re-frame.ts";
+import { reSnapshot, SnapshotInput, type SnapshotResult } from "../tools/re-snapshot.ts";
 import { LoadMapInput, reLoadMap, type LoadMapResult } from "../tools/re-load-map.ts";
 import { CoverageInput, reCoverage, type Coverage } from "../tools/re-coverage.ts";
 import {

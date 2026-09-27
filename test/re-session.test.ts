@@ -187,7 +187,9 @@ describe("MonitorScript: one numbering for every session-driven run", () => {
     m.checkpoint("trace exec 4134 4134");
     m.checkpoint("trace store 0314 0314");
     const h = (checkpoint: number, addr: number) => ({ ...hit("exec", addr, 1), checkpoint });
-    expect(m.toolHits([h(1, 0x0fb5), h(2, 0x4134), h(3, 0x0314)]).map((x) => x.checkpoint)).toEqual([2, 3]);
+    expect([...m.toolHits([h(1, 0x0fb5), h(2, 0x4134), h(3, 0x0314)])].map((x) => x.checkpoint)).toEqual([
+      2, 3,
+    ]);
   });
   it("isToolHit answers the same question per hit, so a streaming caller need not build the array toolHits does", () => {
     const m = sessionScript(session());
@@ -424,12 +426,9 @@ describe.skipIf(!canRun)("a once entry is one fresh press of an edge-triggered m
       const run = await runBatch(batchOf(staged, s, m, { screenshot: screenshotPath("press-count", shots) }));
       try {
         const all: Hit[] = [];
-        for await (const h of readHits(run.log)) all.push(h);
+        for (const h of readHits(run.log)) all.push(h);
         return {
-          presses: m
-            .toolHits(all)
-            .filter((h) => h.checkpoint === stores)
-            .map((h) => storedValue(h)),
+          presses: [...m.toolHits(all)].filter((h) => h.checkpoint === stores).map((h) => storedValue(h)),
           injectionHits: s.inject.map((_, k) => all.filter((h) => h.checkpoint === k + 1).length),
         };
       } finally {

@@ -19,7 +19,7 @@
  * carry it). The `(dummy)` suffix marks the 6502's dummy reads during IRQ
  * stack pushes. Both suffixes are ignored.
  */
-import { readFileSync } from "node:fs";
+import { readLines } from "./monlog.ts";
 
 interface CoverageRange {
   start: number;
@@ -57,15 +57,15 @@ const HEADER_RE = /^addr:\s+IO\s+ROM\s+RAM/;
 const ROW_RE = /^([0-9a-f]{4}):\s+([-xrw]{3})\s+([-xrw]{3})\s+([-xrw]{3})/i;
 
 /**
- * Parses the memmapshow section from a VICE monitor log. Returns one row
- * per address touched; addresses with no access flags don't appear in the
- * section and are not returned. The section begins with the header line
- * `addr: IO  ROM RAM` and ends at the first non-matching line or EOF.
+ * Parses the memmapshow section from the lines of a VICE monitor log. One
+ * row per address touched; addresses with no access flags don't appear in
+ * the section and are not returned. The section begins with the header
+ * line `addr: IO  ROM RAM` and ends at the first non-matching line or EOF.
  */
-export function parseMemmapLog(text: string): MemmapRow[] {
+function rowsOf(lines: Iterable<string>): MemmapRow[] {
   const rows: MemmapRow[] = [];
   let inSection = false;
-  for (const line of text.split("\n")) {
+  for (const line of lines) {
     if (HEADER_RE.test(line)) {
       inSection = true;
       continue;
@@ -83,9 +83,14 @@ export function parseMemmapLog(text: string): MemmapRow[] {
   return rows;
 }
 
-/** Read the memmapshow section from a VICE monitor log file. */
+/** Parses the memmapshow section from a VICE monitor log's text. */
+export function parseMemmapLog(text: string): MemmapRow[] {
+  return rowsOf(text.split("\n"));
+}
+
+/** Read the memmapshow section from a VICE monitor log file, one line at a time. */
 export function parseMemmapFile(logPath: string): MemmapRow[] {
-  return parseMemmapLog(readFileSync(logPath, "utf8"));
+  return rowsOf(readLines(logPath));
 }
 
 // ---------------------------------------------------------------------------

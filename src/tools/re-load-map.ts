@@ -27,14 +27,13 @@ import {
   type TraceEnd,
   type Writer,
 } from "../re/load-map.ts";
-import { readHits, type Hit } from "../re/monlog.ts";
+import { filterHits, hitsOf, type Hit } from "../re/monlog.ts";
 import { readPrg } from "../re/prg.ts";
 import { sessionScript } from "../re/session.ts";
 import { runBatch, type Model } from "../services/vice-batch.ts";
 import { resolveX64sc } from "../services/vice-bin.ts";
 import {
   allowedPrg,
-  collect,
   conflict,
   LoadMapInput,
   refusal,
@@ -162,40 +161,56 @@ function sessionLoadMapSource(staged: Staged, l: SessionRef, opts: RunOpts): Loa
 const truncatedNote = (what: string, cycles: number) =>
   `${what}: the monitor log passed ${MAX_LOG_BYTES} bytes and VICE was stopped before clock ${cycles}; later hits are missing`;
 
-/** A small pass collected into an array; truncation named in unknowns. */
-async function collectPass(
+/** One pass's log, read lazily and disposed after the last scan (issue #134). */
+interface OpenPass {
+  hits: Iterable<Hit>;
+  dispose: () => void;
+}
+
+/** A pass opened for streaming; truncation named in unknowns. */
+async function openPass(
   src: LoadMapSource,
   commands: string,
   cycles: number,
   unknowns: string[],
-): Promise<Hit[]> {
+): Promise<OpenPass> {
   const p = await src.run(commands, cycles);
-  try {
-    if (p.truncated) unknowns.push(truncatedNote("irq-chain pass", cycles));
-    return (await collect(p.log)).filter((h) => p.keep(h));
-  } finally {
-    p.dispose();
-  }
+  if (p.truncated) unknowns.push(truncatedNote("irq-chain pass", cycles));
+  return {
+    hits: filterHits(hitsOf(p.log), (h) => p.keep(h)),
+    dispose: () => {
+      p.dispose();
+    },
+  };
 }
 
 /**
  * irq-chain.ts's own passes (storeCommands, liveHandlers, execCommands,
  * analyseIrqChain), run from power-on so entries and transients cover the
  * whole boot. The last pass's hits carry the $00/$01 stores that decide
- * ROM or RAM for each handler at its entry.
+ * ROM or RAM for each handler at its entry, so that log outlives this
+ * function and the caller disposes it.
  */
 async function chainFromPowerOn(
   src: LoadMapSource,
   unknowns: string[],
-): Promise<{ chain: IrqChain; hits: Hit[] }> {
-  const a = await collectPass(src, storeCommands(), src.fullCycles, unknowns);
-  const handlers = liveHandlers(a, 0);
-  let b = await collectPass(src, execCommands(handlers), src.fullCycles, unknowns);
+): Promise<{ chain: IrqChain; hits: Iterable<Hit>; dispose: () => void }> {
+  const a = await openPass(src, storeCommands(), src.fullCycles, unknowns);
+  let handlers: number[];
+  try {
+    handlers = liveHandlers(a.hits, 0);
+  } finally {
+    a.dispose();
+  }
+  let b = await openPass(src, execCommands(handlers), src.fullCycles, unknowns);
   // A handler that is JMP (pointer) (Commando's $4134): a third pass adds
   // the pointer's bytes, the same as c64_re_irq_chain.
-  const pointers = indirectPointers(b);
-  if (pointers.length) b = await collectPass(src, execCommands(handlers, pointers), src.fullCycles, unknowns);
-  return { chain: analyseIrqChain(b, src.timing, 0), hits: b };
+  const pointers = indirectPointers(b.hits);
+  if (pointers.length) {
+    b.dispose();
+    b = await openPass(src, execCommands(handlers, pointers), src.fullCycles, unknowns);
+  }
+  return { chain: analyseIrqChain(b.hits, src.timing, 0), hits: b.hits, dispose: b.dispose };
 }
 
 /** The store-0000-ffff trace, streamed and grouped into writers without holding the log; how it ended, for entry_pc. */
@@ -208,7 +223,7 @@ async function writersOf(
   try {
     if (big.truncated) unknowns.push(truncatedNote("store trace", capCycles));
     const agg = new WriterAggregator(MAX_WRITER_HITS);
-    for await (const h of readHits(big.log)) {
+    for (const h of hitsOf(big.log)) {
       if (!big.keep(h) || h.kind !== "store") continue;
       if (!agg.add(h)) break;
     }
@@ -241,10 +256,8 @@ async function entryPcOf(
   const cycles = Math.min(src.fullCycles, window.from + src.timing.cycles_per_frame);
   const p = await src.run(ENTRY_COMMANDS, cycles);
   try {
-    const hits = (async function* () {
-      for await (const h of readHits(p.log)) if (p.keep(h)) yield h;
-    })();
-    const r = await entryFromHits(hits, window, p.truncated);
+    const hits = filterHits(hitsOf(p.log), (h) => p.keep(h));
+    const r = entryFromHits(hits, window, p.truncated);
     if ("pc" in r) return r.pc;
     unknowns.push(r.unknown);
     return null;
@@ -253,12 +266,24 @@ async function entryPcOf(
   }
 }
 
+/** The irq-chain passes from power-on, and the first program dispatch read from their hits before the log goes. */
+async function chainAndDispatch(
+  src: LoadMapSource,
+  unknowns: string[],
+): Promise<{ chain: IrqChain; dispatch: { clock: number | null; unknowns: string[] } }> {
+  const { chain, hits, dispose } = await chainFromPowerOn(src, unknowns);
+  try {
+    return { chain, dispatch: firstProgramDispatch(chain.entries, hits) };
+  } finally {
+    dispose();
+  }
+}
+
 async function runLoadMap(src: LoadMapSource): Promise<ReResult<LoadMapResult>> {
   const prg = readPrg(src.bytes);
   const unknowns: string[] = [];
-  const { chain, hits } = await chainFromPowerOn(src, unknowns);
+  const { chain, dispatch } = await chainAndDispatch(src, unknowns);
   unknowns.push(...chain.unknowns);
-  const dispatch = firstProgramDispatch(chain.entries, hits);
   unknowns.push(...dispatch.unknowns);
   if (dispatch.clock === null)
     unknowns.push(

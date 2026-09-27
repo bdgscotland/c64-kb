@@ -22,17 +22,9 @@ import { REGION_TIMING, videoRegion } from "../domain/timing.ts";
 import { classifyCoverage, extendByInstrLen, parseMemmapFile, type Coverage } from "../re/coverage.ts";
 import { readPrg } from "../re/prg.ts";
 import { parseHex, sessionScript, MonitorScript, type Session } from "../re/session.ts";
-import { runBatch } from "../services/vice-batch.ts";
+import { runBatch, truncatedNote } from "../services/vice-batch.ts";
 import { resolveX64sc } from "../services/vice-bin.ts";
-import {
-  allowedPrg,
-  collect,
-  conflict,
-  refusal,
-  type ReResult,
-  type RunInfo,
-  type SourceArgs,
-} from "./re.ts";
+import { allowedPrg, conflict, refusal, type ReResult, type RunInfo, type SourceArgs } from "./re.ts";
 import {
   batchOf,
   notInPlay,
@@ -44,7 +36,7 @@ import {
   type RunOpts,
   type Staged,
 } from "./re-session.ts";
-import type { Hit } from "../re/monlog.ts";
+import { countHits, findHit, hitsOf, type Hit } from "../re/monlog.ts";
 
 export type { Coverage } from "../re/coverage.ts";
 
@@ -99,7 +91,7 @@ interface TriggerProbeNums {
 }
 
 function analyzeTrigger(
-  hits: Hit[],
+  hits: Iterable<Hit>,
   { playClock, frameCycles, ff48CpNum, d019CpNum }: TriggerProbeNums,
 ): { ff48: { pre: number; rate: number }; d019: { pre: number; rate: number } } {
   const end = playClock + frameCycles;
@@ -169,7 +161,7 @@ export function addCoverageCheckpoints(
 }
 
 interface BuildCoverageOpts {
-  hits: Hit[];
+  hits: Iterable<Hit>;
   work: string;
   logPath: string;
   showCpNum: number;
@@ -188,8 +180,7 @@ function buildCoverage({
   pass1Unknowns,
 }: BuildCoverageOpts): Coverage {
   const rows = parseMemmapFile(logPath);
-  const showHit = hits.find((h) => h.checkpoint === showCpNum);
-  const show_clock = showHit?.clock ?? 0;
+  const show_clock = findHit(hits, (h) => h.checkpoint === showCpNum)?.clock ?? 0;
   const span_cycles = show_clock > 0 ? show_clock - playClock : 0;
   const span_frames = span_cycles / frameCycles;
 
@@ -233,17 +224,24 @@ async function sessionProbe(
   const d019CpNum = m1.checkpoint("trace store d019 d019");
   const inPlayCpNum = m1.checkpoint(`trace exec ${inPlayHex(s)} ${inPlayHex(s)}`);
   const shot = screenshotPath(`coverage-p1-${name}`, opts.shotDir);
-  const p1 = await sessionPass(staged, s, m1, { screenshot: shot });
-  const playClock = p1.play_clock ?? s.limitcycles;
-  const trigger = analyzeTrigger(p1.hits, {
-    playClock,
-    frameCycles: timing.cycles_per_frame,
-    ff48CpNum,
-    d019CpNum,
+  const p1 = await sessionPass(staged, s, m1, {
+    screenshot: shot,
+    ...(opts.maxLogBytes !== undefined ? { maxLogBytes: opts.maxLogBytes } : {}),
   });
-  // Execs of in_play.pc before in_play.after_clock: the zap skips them, so it fires at play_clock.
-  const prePlayHits = p1.hits.filter((h) => h.checkpoint === inPlayCpNum && h.clock < playClock).length;
-  return { play_clock: p1.play_clock, shot, trigger, injUnknowns: p1.unknowns, prePlayHits };
+  try {
+    const playClock = p1.play_clock ?? s.limitcycles;
+    const trigger = analyzeTrigger(p1.hits, {
+      playClock,
+      frameCycles: timing.cycles_per_frame,
+      ff48CpNum,
+      d019CpNum,
+    });
+    // Execs of in_play.pc before in_play.after_clock: the zap skips them, so it fires at play_clock.
+    const prePlayHits = countHits(p1.hits, (h) => h.checkpoint === inPlayCpNum && h.clock < playClock);
+    return { play_clock: p1.play_clock, shot, trigger, injUnknowns: p1.unknowns, prePlayHits };
+  } finally {
+    p1.dispose();
+  }
 }
 
 const inPlayHex = (s: Session): string => parseHex(s.in_play.pc).toString(16).padStart(4, "0");
@@ -278,9 +276,15 @@ async function sessionCoverageRun({
   const showCpNum = addCoverageCheckpoints(m2, zap, trig, frames);
   const covCycles = Math.min(playClock + frames * timing.cycles_per_frame * 2, s.limitcycles);
   const shot2 = screenshotPath(`coverage-p2-${name}`, opts.shotDir);
-  const run2 = await runBatch(batchOf(staged, s, m2, { screenshot: shot2, cyclesOverride: covCycles }));
+  const run2 = await runBatch(
+    batchOf(staged, s, m2, {
+      screenshot: shot2,
+      cyclesOverride: covCycles,
+      ...(opts.maxLogBytes !== undefined ? { maxLogBytes: opts.maxLogBytes } : {}),
+    }),
+  );
   try {
-    const all2 = await collect(run2.log);
+    const all2 = hitsOf(run2.log);
     const coverage = buildCoverage({
       hits: m2.toolHits(all2),
       work: run2.work,
@@ -288,9 +292,10 @@ async function sessionCoverageRun({
       showCpNum,
       playClock,
       frameCycles: timing.cycles_per_frame,
-      pass1Unknowns: [],
+      pass1Unknowns: run2.truncated ? [truncatedNote("the coverage pass")] : [],
     });
-    const entry_hit = all2.find(
+    const entry_hit = findHit(
+      all2,
       (h) => h.kind === "exec" && h.addr === parseHex(s.in_play.pc) && h.clock >= s.in_play.after_clock,
     );
     const ri: RunInfo = {
@@ -355,30 +360,46 @@ function sessionCoverage(args: SourceArgs & { frames: number }, opts: RunOpts): 
 // PRG coverage (two passes)
 // ---------------------------------------------------------------------------
 
+/** What pass 1 runs: the model and run length of the PRG under test. */
+interface ProbeOpts {
+  model: "pal" | "ntsc";
+  cycles: number;
+  maxLogBytes?: number | undefined;
+}
+
 async function prgProbe(
   prg: string,
   entry: number,
-  model: "pal" | "ntsc",
-  cycles: number,
-): Promise<{ entry_clock: number | null; trigger: ReturnType<typeof analyzeTrigger> }> {
+  opts: ProbeOpts,
+): Promise<{
+  entry_clock: number | null;
+  trigger: ReturnType<typeof analyzeTrigger>;
+  unknowns: string[];
+}> {
+  const { model, cycles, maxLogBytes } = opts;
   const timing = REGION_TIMING[videoRegion(model)];
   const m1 = new MonitorScript();
   const entryAddr = entry.toString(16).padStart(4, "0");
   const entryCpNum = m1.checkpoint(`trace exec ${entryAddr} ${entryAddr}`);
   const ff48CpNum = m1.checkpoint("trace exec ff48 ff48");
   const d019CpNum = m1.checkpoint("trace store d019 d019");
-  const run = await runBatch({ prg, monCommands: m1.text(), cycles, model });
+  const run = await runBatch({
+    prg,
+    monCommands: m1.text(),
+    cycles,
+    model,
+    ...(maxLogBytes !== undefined ? { maxLogBytes } : {}),
+  });
   try {
-    const hits = await collect(run.log);
-    const entryHit = hits.find((h) => h.checkpoint === entryCpNum && h.kind === "exec");
-    const entry_clock = entryHit?.clock ?? null;
+    const hits = hitsOf(run.log);
+    const entry_clock = findHit(hits, (h) => h.checkpoint === entryCpNum && h.kind === "exec")?.clock ?? null;
     const trigger = analyzeTrigger(hits, {
       playClock: entry_clock ?? cycles,
       frameCycles: timing.cycles_per_frame,
       ff48CpNum,
       d019CpNum,
     });
-    return { entry_clock, trigger };
+    return { entry_clock, trigger, unknowns: run.truncated ? [truncatedNote("the probe pass")] : [] };
   } finally {
     run.dispose();
   }
@@ -392,6 +413,8 @@ interface PrgRunOpts {
   frames: number;
   model: "pal" | "ntsc";
   cycles: number;
+  pass1Unknowns: string[];
+  maxLogBytes?: number | undefined;
 }
 
 async function prgCoverageRun({
@@ -402,6 +425,8 @@ async function prgCoverageRun({
   frames,
   model,
   cycles,
+  pass1Unknowns,
+  maxLogBytes,
 }: PrgRunOpts): Promise<ReResult<Coverage>> {
   const timing = REGION_TIMING[videoRegion(model)];
   const m2 = new MonitorScript();
@@ -413,9 +438,15 @@ async function prgCoverageRun({
     frames,
   );
   const covCycles = Math.min(entry_clock + frames * timing.cycles_per_frame * 2, cycles);
-  const run2 = await runBatch({ prg, monCommands: m2.text(), cycles: covCycles, model });
+  const run2 = await runBatch({
+    prg,
+    monCommands: m2.text(),
+    cycles: covCycles,
+    model,
+    ...(maxLogBytes !== undefined ? { maxLogBytes } : {}),
+  });
   try {
-    const all2 = await collect(run2.log);
+    const all2 = hitsOf(run2.log);
     const coverage = buildCoverage({
       hits: m2.toolHits(all2),
       work: run2.work,
@@ -423,7 +454,7 @@ async function prgCoverageRun({
       showCpNum,
       playClock: entry_clock,
       frameCycles: timing.cycles_per_frame,
-      pass1Unknowns: [],
+      pass1Unknowns: [...pass1Unknowns, ...(run2.truncated ? [truncatedNote("the coverage pass")] : [])],
     });
     const ri: RunInfo = {
       prg,
@@ -441,7 +472,7 @@ async function prgCoverageRun({
 
 async function prgCoverage(
   prg: string,
-  args: { model: "pal" | "ntsc"; cycles: number; frames: number },
+  args: { model: "pal" | "ntsc"; cycles: number; frames: number; maxLogBytes?: number | undefined },
 ): Promise<ReResult<Coverage>> {
   const bytes = readFileSync(prg);
   const entry = readPrg(bytes).sys;
@@ -451,7 +482,11 @@ async function prgCoverage(
       error: "the PRG has no BASIC SYS line; coverage requires a known entry PC",
       reason: "no-entry",
     };
-  const { entry_clock, trigger } = await prgProbe(prg, entry, args.model, args.cycles);
+  const { entry_clock, trigger, unknowns } = await prgProbe(prg, entry, {
+    model: args.model,
+    cycles: args.cycles,
+    maxLogBytes: args.maxLogBytes,
+  });
   if (entry_clock === null)
     return {
       ok: false,
@@ -473,6 +508,8 @@ async function prgCoverage(
     frames: args.frames,
     model: args.model,
     cycles: args.cycles,
+    pass1Unknowns: unknowns,
+    maxLogBytes: args.maxLogBytes,
   });
 }
 
@@ -509,5 +546,6 @@ export function reCoverage(
     model: args.model ?? "pal",
     cycles: args.cycles ?? 8_000_000,
     frames,
+    maxLogBytes: opts.maxLogBytes,
   }).catch((e: unknown) => refusal(e) as ReResult<Coverage>);
 }

@@ -33,12 +33,12 @@ describe("monitor log parser", () => {
     expect(h && storedValue(h)).toBe(0x12);
     expect(h && storedValue({ ...h, mnemonic: "INC" })).toBeNull();
   });
-  it("streams every hit from a log file and skips other lines", async () => {
+  it("streams every hit from a log file and skips other lines", () => {
     const dir = mkdtempSync(join(tmpdir(), "monlog-"));
     const log = join(dir, "t.log");
     writeFileSync(log, ["noise", ...STORE, "more noise", ...EXEC, ""].join("\n"));
     const hits = [];
-    for await (const h of readHits(log)) hits.push(h.addr);
+    for (const h of readHits(log)) hits.push(h.addr);
     expect(hits).toEqual([0xfb, 0x80e]);
   });
   it("reads a PRG's load address and SYS target", () => {

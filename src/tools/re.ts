@@ -11,16 +11,7 @@
  * analysis starts at the in-play clock, never on the title, and the model
  * and run length come from the session file.
  */
-import { createHash } from "node:crypto";
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  realpathSync,
-  rmSync,
-} from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -35,16 +26,14 @@ import {
   storeCommands,
   type IrqChain,
 } from "../re/irq-chain.ts";
-import { readHits, type Hit } from "../re/monlog.ts";
+import { filterHits, findHit, hitsOf, type Hit } from "../re/monlog.ts";
 import { readPrg } from "../re/prg.ts";
-import { runBatch, ViceBatchError, type Model } from "../services/vice-batch.ts";
+import { runBatch, truncatedNote, ViceBatchError, type Model } from "../services/vice-batch.ts";
 import { resolveX64sc } from "../services/vice-bin.ts";
 import { MonitorScript, parseHex, sessionScript, type Session } from "../re/session.ts";
-import { decodeSnapshot, type Snapshot } from "../re/vic-state.ts";
 import {
   notInPlay,
   screenshotPath,
-  SessionInput,
   sessionOf,
   sessionPass,
   SESSIONS_DIR,
@@ -176,10 +165,27 @@ export function parseMarker(s: string): Marker | null {
   return pc ? { pc: parseInt(pc[1] ?? "", 16) } : null;
 }
 
-export async function collect(log: string): Promise<Hit[]> {
-  const out: Hit[] = [];
-  for await (const h of readHits(log)) out.push(h);
-  return out;
+/**
+ * The entry clock: the first exec of the SYS target, or 0 for a PRG with
+ * none. Null when a SYS target exists and never ran: the caller refuses,
+ * never counting from power-on instead. Every hit is returned, those
+ * before the entry included; the entry checkpoint's own hits are dropped
+ * only when the tool added it (`own`), not when a caller's marker asked for
+ * it. The hits come back lazy (issue #134): the log is scanned again, never
+ * held.
+ */
+export function fromEntry(
+  hits: Iterable<Hit>,
+  entry: number | null,
+  own: boolean,
+): { start: number; hits: Iterable<Hit> } | null {
+  if (entry === null) return { start: 0, hits };
+  const first = findHit(hits, (h) => h.kind === "exec" && h.addr === entry);
+  if (!first) return null;
+  return {
+    start: first.clock,
+    hits: own ? filterHits(hits, (h) => !(h.kind === "exec" && h.addr === entry)) : hits,
+  };
 }
 
 class NoEntry extends Error {}
@@ -202,27 +208,6 @@ function entryCommand(prg: string, commands: string): { cmd: string; entry: numb
   // A marker already on the SYS address traces it; a second checkpoint would log each hit twice.
   const own = !commands.split("\n").includes(line);
   return { cmd: own ? line + "\n" : "", entry, own };
-}
-
-/**
- * The entry clock: the first exec of the SYS target, or 0 for a PRG with
- * none. Null when a SYS target exists and never ran: the caller refuses,
- * never counting from power-on instead. Every hit is returned, those
- * before the entry included; the entry checkpoint's own hits are dropped
- * only when the tool added it (`own`), not when a caller's marker asked for it.
- */
-export function fromEntry(
-  hits: Hit[],
-  entry: number | null,
-  own: boolean,
-): { start: number; hits: Hit[] } | null {
-  if (entry === null) return { start: 0, hits };
-  const first = hits.find((h) => h.kind === "exec" && h.addr === entry);
-  if (!first) return null;
-  return {
-    start: first.clock,
-    hits: own ? hits.filter((h) => !(h.kind === "exec" && h.addr === entry)) : hits,
-  };
 }
 
 const hexUp = (n: number) => "$" + n.toString(16).toUpperCase().padStart(4, "0");
@@ -252,14 +237,21 @@ async function traced(
     ...(args.disk_path ? { disk: args.disk_path } : {}),
     ...(maxLogBytes !== undefined ? { maxLogBytes } : {}),
   });
-  try {
-    const r = fromEntry(await collect(run.log), entry, own);
-    if (!r)
-      throw new NoEntry(`entry ${hexUp(entry ?? 0)} not reached in ${args.cycles} cycles; raise cycles`);
-    return { ...r, entry, truncated: run.truncated };
-  } finally {
+  // The hits stay lazy over the run's log (issue #134): the caller scans
+  // them and disposes the run after its last scan.
+  const r = fromEntry(hitsOf(run.log), entry, own);
+  if (!r) {
     run.dispose();
+    throw new NoEntry(`entry ${hexUp(entry ?? 0)} not reached in ${args.cycles} cycles; raise cycles`);
   }
+  return {
+    ...r,
+    entry,
+    truncated: run.truncated,
+    dispose: () => {
+      run.dispose();
+    },
+  };
 }
 
 const NO_SYS = "entry not known: the PRG has no BASIC SYS line, so clocks and frames count from power-on";
@@ -287,20 +279,19 @@ export function refusal(e: unknown): Refusal {
 }
 
 export interface Traced {
-  hits: Hit[];
+  /** Lazily read from the run's monitor log: scans re-read the file, never hold the hits (issue #134). */
+  hits: Iterable<Hit>;
   start: number;
   entry: number | null;
   /** maxLogBytes stopped the run before its cycle limit: hits after the cut are missing. */
   truncated: boolean;
+  /** Removes the run's work directory; call it after the last scan of `hits`. */
+  dispose(): void;
 }
 
 /** The unknowns line for a run its log cap stopped early; none when it ran to its cycle limit. */
 export function truncationNotes(t: Traced, what = "trace"): string[] {
-  return t.truncated
-    ? [
-        `${what} stopped early: the monitor log reached its size cap before the cycle limit, so later hits are missing`,
-      ]
-    : [];
+  return t.truncated ? [truncatedNote(what)] : [];
 }
 
 /** Where a tool's passes run: a PRG from its entry, or a session from its in-play clock. */
@@ -322,33 +313,49 @@ export interface SourceArgs {
   disk_path?: string | undefined;
 }
 
-function prgSource(prg: string, given: SourceArgs): Source {
+function prgSource(prg: string, given: SourceArgs, opts: RunOpts): Source {
   const args = { ...given, model: given.model ?? "pal", cycles: given.cycles ?? 8_000_000 };
   return {
-    trace: (c, max) => traced(prg, args, c, max),
+    trace: (c, max) => traced(prg, args, c, max ?? opts.maxLogBytes),
     info: (t) => info(prg, args, t),
     unknowns: (t) => [...(t.entry === null ? [NO_SYS] : []), ...truncationNotes(t)],
     timing: REGION_TIMING[videoRegion(args.model)],
   };
 }
 
-function sessionSource(staged: Staged, l: SessionRef, shotDir: string | undefined): Source {
+function sessionSource(staged: Staged, l: SessionRef, opts: RunOpts): Source {
   const { session: s, name } = l;
   const { prg, image } = staged;
-  const shot = screenshotPath(l.shot, shotDir);
+  const shot = screenshotPath(l.shot, opts.shotDir);
   const entry = readPrg(readFileSync(prg)).sys ?? null;
   const pending: string[] = [];
   const args = { model: s.machine.model, cycles: s.limitcycles };
   return {
     trace: async (c, max) => {
       const m = scriptOf(c, parseHex(s.in_play.pc), sessionScript(s));
-      const p = await sessionPass(staged, s, m, { screenshot: shot, maxLogBytes: max });
-      if (p.play_clock === null) throw new NotInPlay(notInPlay(s, shot));
+      const p = await sessionPass(staged, s, m, {
+        screenshot: shot,
+        maxLogBytes: max ?? opts.maxLogBytes,
+      });
+      if (p.play_clock === null) {
+        p.dispose();
+        throw new NotInPlay(notInPlay(s, shot));
+      }
       pending.splice(0, pending.length, ...p.unknowns);
-      return { hits: p.hits, start: p.play_clock, entry, truncated: p.truncated };
+      return {
+        hits: p.hits,
+        start: p.play_clock,
+        entry,
+        truncated: p.truncated,
+        dispose: () => {
+          p.dispose();
+        },
+      };
     },
     info: (t) => ({ ...info(l.label, args, t), session: name, image }),
-    unknowns: (t) => [...pending, ...truncationNotes(t)],
+    // The pass names its own log cut in unknowns (sessionPass), so no
+    // truncation note is added here.
+    unknowns: () => [...pending],
     timing: REGION_TIMING[videoRegion(s.machine.model)],
   };
 }
@@ -395,33 +402,49 @@ export async function withSource<T>(
     if (!l.ok) return l;
     const bad = conflict(args, l.session);
     if (bad) return { ok: false, error: bad, reason: "input" };
-    return withImage(l.session, opts.manifestPath, (staged) =>
-      guarded(() => sessionSource(staged, l, opts.shotDir)),
-    );
+    return withImage(l.session, opts.manifestPath, (staged) => guarded(() => sessionSource(staged, l, opts)));
   }
   const prg = allowedPrg(args.prg_path ?? "");
   if (!prg) return { ok: false, error: `not an allowed .prg: ${args.prg_path}`, reason: "path" };
-  return guarded(() => prgSource(prg, args));
+  return guarded(() => prgSource(prg, args, opts));
 }
 
 /** The irq-chain tool's first two passes: the handlers the vectors held, and the pointers any JMP (pointer) handler reads. */
 export async function chainPasses(
   src: Source,
-): Promise<{ handlers: number[]; pointers: number[]; last: Traced }> {
+): Promise<{ handlers: number[]; pointers: number[]; last: Traced; notes: string[] }> {
   const a = await src.trace(storeCommands());
-  const handlers = liveHandlers(a.hits, a.start);
+  let handlers: number[];
+  try {
+    handlers = liveHandlers(a.hits, a.start);
+  } finally {
+    a.dispose();
+  }
   const b = await src.trace(execCommands(handlers));
-  return { handlers, pointers: indirectPointers(b.hits), last: b };
+  const pointers = indirectPointers(b.hits);
+  // Pass A's log is disposed here and pass B's is named by src.unknowns(b)
+  // unless a third pass replaces it, so the cuts the caller would not see
+  // are named here.
+  const notes = [...truncationNotes(a), ...(pointers.length ? truncationNotes(b) : [])];
+  return { handlers, pointers, last: b, notes };
 }
 
 export async function reIrqChain(args: SourceArgs, opts: RunOpts = {}): Promise<ReResult<IrqChain>> {
   return withSource(args, "irq-chain", opts, async (src) => {
-    const { handlers, pointers, last } = await chainPasses(src);
-    // A handler that is JMP (pointer): a third pass adds the pointer's bytes.
-    const b = pointers.length ? await src.trace(execCommands(handlers, pointers)) : last;
-    const result = analyseIrqChain(b.hits, src.timing, b.start);
-    result.unknowns.push(...src.unknowns(b));
-    return { ok: true, run: src.info(b), result };
+    const { handlers, pointers, last, notes } = await chainPasses(src);
+    try {
+      // A handler that is JMP (pointer): a third pass adds the pointer's bytes.
+      const b = pointers.length ? await src.trace(execCommands(handlers, pointers)) : last;
+      try {
+        const result = analyseIrqChain(b.hits, src.timing, b.start);
+        result.unknowns.push(...src.unknowns(b), ...notes);
+        return { ok: true, run: src.info(b), result };
+      } finally {
+        if (b !== last) b.dispose();
+      }
+    } finally {
+      last.dispose();
+    }
   });
 }
 
@@ -437,144 +460,13 @@ export async function reFrameProfile(
     return { ok: false, error: `bad marker: ${!start ? args.start : args.stop}`, reason: "marker" };
   return withSource(args, "frame-profile", opts, async (src) => {
     const t = await src.trace(regionCommands({ start, stop }));
-    const hits = t.hits.filter((h) => h.clock >= t.start);
-    const result = analyseRegion(hits, { start, stop }, src.timing, t.start);
-    result.unknowns.push(...src.unknowns(t));
-    return { ok: true, run: src.info(t), result };
+    try {
+      const hits = filterHits(t.hits, (h) => h.clock >= t.start);
+      const result = analyseRegion(hits, { start, stop }, src.timing, t.start);
+      result.unknowns.push(...src.unknowns(t));
+      return { ok: true, run: src.info(t), result };
+    } finally {
+      t.dispose();
+    }
   });
-}
-
-const hex4 = (n: number) => n.toString(16).padStart(4, "0");
-
-export const SnapshotInput = {
-  session: SessionInput.session,
-  after_hits_of_play_pc: z
-    .number()
-    .int()
-    .min(0)
-    .optional()
-    .describe(
-      "Hits of in_play.pc to skip before the dump (decimal; hex to the monitor, like a session injection's " +
-        "after_hits). Default 0: the dump is taken on the first hit. Not gated by in_play.after_clock, so a " +
-        "PC that also runs before real play (unlike Commando's one-shot $0FEB) needs a caller-chosen count",
-    ),
-};
-export interface SnapshotArgs {
-  session: string | Session;
-  after_hits_of_play_pc?: number | undefined;
-}
-export interface SnapshotResult {
-  /** Under data/re/ (gitignored): <ram_sha1>-<clock>.bin. */
-  ram_path: string;
-  ram_sha1: string;
-  /** CPU clock of the dump: the (after_hits_of_play_pc + 1)th exec of in_play.pc. */
-  clock: number;
-  vic: Snapshot["vic"];
-  cpu_port: Snapshot["cpu_port"];
-}
-
-/**
- * The three save checkpoints a snapshot needs, all on in_play.pc, all
- * firing on the same hit (measured in VICE 3.10: several `trace exec`
- * checkpoints on one address all log the same clock). Each is its own
- * checkpoint, never chained on one command line: `save "a" ...; save "b"
- * ...` on one line breaks — VICE's filename parser runs to the *last*
- * quote on the whole line, so the first save's filename swallows the
- * rest of the line as text (measured building this tool; `bank X; save
- * "f" 0 lo hi; disable N` with exactly one save works). Each self-disables
- * so a PC that runs again after the dump does not overwrite it: `disable
- * N` inside `command N` stops that checkpoint firing again (also
- * measured), which is what makes `after_hits_of_play_pc` name one
- * specific hit rather than "whichever hit came last before the run
- * ended".
- */
-function dumpCheckpoints(
-  m: MonitorScript,
-  pc: string,
-  afterHits: number,
-  files: { cpu: string; io: string; ram: string },
-): { cpu: number; io: number; ram: number } {
-  const addr = hex4(parseHex(pc));
-  const line = `trace exec ${addr} ${addr}`;
-  const save = (file: string, bank: string, range: string) => (n: number) => [
-    ...(afterHits > 0 ? [`ignore ${n} ${afterHits.toString(16)}`] : []),
-    `command ${n} "bank ${bank}; save \\"${file}\\" 0 ${range}; disable ${n}"`,
-  ];
-  return {
-    cpu: m.checkpoint(line, save(files.cpu, "cpu", "0000 0001")),
-    io: m.checkpoint(line, save(files.io, "io", "d000 dfff")),
-    ram: m.checkpoint(line, save(files.ram, "ram", "0000 ffff")),
-  };
-}
-
-/** Hashes, decodes and files the three dumps once the run confirms the ram checkpoint fired. */
-function finishSnapshot(
-  files: { cpu: string; io: string; ram: string },
-  clock: number,
-  dumpDir: string | undefined,
-): { ok: true; result: SnapshotResult } {
-  const ram = readFileSync(files.ram);
-  const io = readFileSync(files.io);
-  const cpu = readFileSync(files.cpu);
-  const ram_sha1 = createHash("sha1").update(ram).digest("hex");
-  const dir = dumpDir ?? path.join(repoRoot, "data", "re");
-  mkdirSync(dir, { recursive: true });
-  const ram_path = path.join(dir, `${ram_sha1}-${clock}.bin`);
-  copyFileSync(files.ram, ram_path);
-  const { vic, cpu_port } = decodeSnapshot(ram, io, cpu);
-  return { ok: true, result: { ram_path, ram_sha1, clock, vic, cpu_port } };
-}
-
-async function snapshotPass(
-  run: { staged: Staged; session: Session; shotName: string },
-  afterHits: number,
-  opts: RunOpts,
-): Promise<{ ok: true; result: SnapshotResult } | Refusal> {
-  const { staged, session: s, shotName } = run;
-  const scratch = mkdtempSync(path.join(tmpdir(), "re-snapshot-"));
-  try {
-    const files = {
-      cpu: path.join(scratch, "cpu.bin"),
-      io: path.join(scratch, "io.bin"),
-      ram: path.join(scratch, "ram.bin"),
-    };
-    const m = sessionScript(s);
-    const nums = dumpCheckpoints(m, s.in_play.pc, afterHits, files);
-    const shot = screenshotPath(shotName, opts.shotDir);
-    const p = await sessionPass(staged, s, m, { screenshot: shot });
-    if (p.play_clock === null) return notInPlay(s, shot);
-    const clock = p.hits.find((h) => h.checkpoint === nums.ram)?.clock ?? null;
-    if (clock === null)
-      return {
-        ok: false,
-        reason: "no-dump",
-        error:
-          `in_play reached at clock ${p.play_clock}, but ${s.in_play.pc} did not run ${afterHits + 1} ` +
-          `times (after_hits_of_play_pc) within ${s.limitcycles} cycles; exit screenshot ${shot}`,
-        clock: p.play_clock,
-        screenshot: shot,
-      };
-    return finishSnapshot(files, clock, opts.dumpDir);
-  } finally {
-    rmSync(scratch, { recursive: true, force: true });
-  }
-}
-
-/**
- * Dumps RAM (`bank ram`, all 64 KB) and I/O (`bank io`, $D000-$DFFF) at a
- * chosen hit of a session's in_play.pc, and decodes VIC-II bank/screen/
- * charset/bitmap/sprite pointers and the CPU port from them
- * (src/re/vic-state.ts). The RAM dump is the point: a packed game's real
- * code exists only in RAM, under ROM or I/O, once depacked, and only a
- * moment after play starts.
- */
-export async function reSnapshot(
-  args: SnapshotArgs,
-  opts: RunOpts = {},
-): Promise<{ ok: true; result: SnapshotResult } | Refusal> {
-  const l = sessionOf(args.session, "snapshot");
-  if (!l.ok) return l;
-  return withImage(l.session, opts.manifestPath, (staged) =>
-    snapshotPass({ staged, session: l.session, shotName: l.shot }, args.after_hits_of_play_pc ?? 0, opts),
-  );
 }

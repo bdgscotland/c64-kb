@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 import { REGION_TIMING, videoRegion } from "../domain/timing.ts";
 import { resolveImage } from "../re/image.ts";
-import { readHits, type Hit } from "../re/monlog.ts";
+import { filterHits, hitsOf, type Hit } from "../re/monlog.ts";
 import {
   inPlayClock,
   parseHex,
@@ -22,7 +22,7 @@ import {
   type MonitorScript,
   type Session,
 } from "../re/session.ts";
-import { runBatch, ViceBatchError, type BatchRun } from "../services/vice-batch.ts";
+import { runBatch, truncatedNote, ViceBatchError, type BatchRun } from "../services/vice-batch.ts";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
 export const SESSIONS_DIR = "docs/game-design/studies/sessions";
@@ -36,6 +36,13 @@ export interface RunOpts {
   shotDir?: string;
   /** Where c64_re_snapshot renames its RAM dump to <sha1>-<clock>.bin; default data/re/ in the repo. */
   dumpDir?: string;
+  /**
+   * Stop a pass's emulator once its monitor log passes this many bytes
+   * (runBatch's maxLogBytes); the cut is named in `unknowns`. A run is
+   * read as a stream either way (issue #134), so this bounds disk and
+   * time, not memory.
+   */
+  maxLogBytes?: number;
 }
 
 export interface Loaded {
@@ -126,28 +133,35 @@ interface Injected {
 }
 
 export interface SessionPass {
-  /** Hits of the checkpoints the tool added; the session's own are dropped. */
-  hits: Hit[];
+  /** Hits of the checkpoints the tool added; the session's own are dropped. Read from the log on every scan. */
+  hits: Iterable<Hit>;
   play_clock: number | null;
   injections: Injected[];
   unknowns: string[];
   screenshot: string;
   /** maxLogBytes stopped the replay before its cycle limit. */
   truncated: boolean;
+  /** Removes the run's work directory; call it after the last scan of `hits`. */
+  dispose(): void;
 }
 
-/** Injection i is checkpoint i + 1: sessionScript writes them first. */
-function injectionsOf(all: Hit[], s: Session): Injected[] {
-  return s.inject.map((i, k) => ({
-    at_pc: i.at_pc,
-    fired_at_clock: all.find((h) => h.checkpoint === k + 1)?.clock ?? null,
-  }));
+/** Injection i is checkpoint i + 1: sessionScript writes them first. One scan, stopping when all have fired. */
+function injectionsOf(all: Iterable<Hit>, s: Session): Injected[] {
+  const fired = new Map<number, number>();
+  for (const h of all) {
+    const n = h.checkpoint ?? 0;
+    if (n >= 1 && n <= s.inject.length && !fired.has(n)) fired.set(n, h.clock);
+    if (fired.size === s.inject.length) break;
+  }
+  return s.inject.map((i, k) => ({ at_pc: i.at_pc, fired_at_clock: fired.get(k + 1) ?? null }));
 }
 
 /**
  * One replay of the session with the tool's checkpoints after its own. The
  * in-play clock is read from every hit but the injections' (an injection on
- * the in-play PC must not stand in for it); the analysis gets toolHits.
+ * the in-play PC must not stand in for it); the analysis gets toolHits. The
+ * log is scanned, never held (issue #134): `hits` re-reads it per scan and
+ * `dispose` removes the run's work directory once the caller is done.
  */
 export async function sessionPass(
   staged: Staged,
@@ -160,12 +174,11 @@ export async function sessionPass(
     batchOf(staged, s, script, { screenshot, ...(maxLogBytes !== undefined ? { maxLogBytes } : {}) }),
   );
   try {
-    const all: Hit[] = [];
-    for await (const h of readHits(run.log)) all.push(h);
+    const all = hitsOf(run.log);
     const injections = injectionsOf(all, s);
     const injected = new Set(s.inject.map((_, k) => k + 1));
     const play_clock = inPlayClock(
-      all.filter((h) => h.checkpoint === undefined || !injected.has(h.checkpoint)),
+      filterHits(all, (h) => h.checkpoint === undefined || !injected.has(h.checkpoint)),
       s,
     );
     const unknowns = injections
@@ -173,6 +186,7 @@ export async function sessionPass(
       .map(
         (i) => `injection at $${parseHex(i.at_pc).toString(16).toUpperCase().padStart(4, "0")} never fired`,
       );
+    if (run.truncated) unknowns.push(truncatedNote("the replay"));
     return {
       hits: script.toolHits(all),
       play_clock,
@@ -180,9 +194,13 @@ export async function sessionPass(
       unknowns,
       screenshot,
       truncated: run.truncated,
+      dispose: () => {
+        run.dispose();
+      },
     };
-  } finally {
+  } catch (e) {
     run.dispose();
+    throw e;
   }
 }
 
@@ -249,24 +267,31 @@ export async function runSession(
 ): Promise<{ ok: true; result: SessionResult } | Refusal> {
   return withImage(s, opts.manifestPath, async (staged) => {
     const shot = screenshotPath(`session-${name}`, opts.shotDir);
-    const p = await sessionPass(staged, s, sessionScript(s), { screenshot: shot });
-    if (p.play_clock === null) return notInPlay(s, shot);
-    const timing = REGION_TIMING[videoRegion(s.machine.model)];
-    return {
-      ok: true as const,
-      result: {
-        session: name,
-        image: staged.image,
-        disk: staged.disk !== undefined,
-        model: s.machine.model,
-        cycles: s.limitcycles,
-        play_clock: p.play_clock,
-        play_frame: Math.floor(p.play_clock / timing.cycles_per_frame),
-        injections: p.injections,
-        screenshot: shot,
-        unknowns: p.unknowns,
-      },
-    };
+    const p = await sessionPass(staged, s, sessionScript(s), {
+      screenshot: shot,
+      ...(opts.maxLogBytes !== undefined ? { maxLogBytes: opts.maxLogBytes } : {}),
+    });
+    try {
+      if (p.play_clock === null) return notInPlay(s, shot);
+      const timing = REGION_TIMING[videoRegion(s.machine.model)];
+      return {
+        ok: true as const,
+        result: {
+          session: name,
+          image: staged.image,
+          disk: staged.disk !== undefined,
+          model: s.machine.model,
+          cycles: s.limitcycles,
+          play_clock: p.play_clock,
+          play_frame: Math.floor(p.play_clock / timing.cycles_per_frame),
+          injections: p.injections,
+          screenshot: shot,
+          unknowns: p.unknowns,
+        },
+      };
+    } finally {
+      p.dispose();
+    }
   });
 }
 

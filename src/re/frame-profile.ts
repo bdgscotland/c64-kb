@@ -73,8 +73,7 @@ export function analyseRegion(
   timing: RegionTiming,
   startClock: number,
 ): Profile {
-  const all = [...hits];
-  const ref = findFrameRef(all, startClock);
+  const ref = findFrameRef(hits, startClock);
   const unknowns: string[] = ref
     ? []
     : [
@@ -84,7 +83,7 @@ export function analyseRegion(
   const samples: Sample[] = [];
   let open: number | null = null;
   let overwritten = 0;
-  for (const h of all) {
+  for (const h of hits) {
     if (matches(h, region.start)) {
       if (open !== null) overwritten++;
       open = h.clock;
@@ -234,15 +233,17 @@ function branchTarget(h: Hit): number | null {
  * skipped). Null when `pc` never ran or no such branch follows within
  * WAIT_SEARCH instructions (a loop closed by JMP, say).
  */
-export function waitExit(hits: Hit[], pc: number): number | null {
-  const i = hits.findIndex((h) => h.kind === "exec" && h.addr === pc);
-  const sp = hits[i]?.sp;
-  if (sp === undefined) return null;
+export function waitExit(hits: Iterable<Hit>, pc: number): number | null {
+  let sp: number | null = null;
   let seen = 0;
-  for (let k = i; k < hits.length && seen < WAIT_SEARCH; k++) {
-    const h = hits[k];
-    if (h?.kind !== "exec" || h.sp !== sp) continue;
+  for (const h of hits) {
+    if (sp === null) {
+      if (h.kind !== "exec" || h.addr !== pc) continue;
+      sp = h.sp;
+    }
+    if (h.kind !== "exec" || h.sp !== sp) continue;
     seen++;
+    if (seen > WAIT_SEARCH) return null;
     const t = branchTarget(h);
     if (t !== null && t >= pc && t <= h.pc) return h.pc + 2;
   }
@@ -264,7 +265,7 @@ interface Event {
   sp: number;
 }
 
-function events(hits: Hit[], rtis: Set<number>, startClock: number): Event[] {
+function events(hits: Iterable<Hit>, rtis: Set<number>, startClock: number): Event[] {
   const out = new Map<string, Event>();
   for (const h of hits) {
     if (h.clock < startClock) continue;
@@ -278,7 +279,7 @@ function events(hits: Hit[], rtis: Set<number>, startClock: number): Event[] {
 }
 
 /** Interrupts from their pushes, each closed by the first RTI at its SP; nesting from the open stack. */
-function interruptSpans(hits: Hit[], o: FrameOpts): Span[] {
+function interruptSpans(hits: Iterable<Hit>, o: FrameOpts): Span[] {
   const spans: Span[] = [];
   const open: Span[] = [];
   for (const e of events(hits, new Set(o.rtis), o.startClock)) {
@@ -339,15 +340,20 @@ function stat(xs: number[]): Stat {
 }
 
 /** The complete frames in the trace: from the first that starts at or after the start clock to the last that ends by the last hit. */
-function frameRange(hits: Hit[], ref: FrameRef, o: FrameOpts): { zero: number; first: number; last: number } {
+function frameRange(
+  hits: Iterable<Hit>,
+  ref: FrameRef,
+  o: FrameOpts,
+): { zero: number; first: number; last: number } {
   const F = o.timing.cycles_per_frame;
   const zero = ref.clock - (ref.line * o.timing.cycles_per_line + ref.cycle);
-  const lastClock = hits.reduce((m, h) => Math.max(m, h.clock), 0);
+  let lastClock = 0;
+  for (const h of hits) if (h.clock > lastClock) lastClock = h.clock;
   return { zero, first: Math.ceil((o.startClock - zero) / F), last: Math.floor((lastClock - zero) / F) - 1 };
 }
 
 /** Wait intervals: each exec of the wait's pc to the next exec of its exit at the same SP. */
-function waitIntervals(hits: Hit[], wait: Wait, startClock: number): [number, number][] {
+function waitIntervals(hits: Iterable<Hit>, wait: Wait, startClock: number): [number, number][] {
   const out: [number, number][] = [];
   let open: Hit | null = null;
   for (const h of hits) {
@@ -502,7 +508,7 @@ function frameUnknowns(spans: Span[], o: FrameOpts, ref: FrameRef | null): strin
  * each handler entry's own cost, nested interrupts taken out. Frames are the
  * complete ones between the start clock and the last hit.
  */
-export function analyseFrames(hits: Hit[], entries: FrameEntry[], o: FrameOpts): FrameBudget {
+export function analyseFrames(hits: Iterable<Hit>, entries: FrameEntry[], o: FrameOpts): FrameBudget {
   const F = o.timing.cycles_per_frame;
   const found = findFrameRef(hits, o.startClock);
   const ref = found ?? { clock: o.startClock, line: 0, cycle: 0 };

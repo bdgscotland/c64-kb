@@ -63,6 +63,15 @@ export class ViceBatchError extends Error {
 const SCHEMAS = "/opt/homebrew/share/glib-2.0/schemas";
 const TIMEOUT_MS = 600_000;
 
+/**
+ * The unknowns line for a pass its maxLogBytes stopped early. Every tool
+ * that runs a pass names the cut in its `unknowns`, so a partial trace is
+ * never read as a whole one (issue #134).
+ */
+export function truncatedNote(what = "trace"): string {
+  return `${what} stopped early: the monitor log reached its size cap before the cycle limit, so later hits are missing`;
+}
+
 function viceArgs(run: BatchRun, log: string): string[] {
   // +autostart-delay-random: cold autostarts land on the same raster line.
   // -raminitrandomchance 0: VICE -default sets RAMInitRandomChance=10, which

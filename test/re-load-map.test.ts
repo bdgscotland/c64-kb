@@ -376,20 +376,20 @@ describe("entry_pc is never read from an incomplete trace", () => {
     });
   });
 
-  it("the entry pass gives the first exec after the window", async () => {
+  it("the entry pass gives the first exec after the window", () => {
     const hits = [ex(0x0900, 1_999_000), ex(0x0850, 2_000_050), ex(0x0853, 2_000_060)];
-    expect(await entryFromHits(hits, { from: 2_000_000, stage: 1 }, false)).toEqual({ pc: 0x0850 });
+    expect(entryFromHits(hits, { from: 2_000_000, stage: 1 }, false)).toEqual({ pc: 0x0850 });
   });
 
-  it("a truncated entry pass gives no entry, even when a hit was read", async () => {
+  it("a truncated entry pass gives no entry, even when a hit was read", () => {
     const hits = [ex(0x0850, 2_000_050)];
-    expect(await entryFromHits(hits, { from: 2_000_000, stage: 1 }, true)).toEqual({
+    expect(entryFromHits(hits, { from: 2_000_000, stage: 1 }, true)).toEqual({
       unknown: "entry_pc unknown: the entry pass was stopped early",
     });
   });
 
-  it("an entry pass with no exec after the window names the ranges it looked in", async () => {
-    expect(await entryFromHits([ex(0x0900, 10)], { from: 2_000_000, stage: 1 }, false)).toMatchObject({
+  it("an entry pass with no exec after the window names the ranges it looked in", () => {
+    expect(entryFromHits([ex(0x0900, 10)], { from: 2_000_000, stage: 1 }, false)).toMatchObject({
       unknown: expect.stringContaining("$0200-$9FFF") as string,
     });
   });
