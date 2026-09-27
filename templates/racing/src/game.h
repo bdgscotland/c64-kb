@@ -39,7 +39,6 @@
 #define SCREEN_B  ((char *)0xc400)
 #define HUDPAGE   ((char *)0xc800)      // rows 19-24 are the panel
 #define SPRITES   ((char *)0xcc00)      // blocks 48-63
-#define CHARSET   ((char *)0xe000)      // road characters (multicolour)
 #define HUDFONT   ((char *)0xe800)      // the ROM's upper-case set, copied
 #define COLOUR    ((char *)0xd800)
 #define RESULT    B(0x02ff)             // $01 pass, $02 fail (c64-kb headless-verify)
@@ -104,7 +103,8 @@ extern char     sizes_seen;             // bit per car size drawn during the rac
 extern char     hoff_min, hoff_max;     // the horizon's range during the race
 extern int      curve_min, curve_max;   // the shown centre's range at the horizon
 void road_init(void);
-void road_work(void);                   // one piece of the next picture (main loop, spare time)
+void road_work(void);
+char phase_of_road(void);               // (debug) road.c phase
 void road_build_all(void);              // a whole picture, before the IRQ chain runs
 void road_final(void);                  // the picture of the state now, shown (the verdict)
 extern unsigned pictures;               // pictures published during the race

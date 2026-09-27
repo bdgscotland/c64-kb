@@ -1,21 +1,11 @@
-// art.c: every picture. The road's multicolour characters (engine.asm draws
-// with them), the hills in the sky, the car at six sizes made from one
-// picture, and the ROM font copied for the panel (bank 3 has no ROM font:
-// c64-kb vic_bank_visibility_collision).
+// art.c: the pictures C draws: the hills in the sky, the car at six sizes
+// made from one picture, and the ROM font copied for the panel (bank 3 has no
+// ROM font: c64-kb vic_bank_visibility_collision).
 #include "game.h"
 
-// Road characters, one byte a row (the same on all eight rows). Multicolour
-// pairs, left to right: 00 grass ($D021, a colour a line), 01 road ($D022),
-// 10 kerb ($D023), 11 the dash (colour RAM). engine.asm's CH_ constants.
-static const char road_glyph[11] = {
-    0x00,                               // 0 grass
-    0x55,                               // 1 road
-    0x95, 0x25, 0x09, 0x02,             // 2-5 left kerb in pair 0-3: grass | kerb | road
-    0x80, 0x60, 0x58, 0x56,             // 6-9 right kerb in pair 0-3: road | kerb | grass
-    0x7d                                // 10 the dash: road, dash, dash, road
-};
-
-#define CH_HILL    16                   // 16 solid, 17 rising, 18 falling (11: colour RAM)
+// The road's characters are engine.asm's (glyphs.asm): four sets made by
+// glyph_init. The sky rows use set 3, which holds the hills at ids 2-4.
+#define CH_HILL    2                    // 2 solid, 3 rising, 4 falling (11: colour RAM)
 
 // The car from behind, 12 multicolour pixels by 16 rows: . clear,
 // a black ($D025), x the car's colour ($D027 + s), b light red ($D026).
@@ -77,23 +67,6 @@ void art_init(void)
         HUDFONT[i] = ((char *)0xd000)[i];
     *(volatile char *)1 = 0x35;         // I/O back; BASIC and KERNAL stay out
 
-    memset(CHARSET, 0, 2048);
-    for (char g = 0; g < 11; g++)
-        for (char r = 0; r < 8; r++)
-            CHARSET[g * 8 + r] = road_glyph[g];
-    for (char r = 0; r < 8; r++)
-    {
-        char n = (r >> 1) + 1;          // pairs filled on this row, 1-4
-        char rise = 0, fall = 0;
-        for (char p = 0; p < n; p++)
-        {
-            rise |= 3 << (2 * p);       // filled from the right
-            fall |= 3 << (6 - 2 * p);   // filled from the left
-        }
-        CHARSET[CH_HILL * 8 + r] = 0xff;
-        CHARSET[(CH_HILL + 1) * 8 + r] = rise;
-        CHARSET[(CH_HILL + 2) * 8 + r] = fall;
-    }
     for (char k = 0; k < NSIZES; k++)
         car_picture(k);
 }
@@ -102,7 +75,7 @@ void art_init(void)
 void art_sky(char *screen)
 {
     static const char hills[20] = {
-        0, 0, 17, 16, 18, 0, 0, 0, 17, 16, 16, 18, 0, 0, 0, 0, 17, 18, 0, 0
+        0, 0, 3, 2, 4, 0, 0, 0, 3, 2, 2, 4, 0, 0, 0, 0, 3, 4, 0, 0
     };
     memset(screen, 0, 7 * 40);
     for (char c = 0; c < 40; c++)

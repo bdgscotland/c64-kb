@@ -121,8 +121,9 @@ static void player(char joy)
         x -= STEER * v;
     else if (!(joy & JOY_RIGHT))
         x += STEER * v;
-    signed char k = (signed char)B(ASM_CURV_LO + road_segment(car_pos[0]));
-    x -= k * v;
+    // the eased curvature under the car, quarter units (track.asm curvf)
+    int k4 = (signed char)B(ASM_CURVF + ((car_pos[0] >> 6) & 255));
+    x -= (k4 * v) / 4;
     if (x > X_LIMIT)
         x = X_LIMIT;
     else if (x < -X_LIMIT)

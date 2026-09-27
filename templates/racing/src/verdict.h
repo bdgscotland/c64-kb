@@ -130,22 +130,22 @@ static void grade(void)
     photo();
     if (!bad)
     {
-        hud_text(24, 0, "result 01 pass");
+        hud_text(24, 1, "result 01 pass");
         RESULT = 0x01;
         vic.color_border = VCOL_GREEN;
     }
     else
     {
-        hud_text(24, 0, "result 02 fail");
+        hud_text(24, 1, "result 02 fail");
         hex4(HUDPAGE + 24 * 40 + 15, bad);
         // the counts behind the checks: bumps, verge, overtakes, late, road late
-        hud_dec(23, 0, bumps, 3);
-        hud_dec(23, 4, verge_frames, 4);
-        hud_dec(23, 9, overtakes, 2);
-        hud_dec(23, 12, late, 4);
-        hud_dec(23, 17, B(ASM_ROAD_LATE), 3);
-        hud_dec(23, 21, hoff_max - hoff_min, 2);
-        hud_dec(23, 24, curve_max - curve_min, 3);
+        hud_dec(23, 1, bumps, 3);       // (column 0 is under the 38-column border)
+        hud_dec(23, 5, verge_frames, 4);
+        hud_dec(23, 10, overtakes, 2);
+        hud_dec(23, 13, late, 4);
+        hud_dec(23, 18, B(ASM_ROAD_LATE), 3);
+        hud_dec(23, 22, hoff_max - hoff_min, 2);
+        hud_dec(23, 25, curve_max - curve_min, 3);
         hex4(HUDPAGE + 23 * 40 + 28, sizes_seen);
         RESULT = 0x02;
         vic.color_border = VCOL_RED;

@@ -21,23 +21,34 @@
 #include "frame_meter.h"
 
 // ---- memory: the KickAssembler blob at its own address, C above it -----------
+// No malloc: no heap (c64-kb oscar64-reference, Memory layout). The stack
+// keeps Oscar64's 4 KB.
+#pragma heapsize(0)
+#if PIECETIME
+#pragma stacksize(3072)                 // (debug build only: its tables need the room)
+#endif
+// The C region starts on the page after the blob's end (build/asm.h).
+#define C_ORG ((ASM_END + 0xff) & 0xff00)
 #pragma section( asmcode, 0 )
-#pragma region( asmreg, ASM_ORG, 0x6400, , , { asmcode } )
-#pragma region( main, 0x6400, 0xc000, , , { code, data, bss, heap, stack } )
+#pragma region( asmreg, ASM_ORG, C_ORG, , , { asmcode } )
+#pragma region( main, C_ORG, 0xc000, , , { code, data, bss, heap, stack } )
 #pragma data( asmcode )
 __export const char asm_blob[] = {
 #embed "asm.bin"
 };
 #pragma data( data )
 
-#if ASM_END > 0x6400
-#error "the KickAssembler blob runs past $6400: move the C region up"
-#endif
 
 #define TICK B(ASM_TICK)
 
 char state;
 unsigned frame;
+#if PIECETIME
+__export unsigned piece_max[9];         // (debug) by kind: rb_state 0-5, begin, end, rb_begin
+__export unsigned piece_own[9];         // the same, pieces with no IRQ inside
+__export unsigned long piece_sum[9];
+__export unsigned piece_n[9];
+#endif
 char model;
 static char timer;
 static unsigned late;               // race steps lost or run past the next line 251
@@ -147,8 +158,8 @@ static void video_init(void)
     vic.spr_enable = 0;
     cia2.pra = cia2.pra & 0xfc;         // VIC bank 3: $C000-$FFFF
     vic.ctrl1 = 0x1b;                   // display on, 25 rows, YSCROLL 3
-    vic.ctrl2 = 0x18;
-    vic.memptr = 0x08;
+    vic.ctrl2 = 0x10;                   // 38 columns (engine.asm D016_ROAD)
+    vic.memptr = 0x0c;                  // screen A, road set 3 (the sky rows)
     vic.color_border = VCOL_BLACK;
     vic.color_back = 14;
     vic.color_back1 = VCOL_DARK_GREY;   // the road
@@ -177,6 +188,7 @@ int main(void)
     cia1.pra = 0xff;                    // no keyboard column: $DC00 reads port 2
     vic.intr_enable = 0;
     art_init();                         // leaves $01 = $35: BASIC and KERNAL out
+    __asm { jsr ASM_GLYPH_INIT }        // the road's four character sets (interrupts off)
     video_init();
     __asm { jsr ASM_DETECT_MODEL }
     model = B(ASM_RB_MODEL);
@@ -202,7 +214,7 @@ int main(void)
     vic.intr_ctrl = 0xff;
     vic.intr_enable = 1;
 
-    meter_init((unsigned)HUDPAGE, 24, 20, VCOL_WHITE, PLAY_HOLD);
+    meter_init((unsigned)HUDPAGE, 24, 18, VCOL_WHITE, PLAY_HOLD);   // columns 18-37: 38-column mode cuts 0 and 38
 #if FRAME_METER
     cia2.icr = 0x02;                    // timer B's NMI masked
     cia2.crb = 0x00;
@@ -225,12 +237,42 @@ int main(void)
         if (now == last)
         {
             if (state != ST_GRADED)
+            {
+#if PIECETIME
+                // (debug) wall time by piece: 0-5 rb_state, 6 begin, 7 end
+                char ph = phase_of_road();
+                char kind = ph == 0 ? 6 : ph == 1 ? 8 : B(ASM_RB_STATE) ? B(ASM_RB_STATE) : B(ASM_RB_ROW_ZP) >= 7 ? 0 : 7;
+                // p0, p1: the beam's place, 0 at line 204; a piece with no
+                // IRQ inside it starts and ends below 209 (line 101) in order
+                unsigned p0 = ((vic.raster | ((vic.ctrl1 & 0x80) << 1)) + 108) % 312;
+                cia1.crb = 0x00;
+                cia1.tb = 0xffff;
+                cia1.crb = 0x11;
                 road_work();
+                cia1.crb = 0x00;
+                unsigned t = 0xffff - cia1.tb;
+                unsigned p1 = ((vic.raster | ((vic.ctrl1 & 0x80) << 1)) + 108) % 312;
+                if (state == ST_RACE)
+                {
+                    piece_sum[kind] += t;
+                    piece_n[kind]++;
+                    if (t > piece_max[kind])
+                        piece_max[kind] = t;
+                    if (p1 >= p0 && p1 < 209 && t > piece_own[kind])
+                        piece_own[kind] = t;
+                }
+#else
+                road_work();
+#endif
+            }
             continue;
         }
         char gap = now - last;
         last = now;
         char ticks = now;
+        // The camera's position for this frame's bands (engine.asm bpos, even:
+        // the road's code adds it to each line's z * 8, odd above the horizon).
+        *(volatile char *)0xff = (char)(car_pos[0] - ZN) & 0xfe;
         if (state == ST_RACE && gap > 1)
             late += gap - 1;            // frames that passed with no game step
 #if FRAME_METER

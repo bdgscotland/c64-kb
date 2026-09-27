@@ -184,8 +184,11 @@ endif
 
 # ---- run: the windowed emulator, for a human ----------------------------------------
 # Joystick port 2 on the numeric keypad (8 2 4 6, fire 0): -joydev2 1.
+# run reads the user's own vicerc (joystick keys, sound): no -default and no
+# -joydev2. An earlier version passed -joydev2 1, VICE's numpad, which overrode
+# the maintainer's cursor-keys-and-space keyset (2026-09-26).
 run: $(PRG)
-	$(X64SC_WINDOWED) -joydev2 1 -autostart $(PRG)
+	$(X64SC_WINDOWED) -autostart $(PRG)
 run-auto: $(PRG_AUTO)
 	$(X64SC_WINDOWED) -autostart $(PRG_AUTO)
 

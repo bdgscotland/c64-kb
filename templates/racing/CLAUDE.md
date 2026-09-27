@@ -19,33 +19,46 @@ this program depends on:
 
 - The road is 96 blocks of code, one per raster line 107-202, in two
   copies (`src/engine.asm`, `road_a` and `road_b`); the builder
-  (`src/builder.asm`) patches the copy not shown and `irq_blank` swaps the
-  copies, the screens and the sprites as one. A block's stores land on
-  cycles 7 ($D016) and 13 ($D021) of its line (Bauer's numbering; an
-  earlier version said 6 and 12) only because every block
-  before it took exactly 63 cycles (65 on NTSC). Anything that changes a
-  block's length, the sync constants (`SYNC_*`, `ENTRY_*`) or `BADLOSS`
-  must be re-measured with the PROBE build (`make build/racing-probe.prg`,
-  README, "The road's timing") and `make roadcheck`.
+  (`src/builder.asm`) fills the copy not shown and the picture is swapped
+  as one (copy, screen, sprites, tables) by `rb_take` from the main loop
+  or by the chain at lines 204 and 251. A block is entered on cycle 2 of
+  its line and stores `$D016` on cycle 5, `$D021` on 9 and `$D022` or
+  `$D023` on 13 (Bauer's numbering); a badline's block stores `$D018` on 5
+  (the row's character set) and `$D016` on 9, nothing else. Every block's
+  length is exact only because every block before it took exactly 63
+  cycles (65 on NTSC). Anything that changes a block's length, the sync
+  constants (`SYNC_*`, `ENTRY_*`, `PRE_CYC`) or `BADLOSS` must be
+  re-measured with the PROBE build (`make build/racing-probe.prg`, README,
+  "The road's timing") and `make roadcheck`. The `.errorif` lines in
+  `RoadCopy` and `PreBlock` check each block kind's byte layout against
+  the offsets the builder writes to: keep them.
+- A block ends in the slide's `CMP` reads, never in a write: with sprite 2
+  on the line the DMA ends a cycle before the next block and only a read
+  is stalled to the exact cycle. The blocks branch into their slides on
+  `BNE` after a non-zero load: `ADC` sets V, so `BVC` is wrong here.
 - Sprites 0-2 may stand on road lines: the builder pads each line by the
-  stall of the sprites that fetch on it (5 + 2 x (last - first) cycles). It
-  reads their Y from the set being built, so a sprite's Y must be published
-  before `rb_begin`, and a sprite disabled after the build breaks the timing
-  of its lines (move it behind the border instead: `road.c`). Keep every
-  sprite's Y in 107-182 (its fetches, Y to Y + 20, inside the road). Sprites
-  3-7 fetch at a line's start, where the stores are: they stay off, or
-  below line 203.
-- X carries the panel's $D016 from the sync to line 203's `STX $D016`
-  (cycle 11, before the badline's BA falls on 12): no road block may
-  change X. Loaded into A there, the store waited for the stall and wrote
-  on cycle 56, and line 203 kept the road's mode and XSCROLL (#86).
-- A badline block stores $D016 only: that line keeps the colour of the
-  line above (the grass bands and the horizon follow this rule in the
-  builder, and `tools/roadcheck.py` draws it that way).
+  stall of the sprites that fetch on it (5 + 2 x (last - first) cycles),
+  from the set being built (`lmask`), so a sprite's Y must be published
+  before `rb_begin`, and a sprite disabled after the build breaks the
+  timing of its lines (move it behind the border instead: `road.c`). Keep
+  every sprite's Y in 107-182. Sprites 3-7 fetch at a line's start, where
+  the stores are: they stay off, or below line 203.
+- Line 202's block loads X with the panel's `$D016` for line 203's
+  `STX $D016` (cycle 11, before the badline's BA falls on 12; #86).
+- The road's glyphs are computed when `src/glyphs.asm` is assembled, for
+  even horizon offsets only (`HSTEP`): the horizon moves two lines at a
+  time, and `HILL` values are made even. A change to `W0`, `ZN`, the kerb
+  or centre-line proportions or `HOFF_N` changes every glyph and template:
+  re-run `make roadcheck` and re-pin.
+- The main loop's `rb_take` polls with interrupts on. `irq_top` reaches
+  `CLI` about 107 cycles after entry; on line 101 that leaves about 80
+  cycles before line 105's interrupt. Do not add a `SEI` window to the
+  main loop longer than that, and do not move `IRQ_TOP` back to 103.
 - The game steps once for each tick of line 251 (`main.c`); between ticks
-  the main loop builds the next picture a piece at a time (`road_work`). A
-  piece must stay under a frame (the costliest is 3,706 cycles), or a
-  step is lost. `late` counts lost steps; the verdict wants 0.
+  the main loop builds the next picture a piece at a time (`road_work`,
+  `rb_piece`). A piece must stay well under a frame (the costliest is
+  about 4,300 cycles, measured with `-dPIECETIME=1`), or a step is lost.
+  `late` counts lost steps; the verdict wants 0.
 - The autopilot is a bot (`src/autopilot.h`) that reads the game. After the
   verdict the program shows a still (`src/verdict.h`, `photo`): the pinned
   checks in `expect.json` and `make roadcheck` grade that still. Change the
@@ -99,7 +112,7 @@ make run              # windowed VICE, for a human
   VICE monitor), taken from a c64-kb page (say which), arithmetic, or not
   measured. Never call something verified that was not run.
 - Frame cost comes from the meter: CIA2 timer A, printed as
-  `F<frames> W<worst> T<typical>` at row 24, columns 20 to 39, in AUTOPILOT
+  `F<frames> W<worst> T<typical>` at row 24, columns 18 to 37, in AUTOPILOT
   builds. It records the first `hold` frames: make that the autopilot
   script's play frames. Typical is the median of those frames, the KB's
   `cycles_per_frame_typical`. Keep grading, logging and printing outside the

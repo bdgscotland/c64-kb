@@ -34,7 +34,7 @@
 .const ROAD_TOP   = 107         // first road line: row 7, a badline (YSCROLL 3)
 .const ROAD_LINES = 96          // lines 107-202, rows 7-18
 .const HUD_LINE   = ROAD_TOP + ROAD_LINES   // 203: row 19, a badline
-.const IRQ_TOP    = 103         // the double IRQ: 103, then 105
+.const IRQ_TOP    = 101         // the double IRQ: 101, then 105 (103 before: see irq_top)
 .const SYNC_LINE  = 105         // lines 100-106: no badline, no sprite fetch
 .const BLANK_LINE = 251         // below the last display line on PAL and NTSC
 .const H_MIN      = 108         // the horizon's highest line (hoff 0)
@@ -43,27 +43,42 @@
 .const ZN         = 24          // world units from the camera to line 202's road
 .const W0         = 136         // the road's half-width in pixels at line 202
 
-.const D016_ROAD  = $18         // multicolour, 40 columns, XSCROLL 0
-.const D016_HUD   = $08         // hires, 40 columns
-.const D018_A     = $08         // road screen A at $C000, characters $E000
-.const D018_B     = $18         // road screen B at $C400
+// 38 columns everywhere (CSEL 0): with XSCROLL the first 0-7 pixels of a
+// line show the background colour, a sawtooth where the road reaches the
+// window's edge on a tight bend (seen at speed, 2026-09-26). The 38-column
+// border hides them (c64-kb soft_scroll_h).
+.const D016_ROAD  = $10         // multicolour, 38 columns, XSCROLL 0
+.const D016_HUD   = $00         // hires, 38 columns
 .const D018_HUD   = $2a         // HUD screen $C800, characters $E800 (the ROM font)
 .const SCREEN_A   = $c000
 .const SCREEN_B   = $c400
 
-// Colours. Grass bands on %00 ($D021, per line), the road on %01 ($D022),
-// the kerb on %10 ($D023), the centre dash on %11 (colour RAM).
+// The road's four character sets (glyphs.asm assigns rows to them) and the
+// $D018 character bits of each; the sky rows use set 3, which holds the
+// hills at ids 2-4. $D018 = the screen's bits ($00 A, $10 B) | the set's.
+.var SET_ADDR     = List().add($d000, $d800, $e000)
+.var SET_BITS     = List().add($04, $06, $08)
+.const SKY_SET    = 0
+// The two dynamic sets: glyphs the builder makes for sheared rows, one set
+// per road copy (builder.asm, sheared).
+.const DYN_A      = $f000
+.const DYN_B      = $f800
+.const DYN_BITS_A = $0c
+.const DYN_BITS_B = $0e
+
+// Colours. Grass bands on %00 ($D021), road bands on %01 ($D022), the kerb's
+// stripes on %10 ($D023): all three a line. The centre line on %11 (colour RAM).
 .const C_SKY      = 14          // light blue
 .const C_GRASS_A  = 5           // green
 .const C_GRASS_B  = 13          // light green
+.const C_ROAD_A   = 11          // dark grey
+.const C_ROAD_B   = 12          // grey
+.const C_KERB_A   = 2           // red
+.const C_KERB_B   = 1           // white
 .const C_HUD      = 0           // black
 
-// Road characters (multicolour pairs, left to right).
-.const CH_GRASS   = 0           // 00 00 00 00
-.const CH_ROAD    = 1           // 01 01 01 01
-.const CH_LEFT    = 2           // 2-5: the left kerb in pair 0-3, grass left of it, road right
-.const CH_RIGHT   = 6           // 6-9: the right kerb in pair 0-3, road left of it, grass right
-.const CH_DASH    = 10          // 01 11 11 01
+.const CH_GRASS   = 0
+.const CH_ROAD    = 1
 
 .function isBad(line) { .return (line & 7) == 3 }
 
@@ -80,28 +95,70 @@
 .const zp_t2    = $ee
 .const zp_t3    = $ef
 .const zp_cref  = $f0           // 2: the row's content centre, pixels (signed)
-.const zp_xl    = $f2           // 2: left kerb pixel
-.const zp_xr    = $f4           // 2: right kerb pixel
-.const zp_cl    = $f6           // left kerb column, $FF off the left, 40 off the right
-.const zp_cr    = $f7           // right kerb column
-.const zp_cd    = $f8           // dash column, $FF none
+.const zp_code2 = $f2           // 2: zp_code + 256 (the row's blocks 4-7)
+.const zp_src   = $f4           // 2: the row's template
+.const zp_c     = $f6           // the row's centre column (signed)
+.const zp_p     = $f7           // the row's phase: 0 centre on a column edge, 1 mid-column
+.const zp_t4    = $f8
+.const zp_g     = $fd           // 2: a glyph's bytes (builder.asm, sheared)
+.const GBASE    = 5             // the first road glyph id (glyphs.asm)
 
 // Block layout (bytes from a block's start) and cycles before its slide.
+// Every block is entered on cycle 2 of its line. Four kinds, by the line's
+// place in its character row (line 0 is the badline):
+//   B, line 0: STY $D018 (the row's character set, before the character
+//      fetches from cycle 15; c64-kb raster_split_modes; written on cycle 5),
+//      STA $D016 (9), BNE (A and Y loaded by the L block above). The VIC holds
+//      the bus from cycle 12 to 54 and sprites 0-2 can take 9 more, which
+//      leaves a slide of 9, 4, 2 or no cycles (c64-kb badline_cycle_loss).
+//   F, line 1: STX $D021 (X, its grass, loaded by the L block two lines up;
+//      written on cycle 5), LDA d016c, STA $D016 (13), then line 2's loads.
+//   N, lines 2-6: STA $D016 (5), STX $D021 (9), STY $D022 on even lines
+//      (the road band) or $D023 on odd ones (the kerb) (13), then the next
+//      line's loads (NextLoads).
+//   L, line 7: N's stores, then the next row's line 1 grass into X, the
+//      badline's $D016 into A and its $D018 into Y (LDY #), BNE. An earlier
+//      version stored $D018 after the slide, at the line's end: with sprite 2
+//      on the line its DMA ends a cycle before the next block, a block must
+//      end in a read the DMA stalls to be exact, and a block ending in that
+//      write came out a cycle short or long (PROBE build, VICE x64sc).
+// A line's colours come from zlc (the copy's z * 8 per line, odd above the
+// horizon) plus bpos (the camera's position, even; C writes it each frame),
+// through the colour tables, so the bands move every frame whatever the
+// picture rate. Its $D016 comes from the copy's d016c table (the builder).
+// Every block's branch into its slide is BNE: the ADC sets V, so an earlier
+// BVC fell through into the whole slide whenever z * 8 + bpos overflowed as
+// a signed byte, and the lines drifted (PROBE build, VICE x64sc). Each BNE
+// follows a load of a non-zero byte ($D016 $18-$1F, a $D018 value), and the
+// slide's CMPs leave Z clear (A is never $C9 nor zp_R, which CMP $EA reads).
 #if PROBE
-.const NB_HEAD = 17             // + LDA #, STA $D021: the probe colour, written on cycle 19
-.const NB_CYC  = 21
+.const PROBE_B = 5              // + LDA #, STA $D021: the probe colour
+.const PROBE_C = 6
 #else
-.const NB_HEAD = 12
-.const NB_CYC  = 15             // LDA #, STA $D016, LDA #, STA $D021, BVC taken
+.const PROBE_B = 0
+.const PROBE_C = 0
 #endif
+.const NB_HEAD  = 28 + PROBE_B
+.const NB_CYC   = 40 + PROBE_C  // STA, STX, STY, NextLoads (25), BNE taken
 .const NB_SLIDE = 64 - NB_HEAD
-.const BB_HEAD  = 7
-.const BB_CYC   = 9             // LDA #, STA $D016, BVC taken
+.const OFF_LY   = 23 + PROBE_B  // L: the next row's $D018 (LDY #)
+.const LB_HEAD  = 26 + PROBE_B
+.const LB_SLIDE = 64 - LB_HEAD
+.const LB_CYC   = 36 + PROBE_C  // STA, STX, STY, grass (15), LDA abs, LDY #, BNE
+.const FB_HEAD  = 28 + PROBE_B
+.const FB_CYC   = 40 + PROBE_C  // STX, LDA abs, STA, NextLoads (25), BNE
+.const FB_SLIDE = 64 - FB_HEAD
+.const BB_HEAD  = 8
+.const BB_CYC   = 11            // STY, STA, BNE taken
 .const BB_SLIDE = 64 - BB_HEAD
-.const NB_OPER  = NB_HEAD - 1   // the BVC operand
+.const NB_OPER  = NB_HEAD - 1   // the BNE operands
+.const LB_OPER  = LB_HEAD - 1
+.const FB_OPER  = FB_HEAD - 1
 .const BB_OPER  = BB_HEAD - 1
-.const OFF_D016 = 1
-.const OFF_COL  = 6
+.const PRE_CYC  = 24            // a copy's entry (PreBlock)
+.const PRE_LY   = 11            // PreBlock's LDY # operand: row 7's $D018
+.const PRE_SIZE = 18
+.const bpos     = $ff           // the camera's position, even (C, each frame)
 
 // Calibration, found with the PROBE build (README, "The road's timing").
 .var SYNC_P   = cmdLineVars.containsKey("SYNCP")   ? cmdLineVars.get("SYNCP").asNumber()   : 40
@@ -156,8 +213,13 @@ spr_en:     .byte 0, 0
 // centre (signed pixels from the window's left) and the half-width. A line's
 // shown centre is its row's content centre + its XSCROLL (the $D016 byte in
 // its block).
-row_cref:   .fill 12 * 2, 0
-row_w:      .fill 12, 0
+row_cref:   .fill 2 * 12 * 2, 0         // per copy, per row: the content centre (signed)
+line_s:     .fill 2 * ROAD_LINES, 0     // per copy: each road line's shift from its row's cref
+d016_a:     .fill ROAD_LINES, D016_ROAD // per copy: each road line's $D016 (builder)
+d016_b:     .fill ROAD_LINES, D016_ROAD
+zlc_a:      .fill ROAD_LINES + 2, 1     // per copy: z * 8 per line, 1 above the horizon (builder)
+zlc_b:      .fill ROAD_LINES + 2, 1
+zlc_h:      .byte $ff, $ff              // the horizon offset each copy's zlc holds
 
 // ---- counters the chain keeps -----------------------------------------------------
 tick:       .byte 0             // incremented at line 251: the frame starts
@@ -219,12 +281,27 @@ irq_blank:
         IrqIn()
         inc tick
         jsr take_picture
-        lda d018_road, x
+        lda d018_sky, x
         sta $d018
         lda #D016_ROAD
         sta $d016
         lda #C_SKY
         sta $d021
+        lda zlc_off, x          // the road band and kerb until lines 109 and 110
+        tax                     // store their own
+        lda zlc_a + 2, x
+        clc
+        adc bpos
+        tay
+        lda road_col, y
+        sta $d022
+        lda zlc_a + 3, x
+        clc
+        adc bpos
+        tay
+        lda kerb_col, y
+        sta $d023
+        ldx rb_front
         lda #<irq_top
         sta $fffe
         lda #>irq_top
@@ -250,15 +327,18 @@ take_picture:
         sta rb_ready
         inc rb_swaps
 !keep:  ldx rb_front
-        lda road_lo, x          // the road copy the sync jumps to
+        lda pre_lo, x           // the road copy's entry, where the sync jumps
         sta sync_pal.go + 1
         sta sync_ntsc.go + 1
-        lda road_hi, x
+        lda pre_hi, x
         sta sync_pal.go + 2
         sta sync_ntsc.go + 2
         lda spr_msb, x
         sta $d010
         lda spr_en, x
+#if NOSPRITES
+        lda #0                  // (debug) no sprites: the road's timing alone
+#endif
         sta $d015
         lda set3, x
         tax
@@ -276,12 +356,45 @@ take_picture:
         ldx rb_front
         rts
 
+// rb_take: the main loop's take of a finished picture, when the beam is
+// clear of the road and of irq_top (lines 204-311 and 0-93), so the builder
+// need not wait for line 203 or 251 (C: road_work, while rb_ready). The
+// poll runs with interrupts on: an earlier version held them off for its
+// 29 cycles, and when the IRQ at 103 landed in that window irq_top's CLI
+// slipped past line 105 and the chain synced on 106 (about 50 times a race
+// with the builder idle; road_late, VICE x64sc). Only the swap itself,
+// about 150 cycles, runs with them off: in the lower window it can delay
+// irq_blank by two lines, which changes nothing it does.
+rb_take:
+        lda rb_ready
+        beq !done+
+        lda $d011
+        bmi !safe+              // lines 256 up
+        lda $d012
+        cmp #204
+        bcs !safe+
+        cmp #94
+        bcs !done+
+!safe:  sei
+        jsr take_picture
+        cli
+!done:  rts
+
 road_lo:    .byte <road_a, <road_b
 road_hi:    .byte >road_a, >road_b
-d018_road:  .byte D018_A, D018_B
+pre_lo:     .byte <pre_a, <pre_b
+pre_hi:     .byte >pre_a, >pre_b
+d018_sky:   .byte SET_BITS.get(SKY_SET), $10 | SET_BITS.get(SKY_SET)
+zlc_off:    .byte 0, zlc_b - zlc_a
 set3:       .byte 0, 3
 
-// ---- line 103: the double IRQ (c64-kb double_irq, stable_raster_irq) --------------------
+// ---- line 101: the double IRQ (c64-kb double_irq, stable_raster_irq) --------------------
+// From entry to CLI is about 107 cycles (arithmetic from the listing): with
+// the IRQ on line 103 the CLI came on cycle 44 of line 104, 19 cycles before
+// line 105's interrupt, and any 20-cycle delay of the 103 interrupt (a SEI in
+// the main loop) put the sync a line late. On 101 the margin is about 80
+// cycles; the NOPs then cover to past 105 (84 of them: 168 cycles from
+// cycle 44 of line 102 reach cycle 23 of line 105).
 irq_top:
         pha
         txa
@@ -312,7 +425,7 @@ irq_top:
         tsx
         stx sp_save
         cli
-    .for (var i = 0; i < 40; i++) { nop }
+    .for (var i = 0; i < 84; i++) { nop }
         jmp *                   // reached only when line 105 was armed late (road_late)
 
 // Line 105: entered from a NOP, so 0 or 1 cycle late. The two $D012 reads
@@ -329,9 +442,9 @@ irq_top:
         beq !+
 !:      cmp #SYNC_LINE          // the first read was line 105: the chain is on time
         bne late
-        Delay(entry - 6)        // (BIT in Delay sets V from memory)
-        clv                     // every block's BVC is taken
-go:     jmp road_a              // patched by irq_blank: the shown copy
+        Delay(entry - 6 - PRE_CYC)  // (BIT in Delay sets V from memory)
+        clv                     // (harmless: the blocks branch on Z now)
+go:     jmp pre_a               // patched by irq_blank: the shown copy's entry
 late:   inc road_late           // an IRQ held back past 105: this frame's road is wrong
         clv
         jmp go
@@ -410,9 +523,6 @@ detect_model:
 sh6_lo_lo:  .fill 256, i >> 6
 sh6_lo_hi:  .fill 256, (i << 2) & $ff
 sh6_hi:     .fill 256, (i < 128) ? (i >> 6) : ((i >> 6) | $fc)
-// z * 8, z in units of 8 world units
-m8lo:       .fill 256, <(i * 8)
-m8hi:       .fill 256, >(i * 8)
 // half-width at a line from its z: w = W0 * ZN / (8 z); z * 8 = ZN at line 202
 w_of_z:     .fill 256, (i == 0) ? 0 : min(255, round(W0 * ZN / (i * 8)))
 
@@ -426,15 +536,20 @@ w_of_z:     .fill 256, (i == 0) ? 0 : min(255, round(W0 * ZN / (i * 8)))
     .var D = L_NEAR - H
     .return max(1, min(255, round(ZN * D / d / 8)))
 }
-zt_lo:      .fill HOFF_N, <(ztab + i * ROAD_LINES)
-zt_hi:      .fill HOFF_N, >(ztab + i * ROAD_LINES)
+// Even offsets only (the horizon moves two lines at a time): ztab holds
+// offsets 0, 2, ... 22; zt_lo/hi[h] points at h & ~1's.
+zt_lo:      .fill HOFF_N, <(ztab + (i >> 1) * ROAD_LINES)
+zt_hi:      .fill HOFF_N, >(ztab + (i >> 1) * ROAD_LINES)
 ztab:
-    .for (var h = 0; h < HOFF_N; h++) {
+    .for (var h = 0; h < HOFF_N; h += 2) {
         .fill ROAD_LINES, zOf(h, i)
     }
 
 // The track: 64 segments of 256 units, a curvature and a hill each.
 .import source "track.asm"
+
+// The road's glyphs and row templates.
+.import source "glyphs.asm"
 
 // ---- the road, two copies ----------------------------------------------------------------
 // One 64-byte block a line, aligned, so no branch into a slide crosses a
@@ -443,33 +558,102 @@ ztab:
     .fill n - 2, $c9
     .byte $c5, $ea
 }
-.macro RoadCopy() {
+// The next line's loads in an F or N block: its grass to X, its road band
+// (even line) or kerb (odd) to Y, its $D016 to A. 25 cycles.
+.macro NextLoads(zl, d016, n) {
+            lda zl + n
+            clc
+            adc bpos
+            tay
+            ldx grass_col, y
+          .if ((n & 1) == 0) { lda road_col, y } else { lda kerb_col, y }
+            tay
+            lda d016 + n
+}
+.macro RoadCopy(scr, zl, d016) {
     .for (var j = 0; j < ROAD_LINES; j++) {
-        .if (isBad(ROAD_TOP + j)) {
-            lda #D016_ROAD
+        .var k = (ROAD_TOP + j - 3) & 7         // the line's place in its row
+        .var last = j + 1 == ROAD_LINES         // line 202: the panel is next
+        .var nextY = last ? D018_HUD : scr | SET_BITS.get(rowSet.get(min(j + 1, ROAD_LINES - 1) >> 3))
+        .if (k == 0) {
+blk:        sty $d018
             sta $d016
-            .byte $50, BB_SLIDE     // BVC to the next block: no pad until built
+bb:         .byte $d0, BB_SLIDE     // BNE to the next block (no pad until built)
             Slide(BB_SLIDE)
-        } else {
-            lda #D016_ROAD
+            .errorif bb + 1 - blk != BB_OPER, "B block layout"
+        } else .if (k == 1) {
+blk:        stx $d021
+            lda d016 + j
             sta $d016
-            lda #C_SKY
-            sta $d021
 #if PROBE
             lda #PROBE_COL
             sta $d021
 #endif
-            .byte $50, NB_SLIDE
+            NextLoads(zl, d016, j + 1)
+fb:         .byte $d0, FB_SLIDE
+            Slide(FB_SLIDE)
+            .errorif fb + 1 - blk != FB_OPER, "F block layout"
+        } else {
+blk:        sta $d016
+            stx $d021
+          .if ((j & 1) == 0) { sty $d022 } else { sty $d023 }
+#if PROBE
+            lda #PROBE_COL
+            sta $d021
+#endif
+          .if (k == 7) {
+          .if (last) {
+            lda zl + j              // (unused: the others' bytes and cycles)
+            clc
+            adc bpos
+            tay
+            ldx hud_d016            // line 203's STX $D016
+          } else {
+            lda zl + j + 2          // the next row's line 1: its grass
+            clc
+            adc bpos
+            tay
+            ldx grass_col, y
+          }
+            lda d016 + min(j + 1, ROAD_LINES - 1)
+ly:         ldy #nextY
+lb:         .byte $d0, LB_SLIDE
+            Slide(LB_SLIDE)
+            .errorif ly + 1 - blk != OFF_LY || lb + 1 - blk != LB_OPER, "L block layout"
+          } else {
+            NextLoads(zl, d016, j + 1)
+nb:         .byte $d0, NB_SLIDE
             Slide(NB_SLIDE)
+            .errorif nb + 1 - blk != NB_OPER, "N block layout"
+          }
         }
     }
         lda #D018_HUD           // line 203, cycle 2
         sta $d018               // written on cycle 7, before the c-accesses from 15
-        stx $d016               // X = D016_HUD since the sync: written on cycle 11
+        stx $d016               // X = D016_HUD from line 202's block: written on cycle 11
         jmp hud_rest            // opcode read on 12: held by the badline to 55
 }
 
+// A copy's entry, on line 106: line 107's $D016 into A, row 7's $D018 into
+// Y (line 107's block stores both), and line 108's grass into X.
+.macro PreBlock(scr, code, zl, d016) {
+pb:     lda zl + 1              // line 108's grass, for its F block
+        clc
+        adc bpos
+        tay
+        ldx grass_col, y
+ly:     ldy #scr | SET_BITS.get(rowSet.get(0))  // row 7's set: line 107's B block stores it
+        lda d016                // line 107's $D016
+        jmp code
+        .errorif ly + 1 - pb != PRE_LY || * - pb != PRE_SIZE, "PreBlock layout"
+}
+hud_d016:   .byte D016_HUD
+.label rc_off_ly = OFF_LY        // for roadcheck: each row's $D018 operand in the L block above
+.label rc_pre_ly = PRE_LY        // and row 7's in the copy's entry block
+pre_a:  PreBlock($00, road_a, zlc_a, d016_a)
+pre_b:  PreBlock($10, road_b, zlc_b, d016_b)
+
 .align $100
-road_a: RoadCopy()
+road_a: RoadCopy($00, zlc_a, d016_a)
 .align $100
-road_b: RoadCopy()
+road_b: RoadCopy($10, zlc_b, d016_b)

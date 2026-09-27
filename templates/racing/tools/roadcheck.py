@@ -1,22 +1,29 @@
 #!/usr/bin/env python3
-"""roadcheck.py: prove every road line shows what its raster split says.
+"""roadcheck.py: prove every road line shows what the machine's own state says.
 
     python3 tools/roadcheck.py --x64sc X --asm build/asm.h [--expect pass|fail] PRG PAL.png NTSC.png
 
 The AUTOPILOT build ends on a still (src/verdict.h, photo) that does not
 change. For each model this script runs PRG under VICE's binary monitor until
 the program has graded itself ($02FF not 0) and a second more, then reads the
-machine: the road copy on display (engine.asm's road_a or road_b: each road
-line's block holds the $D016 and $D021 bytes it stores), the screen and
-colour RAM, the character set, the VIC-II's registers and the three sprites.
-From those alone it draws lines 107-202 as the VIC-II would, multicolour
-characters shifted right by each line's XSCROLL over each line's background
-colour, a badline keeping the colour of the line above, sprites 0-2 in front
-(a sprite whose Y register is y shows on lines y + 1 to y + 21), and compares
-every pixel with the pinned exit screenshot of the same still (make shot).
+machine: the road copy on display (engine.asm: each line's $D016 from the
+copy's d016 table, each row's $D018 from the L block above it or the copy's
+entry block, each line's colours from the copy's z table plus the camera's
+position through the colour tables, as the road's blocks look them up), the
+screen and colour RAM, the character sets under I/O and the KERNAL (bank 3),
+the VIC-II's registers and the three sprites. From those alone it draws lines
+107-202 as the VIC-II would: multicolour characters from the row's set,
+shifted right by the line's XSCROLL, in 38 columns (the border covers the
+seven and nine pixels at the sides), over the line's grass, road band and
+kerb colours (a register keeps its value until a block stores it: the
+badline and the row's second line keep the bands above them), sprites 0-2
+in front (a sprite whose Y register is y shows on lines y + 1 to y + 21),
+and compares every pixel with the pinned exit screenshot of the same still
+(make shot).
 
 A split that landed late, a line that kept the last line's XSCROLL, a pad
-that got a sprite's stall wrong: each is a mismatch on the lines it touched.
+that got a sprite's stall wrong, a sheared row whose dynamic glyph was built
+from the wrong source: each is a mismatch on the lines it touched.
 --expect fail (make mutants, MUTANT=1: the pads ignore the sprites) passes
 only when the drawing and the shot disagree.
 
@@ -38,8 +45,10 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "_harness"))
 import check  # noqa: E402  (the harness's palettes and geometry)
 
 ROAD_TOP, ROAD_LINES = 107, 96
+BANK = 0xC000
 SCREENS = (0xC000, 0xC400)
-CHARSET = 0xE000
+BPOS = 0xFF                             # engine.asm bpos: the camera's position, even
+C_SKY = 14
 
 
 class Vice:
@@ -80,9 +89,9 @@ class Vice:
             if rid == self.rid:
                 return data
 
-    def mem(self, addr, n):
-        """n bytes from the CPU's view (I/O in: $D000 is the VIC-II, $D800 colour RAM)."""
-        return self.cmd(0x01, struct.pack("<BHHBH", 0, addr, addr + n - 1, 0, 0))[2:]
+    def mem(self, addr, n, bank=0):
+        """n bytes: bank 0 the CPU's view (I/O in), bank 1 the RAM under everything."""
+        return self.cmd(0x01, struct.pack("<BHHBH", 0, addr, addr + n - 1, 0, bank))[2:]
 
     def run(self, seconds):
         self.cmd(0xAA)
@@ -111,47 +120,89 @@ def snapshot(args, model):
         vice.run(1.0)                   # the still is up (photo, after the grade)
         front = vice.mem(lab["RB_FRONT"], 1)[0]
         code = lab["ROAD_B"] if front else lab["ROAD_A"]
+        off_ly = lab["RC_OFF_LY"]
+        # each row's $D018: row 0's from the copy's entry block, the rest
+        # from the L block of the row above (its LDY # operand)
+        pre = lab["PRE_B"] if front else lab["PRE_A"]
+        d018 = [vice.mem(pre + lab["RC_PRE_LY"], 1)[0]]
+        for r in range(1, 12):
+            d018.append(vice.mem(code + (8 * r - 1) * 64 + off_ly, 1)[0])
         snap = {
             "front": front,
-            "code": vice.mem(code, ROAD_LINES * 64),
+            "d016": vice.mem(lab["D016_A"] + front * ROAD_LINES, ROAD_LINES),
+            "zlc": vice.mem(lab["ZLC_A"] + front * (ROAD_LINES + 2), ROAD_LINES + 2),
+            "bpos": vice.mem(BPOS, 1)[0],
+            "grass_col": vice.mem(lab["GRASS_COL"], 256),
+            "road_col": vice.mem(lab["ROAD_COL"], 256),
+            "kerb_col": vice.mem(lab["KERB_COL"], 256),
+            "d018": d018,
             "screen": vice.mem(SCREENS[front], 1024),
             "colour": vice.mem(0xD800, 1000),
-            "charset": vice.mem(CHARSET, 2048),
             "vic": vice.mem(0xD000, 0x2F),
+            "sets": {},
         }
+        for v in set(d018):
+            base = BANK + ((v & 0x0E) << 10)
+            snap["sets"][v] = vice.mem(base, 2048, bank=1)
         ptrs = snap["screen"][0x3F8:0x3F8 + 3]
-        snap["sprites"] = [vice.mem((0xC000 + p * 64), 63) for p in ptrs]
+        snap["sprites"] = [vice.mem(BANK + p * 64, 63) for p in ptrs]
         snap["result"] = vice.mem(0x02FF, 1)[0]
         return snap
     finally:
         vice.close()
 
 
+def colours(snap):
+    """Per road line, ($D021, $D022, $D023) as the kernel leaves them, following
+    each block kind's stores (engine.asm, block layout)."""
+    zl, bpos = snap["zlc"], snap["bpos"]
+    g, r, k = snap["grass_col"], snap["road_col"], snap["kerb_col"]
+
+    def v(i):
+        return (zl[i] + bpos) & 0xFF
+    # irq_blank at line 251: sky, and lines 109's and 110's own bands
+    bg, road, kerb = C_SKY, r[v(2)], k[v(3)]
+    out = []
+    for j in range(ROAD_LINES):
+        kind = j & 7
+        if kind == 0:                   # B: $D016 and $D018 only
+            pass
+        elif kind == 1:                 # F: its own grass
+            bg = g[v(j)]
+        else:                           # N, L: grass, and the road band (even) or kerb (odd)
+            bg = g[v(j)]
+            if j & 1:
+                kerb = k[v(j)]
+            else:
+                road = r[v(j)]
+        out.append((bg, road, kerb))
+    return out
+
+
 def draw(snap):
-    """{line: [320 colour indices]} for lines 107-202, VIC X 24-343."""
-    vic, code, scr, colram, cs = snap["vic"], snap["code"], snap["screen"], snap["colour"], snap["charset"]
-    bg1, bg2 = vic[0x22] & 15, vic[0x23] & 15
-    out = {}
-    colour = 14                         # $D021 above the road: irq_blank's sky
+    """({line: [320 colour indices]}, {line: grass colour}) for lines 107-202, VIC X 24-343."""
+    vic, scr, colram = snap["vic"], snap["screen"], snap["colour"]
+    cols = colours(snap)
+    out, bgs = {}, {}
     for i in range(ROAD_LINES):
         line = ROAD_TOP + i
-        blk = code[i * 64:(i + 1) * 64]
-        d016 = blk[1]
-        if (line & 7) != 3:             # a normal line stores its colour; a badline keeps the last
-            colour = blk[6]
-        xs = d016 & 7
-        row, g = (line - 51) >> 3, (line - 51) & 7
+        bg, bg1, bg2 = cols[i]
+        bgs[line] = bg
+        xs = snap["d016"][i] & 7
+        row, gl = (line - 51) >> 3, (line - 51) & 7
+        cs = snap["sets"][snap["d018"][row - 7]]
         pix = []
         for c in range(40):
             ch = scr[row * 40 + c]
-            byte = cs[ch * 8 + g]
+            byte = cs[ch * 8 + gl]
             cr = colram[row * 40 + c] & 15
             for p in range(4):
                 pair = (byte >> (6 - 2 * p)) & 3
-                v = (colour, bg1, bg2, cr & 7)[pair] if cr & 8 else None
+                v = (bg, bg1, bg2, cr & 7)[pair] if cr & 8 else None
                 pix += [v, v]
-        pix = [colour] * xs + pix[:320 - xs]
+        pix = [bg] * xs + pix[:320 - xs]
         out[line] = pix
+    border = vic[0x20] & 15
     # sprites 0-2, sprite 0 in front
     en, msb, mc = vic[0x15], vic[0x10], vic[0x1C]
     mc0, mc1 = vic[0x25] & 15, vic[0x26] & 15
@@ -162,22 +213,26 @@ def draw(snap):
         sy = vic[s * 2 + 1]
         col = vic[0x27 + s] & 15
         data = snap["sprites"][s]
-        for r in range(21):
-            line = sy + 1 + r
+        for rr in range(21):
+            line = sy + 1 + rr
             if line not in out:
                 continue
             for b in range(3):
-                byte = data[r * 3 + b]
+                byte = data[rr * 3 + b]
                 for p in range(4):
                     pair = (byte >> (6 - 2 * p)) & 3
                     if not pair:
                         continue
                     v = (None, mc0, col, mc1)[pair] if mc & (1 << s) else col
-                    for k in range(2):
-                        x = sx + b * 8 + p * 2 + k - 24
+                    for kk in range(2):
+                        x = sx + b * 8 + p * 2 + kk - 24
                         if 0 <= x < 320:
                             out[line][x] = v
-    return out
+    # 38 columns: the border covers VIC X 24-30 and 335-343, sprites too
+    for pix in out.values():
+        pix[0:7] = [border] * 7
+        pix[311:320] = [border] * 9
+    return out, bgs
 
 
 def compare(shot, drawn):
@@ -189,6 +244,26 @@ def compare(shot, drawn):
             if got != pix[x]:
                 bad.setdefault(line, []).append((x + 24, pix[x], got))
     return bad
+
+
+def edge_steps(drawn, bgs):
+    """The largest move of the left road edge between neighbouring lines, in
+    pixels: the first pixel from the left that is not the line's grass, over
+    lines whose edge is inside the window (the acceptance's 'no visible
+    stair-steps'; a sprite over the edge counts as the edge)."""
+    xs = {}
+    for line, pix in drawn.items():
+        if pix[7] != bgs[line]:
+            continue                    # the edge is off the window's left
+        for x in range(8, 311):
+            if pix[x] != bgs[line]:
+                xs[line] = x
+                break
+    worst = 0
+    for line in sorted(xs):
+        if line - 1 in xs:
+            worst = max(worst, abs(xs[line] - xs[line - 1]))
+    return worst
 
 
 def main():
@@ -208,23 +283,25 @@ def main():
     for model in args.models.split(","):
         png = shots[model]
         snap = snapshot(args, model)
-        drawn = draw(snap)
+        drawn, bgs = draw(snap)
         bad = compare(check.Shot(png, model), drawn)
-        xs = [snap["code"][i * 64 + 1] & 7 for i in range(ROAD_LINES)]
-        steps = sum(1 for i in range(1, ROAD_LINES) if xs[i] != xs[i - 1] and (ROAD_TOP + i) & 7 != 3)
+        xs = [snap["d016"][i] & 7 for i in range(ROAD_LINES)]
+        steps = sum(1 for i in range(1, ROAD_LINES) if xs[i] != xs[i - 1])
+        sets = len(set(snap["d018"]))
         if bad:
             failed += 1
             first = sorted(bad)[:4]
-            print(f"FAIL {model.upper():5} {len(bad)} of {ROAD_LINES} road lines differ from their splits; "
+            print(f"FAIL {model.upper():5} {len(bad)} of {ROAD_LINES} road lines differ from the machine's state; "
                   f"first: " + "; ".join(f"line {ln} at X {bad[ln][0][0]} drawn {bad[ln][0][1]} shot {bad[ln][0][2]}"
                                           f" ({len(bad[ln])} px)" for ln in first))
         else:
-            print(f"PASS {model.upper():5} all {ROAD_LINES} road lines match their $D016 and $D021 bytes, "
-                  f"sprites 0-2 drawn over them ({steps} XSCROLL changes inside rows)")
+            print(f"PASS {model.upper():5} all {ROAD_LINES} road lines match their $D016, $D018 and band bytes, "
+                  f"sprites 0-2 drawn over them ({steps} XSCROLL changes, {sets} character sets, "
+                  f"largest left-edge step {edge_steps(drawn, bgs)} px)")
     if args.expect == "pass":
         print(f"roadcheck: {'FAIL' if failed else 'PASS'}")
         return 1 if failed else 0
-    print(f"roadcheck: {'PASS, the mutant was caught' if failed else 'FAIL, the mutant drew what its splits say'}")
+    print(f"roadcheck: {'PASS, the mutant was caught' if failed else 'FAIL, the mutant drew what its state says'}")
     return 0 if failed else 1
 
 

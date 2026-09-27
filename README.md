@@ -41,7 +41,7 @@ build in play on PAL.
 <tr>
 <td align="center"><a href="templates/demo/README.md"><img src="docs/figures/starters/demo.png" width="220" alt="Logo, sprite sine chain, raster bars and a scroller"></a><br><sub>Demo (KickAssembler)</sub></td>
 <td align="center"><a href="templates/beat-em-up/README.md"><img src="docs/figures/starters/beat-em-up.png" width="220" alt="The hero kicking the brute on the street"></a><br><sub>Beat-em-up</sub></td>
-<td align="center"><a href="templates/racing/README.md"><img src="docs/figures/starters/racing.png" width="220" alt="Racing behind two opponents on the road"></a><br><sub>Pseudo-3D racer</sub></td>
+<td align="center"><a href="templates/racing/README.md"><img src="docs/figures/starters/racing.png" width="220" alt="Racing into a right-hander at full speed, two opponents ahead"></a><br><sub>Pseudo-3D racer</sub></td>
 <td align="center"><a href="templates/run-and-gun/README.md"><img src="docs/figures/starters/run-and-gun.png" width="220" alt="The soldier's grenade bursting on a grenadier in the jungle"></a><br><sub>Vertical run-and-gun</sub></td>
 </tr>
 </table>

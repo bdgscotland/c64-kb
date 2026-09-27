@@ -5,7 +5,9 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-**The second study: Pirates! (data 847).** The KB had no page for how a
+Data 848, schema 40, tools 2.20.1, package 0.30.0.
+
+**The second study: Pirates! (data 848).** The KB had no page for how a
 game with many modes is built. The Pirates! teardown found five
 mechanisms, each checked against the game's bytes, a trace or a
 screenshot in VICE x64sc 3.10 on the maintainer's copy (a cracked
@@ -40,6 +42,7 @@ were corrected before landing: `$02D0`/`$02C9` are the disk hooks'
 fixed-value bank switch, not a stack-based pair used by the IRQ; and
 the interpreter dispatch figures, first worked out on paper, are now
 measured.
+**#110 step 1: the racing starter's road edges move on every raster line; `slanted_glyph_road` (data 847).** The maintainer's "shady" road stepped its width once per character row. The starter now draws the width from glyphs computed when it is assembled (321 left glyphs in three character sets, their mirrors at id + $80, the road's centre held on a 4-pixel boundary so a row's characters depend only on its width), the bend per line from XSCROLL and, on tight bends, whole-column shear with glyphs built at run time into a dynamic set per road copy; grass, road and rumble-strip bands come from registers on every line and move at the frame rate. Measured in VICE x64sc 3.10: every road line's stores on cycles 5, 9 and 13 (the PROBE build's probe on cycle 19 at screenshot x 49 on every visible line at eight cycle counts on PAL and six on NTSC), `roadcheck` redrawing all 96 lines of the still from the machine's own tables pixel for pixel on both models, a picture every 3.04 PAL frames (3.5 for the stepped road, 9.2 for the work-in-progress per-picture glyph drawing), no lost step and no late sync in the autopilot's race, 34 pinned checks a model and seven mutants caught. Five faults found on the way are on the new technique page as pitfalls: a block ending in a write is a cycle off under sprite 2's DMA; `ADC` sets V so `BVC` into a slide falls through; a double IRQ's first handler needs a CLI margin larger than any interrupt-off window in the main loop (the starter's first IRQ moved from line 103 to 101); Y-indexed tables must not cross a page; and in 40 columns XSCROLL's shifted-in pixels show the background as a sawtooth wherever a bend reaches the window's edge, so the starter runs in 38 columns (the maintainer saw it at top speed on the first play). From the same play: the bends were "choppy, too sharp", a kink at each segment boundary walking down the road; the curvature is now eased between segment middles, four samples a segment, and drawn at half the scale, so a bend builds and fades. The harness's `make run` no longer forces the numpad joystick over the user's vicerc. `char_row_road` now says the starter no longer implements it.
 
 **The RE tools ran out of memory on a long session (tools 2.20.1, #134).**
 `re-irq-chain` on the Pirates! session (play at 213,772,067 cycles)
