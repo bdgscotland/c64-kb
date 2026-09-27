@@ -369,7 +369,14 @@ title: $(PRG)
 # ---- wave 2: collisions, death and checkpoints, the area end -----------------------------
 # Each is its own autopilot build graded by its expect-*.json on PAL and NTSC.
 #   make collide   -dCOLLIDETEST=1: kills by bullet and blast, the score per kind, a death
-#                  by an enemy; collide()'s cost (src/collide_test.h)
+#                  by an enemy; collide()'s cost (src/collide_test.h). Its walk and
+#                  timings were re-cut for issue #133's fix (blasts expire at age 20):
+#                  the death is now the fresh blast of the grenade the grenadier threw
+#                  on 297 (age 8 at the hit, play frame 384 PAL / 386 NTSC). The old
+#                  walk stood in the box of the grenade thrown on 178 and died on its
+#                  blast at age 155 (play frame 413), a blast that stayed alive only
+#                  because the expiry compare was dropped. Every pinned figure is
+#                  unchanged; only the walk's timings moved.
 #   make death     -dDEATHTEST=1: three deaths on the swamp, checkpoint restarts, grenades
 #                  topped up, a life each, game over (src/death_test.h)
 #   make area      -dAREATEST=1: the gate wave, the walk, the bonus, the next area (src/area_test.h)

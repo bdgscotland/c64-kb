@@ -1248,13 +1248,19 @@ runner of row 88 crosses his column (150); right to X 300, up 8 to face up,
 a grenade whose blast lands on the grenadier of row 84 (200, by the blast);
 taps while the rifleman of row 77 follows him into them (100): `KILL 1 1 1
 B 1`, `SCORE 000450`. Then up and standing: before the view moves (top 75)
-the blast of a grenade the grenadier threw before he died bursts on him, a
-hit (play frame 413 in VICE, not pinned: it moved a frame with the code's
-layout); after `DEATH_FRAMES` the restart puts the view at row 75, the first
-checkpoint at or behind 75, with the window's three events again, grenades
-4 to 5, lives 2. The grenadier the blast killed is back on screen where the
-arithmetic puts him (sprite X 312, Y 659 - 607 + 54 = 106: purple at VIC x
-320-329, lines 112-121, both models).
+the blast of the grenade the grenadier threw on 297 bursts back on his own
+cell and kills him, a hit (play frame 384 PAL, 386 NTSC, the blast at age 8;
+not pinned, it moves a frame with the code's layout); after `DEATH_FRAMES`
+the restart puts the view at row 75, the first checkpoint at or behind 75,
+with the window's three events again, grenades 4 to 5, lives 2. The
+grenadier the blast killed is back on screen where the arithmetic puts him
+(sprite X 312, Y 659 - 607 + 54 = 106: purple at VIC x 320-329, lines
+112-121, both models). An earlier version of this paragraph had him dying
+on the grenade thrown on 178, at its age 155 (play frame 413): that blast
+stayed alive only because issue #133's expiry compare was dropped, so the
+walk was re-cut to die on a fresh one (the throw moved to 338, the walk up
+to 354-388 to Y 117; every pinned figure unchanged, measured with a RAM
+trace of the pool in VICE).
 
 `NO_HARM` (game.h): nothing kills the soldier in the forced-death builds
 (`make frontend`, `make fedrive`: their score must be exact), `make weapons`

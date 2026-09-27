@@ -7,29 +7,41 @@
 //   1-96     fire taps up: the runner of row 88 crosses his column (150)
 //   97-228   right, X 168 to 300: under the grenadier of row 84 (X 312)
 //   229-236  up 8: facing up, Y 152
-//   237      throw: the grenade lands 60 pixels above his body centre on
-//            frame 267, its blast box over the grenadier (200, by the blast)
-//   287-382  fire taps: the rifleman of row 77 has followed his column and
-//            walks into the shots (100)
-//   383-     up, then stand: before the view moves (top 75) the blast of a
-//            grenade the grenadier threw before he died bursts on him: a hit
-//            (VICE: play frame 413; not pinned, it moves a frame with the
-//            code's layout). After DEATH_FRAMES the restart puts the view at
-//            row 75 (the first checkpoint at or behind 75, the area's start)
-//            with the window's three events again, grenades 4 to 5.
+//   237-337  stand: the grenadier's first two grenades burst on his own cell
+//            (map 312, 659), 30 pixels above the soldier's box
+//   287-353  fire taps (one press is the throw on 338): the rifleman of row
+//            77 has followed his column and walks into the shots (100)
+//   338      throw: the grenade lands 60 pixels above his body centre on
+//            frame 368 and its blast box is over the grenadier (200, by the
+//            blast; the rifleman is dust since 351, so the blast is his alone)
+//   354-388  up 35 to Y 117: into the box of the grenade the grenadier threw
+//            on 297 (vx 0: it bursts back on his own cell, map 312, 659; a
+//            RAM trace of the pool: born on 376 PAL, 377 NTSC). The blast
+//            kills him on play frame 384 PAL, 386 NTSC, at age 8 (the frame
+//            is not pinned, it moves a frame with the code's layout). Before
+//            issue #133's fix the blast never expired and he died on the one
+//            thrown on 178 instead: age 155 at the hit, play frame 413.
+//   389-     stand: after DEATH_FRAMES the restart puts the view at row 75
+//            (the first checkpoint at or behind 75, the area's start) with
+//            the window's three events again, grenades 4 to 5.
 #if TT_PART == 1
 #define TAP  {   1, 0xef }, {   5, 0xff }
 #define TAP4 TAP, TAP, TAP, TAP
 #define TAP16 TAP4, TAP4, TAP4, TAP4
+#define TAP8  TAP4, TAP4
 static const char script[][2] = {
     {   2, 0xff }, {   2, 0xef },       // title
     TAP16,                              // the runner crosses his line of fire
     { 132, 0xf7 },                      // right: X 168 to 300, under the grenadier
     {   8, 0xfe },                      // up 8: face up
-    {   1, 0xdf }, {  49, 0xff },       // throw: the blast lands on the grenadier
-    TAP16,                              // the rifleman follows him into his line of fire
-    {  60, 0xfe },                      // up: to the threshold, then 16 lines of scroll
-    { 250, 0xff }, { 250, 0xff },       // stand, no fire: the next rifleman's shot
+    {  50, 0xff },                      // stand: the grenades burst above him
+    TAP8,                               // the rifleman follows him into his line of fire
+    {   2, 0xff }, {   1, 0xdf }, {   2, 0xff },   // 338 throw: the blast lands on the grenadier
+    TAP,                                // 341-352: the volley that kills the rifleman
+    TAP,
+    {   1, 0xef },                      // 353: the last tap, from Y 152
+    {  35, 0xfe },                      // up 35: Y 117, in the burst's box, no scroll
+    { 250, 0xff }, { 250, 0xff },       // stand: the restart's window, no second death
 };
 #define PLAY_FRAMES 60000
 #define FREEZE_YS   0

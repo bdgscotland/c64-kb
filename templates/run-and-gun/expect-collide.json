@@ -4,7 +4,7 @@
     { "name": "verdict line", "type": "text", "row": 0, "col": 1, "text": "RESULT 01 PASS", "dy": 5 },
     { "name": "kills: one rifleman, one runner, one grenadier; the grenadier by the grenade's blast", "type": "text", "row": 1, "col": 1, "text": "KILL 1 1 1 B 1", "dy": 5 },
     { "name": "score per kind: runner 150 + grenadier 200 + rifleman 100", "type": "text", "row": 2, "col": 1, "text": "SCORE 000450", "dy": 5 },
-    { "name": "one death, by an enemy object (a hit, cause 1), none by terrain", "type": "text", "row": 3, "col": 1, "text": "HIT 1 TER 0 C 1", "dy": 5 },
+    { "name": "one death, by an enemy object (a hit, cause 1), none by terrain: the fresh blast of the grenade the grenadier threw on 297 (age 8 at the hit, play frame 384 PAL / 386 NTSC). Before the fix of issue #133 the blast that killed him was the grenade thrown on 178 at age 155 (play frame 413): blasts never expired and the walk here depended on one that stayed alive", "type": "text", "row": 3, "col": 1, "text": "HIT 1 TER 0 C 1", "dy": 5 },
     { "name": "died at view top 75, restarted at checkpoint 75 (the area's start) with the window's 3 events", "type": "text", "row": 4, "col": 1, "text": "TOP 75 ROW 75 E 3", "dy": 5 },
     { "name": "the restart 64 frames after the death (DEATH_FRAMES); grenades 4, topped up to 5", "type": "text", "row": 5, "col": 1, "text": "DT 064 GREN 4 5", "dy": 5 },
     { "name": "no frame lost (metered, whole run), no redraw late", "type": "text", "row": 6, "col": 1, "text": "LOST 00 00 L 0", "dy": 5 },
