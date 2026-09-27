@@ -660,8 +660,9 @@ above from the pixels and prints pass or fail for each of these claims:
   7)`: 4 and 1 for camx $7B, camy $36.
 - Each landmark's top-left corner is at VIC x `31 + x − camx` and raster
   line `55 + y − camy` for its map pixel (x, y), exactly, on both models.
-- The ship's pixels lie inside its 24x21 sprite box (VIC x 172-195,
-  lines 140-160) and the hull points along the reported facing.
+- The ship's pixels lie inside its 24x21 sprite box (the listing's SPX
+  172 and SPY 139: VIC x 172-195, lines 140-160) and the hull points
+  along the reported facing.
 - Between the two shots every landmark moved (−6, 0) on PAL and (−7, 0)
   on NTSC, the difference of the two reported camera positions, and the
   ship's box did not move at all.
@@ -677,13 +678,15 @@ the landmarks moved. One pixel a step is the move table; the redraw is
 
 The redraw cost is against the frame: 15,013 cycles, 76% of the 19,656
 PAL cycles, and 14,972 of the 17,095 NTSC cycles, 88%, once every five
-frames. The whole step, stick to hand-off, is 16,923 cycles on PAL and
-16,750 on NTSC, so on NTSC 345 cycles of the frame are left and the step
-runs on one frame in five only because the other four frames do none of
-it. The redraw ends on line 245 (PAL) and 234-237 (NTSC), inside the
-display's lines 55-246: the copy runs while the beam is reading the
-window, which is safe only because it writes the matrix that is not on
-display.
+frames. The frame lengths and the two percentages are arithmetic (63
+cycles a line over 312 lines on PAL, 65 over 263 on NTSC). The whole
+step, stick to hand-off, is 16,923 cycles on PAL and 16,750 on NTSC, so
+on NTSC 345 cycles of the frame are left (arithmetic) and the step runs
+on one frame in five only because the other four frames do none of it.
+The redraw ends on line 245 (PAL) and 234-237 (NTSC), inside the
+display's lines 55-246 (measured): the copy runs while the beam is
+reading the window, which is safe only because it writes the matrix that
+is not on display.
 
 Off by one: with the report written from matrix column 0, the first
 field decoded as a space on every shot. With CSEL 0 the display window

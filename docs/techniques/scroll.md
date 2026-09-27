@@ -1945,6 +1945,10 @@ and the whole step, screen on, PAL C64C and NTSC 6567R8:
 | Whole step | 16,923 (86%) | 16,750 (98%) |
 | The redraw returns on line | 245 | 234-237 |
 
+Every figure in the table is measured except the two frame lengths,
+which are arithmetic (63 cycles a line over 312 lines on PAL, 65 over
+263 on NTSC).
+
 The step runs once in five frames, so the four frames between steps
 spend none of this. What they do spend is the frame counter's increment
 and the test of the dirty byte in the IRQ, 12 cycles (arithmetic from
