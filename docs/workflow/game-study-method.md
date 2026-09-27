@@ -182,7 +182,9 @@ waits for a release that never comes. Give the entry `"once": true` and it
 sets its value on exactly one hit and disables its checkpoint in the same
 command (`command N "r a = 6f; disable N"`); the next pass reads the
 port's own idle value, which is the release, so one once entry is one
-press and two once entries at different `after_hits` are two. Measured in
+press. Two once entries are two presses only if the game reads the idle
+value between them: `after_hits` 0 and 1 hit consecutive reads, so the
+menu sees no release and counts one. Measured in
 VICE x64sc on test/fixtures/re/press-count.asm (a loop that counts a press
 only after a release): two once entries counted 2 presses, one held
 injection counted 1.

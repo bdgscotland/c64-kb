@@ -95,7 +95,9 @@ function injectionLines(i: Injection, n: number): { checkpoint: string; then: st
   const then = i.after_hits > 0 ? [`ignore ${n} ${i.after_hits.toString(16)}`] : [];
   // `once` disables the checkpoint in the same command line (one command line
   // may hold both, `;`-separated), so the next pass reads the port's own value.
-  if (regs) then.push(`command ${n} "r ${regs}${i.once === true ? `; disable ${n}` : ""}"`);
+  // A once entry with an empty `set` still disables itself, or it would fire on every pass.
+  const parts = [...(regs ? [`r ${regs}`] : []), ...(i.once === true ? [`disable ${n}`] : [])];
+  if (parts.length > 0) then.push(`command ${n} "${parts.join("; ")}"`);
   return { checkpoint: `trace exec ${pc} ${pc}`, then };
 }
 

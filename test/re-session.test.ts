@@ -109,6 +109,10 @@ describe("monitor commands", () => {
     });
     expect(injectCommands(s, 2)).toBe('trace exec c000 c000\nignore 2 4\ncommand 2 "r a = 6f; disable 2"\n');
   });
+  it("a once entry with an empty set still disables its checkpoint", () => {
+    const s = session({ inject: [{ at_pc: "$C000", after_hits: 0, set: {}, once: true, why: "t" }] });
+    expect(injectCommands(s, 1)).toBe('trace exec c000 c000\ncommand 1 "disable 1"\n');
+  });
   it("once:false or no once is the plain every-hit command", () => {
     for (const once of [false, undefined]) {
       const s = session({
