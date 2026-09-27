@@ -4075,3 +4075,132 @@ passes of the duel window.
   analysis of the Pirates! interpreter (local, gitignored). Claims marked
   [C] in `data/re/pirates/SYNTHESIS.txt` were checked by the controller
   against bytes or traces.
+
+---
+
+## basic_ml_service_blocks — BASIC program as game script, calling machine-code service blocks
+
+**Complexity:** low
+**Uses registers:** (none)
+**Demands:** (none)
+**Requires:** (none)
+
+A BASIC program is the game logic. Fixed-address machine-code blocks handle
+drawing, input and memory management. BASIC calls them with `POKE` (pass
+parameters into zero page), `SYS addr` (call the block), and `PEEK` (read
+the result). All game phases, menus, and the scenario calendar live in BASIC;
+the ML blocks are reusable services.
+
+### Why
+
+BASIC is a scripting language the game designer can read without an
+assembler. The tradeoff is speed: BASIC evaluates each statement at
+runtime. Service blocks push the speed-critical work (character window
+drawing, sprite control, joystick reading) into assembly. The BASIC program
+pays a fixed overhead per SYS call — dominated by the float evaluation of
+the address literal — but that cost is small relative to the block's own
+work when the block does hundreds of cycles of drawing.
+
+### How
+
+1. **Zero-page parameter block.** Assign six consecutive zero-page bytes as
+   the block's calling convention: `x, y, width, height, colour, result`.
+   The BASIC program uses variable names or literal addresses; Pirates! uses
+   `A0=165:A1=166:A2=167:A3=168:A4=169` so `POKE A0,X:POKE A1,Y:...` reads
+   naturally. The result byte (`$AA` = 170 in this recipe) is written by the
+   block and read back with `PEEK(170)`.
+2. **Service block at a fixed address.** Each block lives at a page-aligned
+   address the BASIC program knows as a constant: `WN=$9980` (window block)
+   in Pirates!, `$0900` in this recipe. The entry is a direct `SYS WN` or
+   `SYS 2304`; the block ends with `RTS`.
+3. **Protect machine code from the BASIC heap.** BASIC's string heap grows
+   downward from `FRETOP` (zero-page byte `$34` = address 52). Before any
+   string allocation, `POKE 52,N:POKE 56,N:CLR` caps both `FRETOP` and
+   `MEMSIZ` at `$NN00`, keeping the heap below the service blocks. The
+   low byte of each pointer stays `$00` (its reset value); only the high
+   byte is changed.
+4. **SYS call overhead.** BASIC evaluates the address literal as a
+   floating-point number and converts it to a 16-bit integer before the
+   JSR. A four-digit address like `2304` costs roughly 3,000 cycles for
+   that float evaluation alone. Assigning the address to a BASIC variable
+   (`WN=2304`) before the loop saves that evaluation on every subsequent
+   call: the variable lookup replaces the literal parse.
+5. **Program swap between phases.** When the game moves to a new phase,
+   a new BASIC program can be loaded into `$0801` and run. The service
+   blocks stay in place; only the script changes. The new program must repeat
+   the `POKE 52,N:POKE 56,N:CLR` to re-establish its own variable space.
+
+### Why it works
+
+`SYS addr` in BASIC does `JSR` with `$01` = `$37` (BASIC ROM visible). The
+block runs as plain machine code and returns with `RTS`. Zero page is
+shared RAM: the `POKE` instruction writes there in the same cycle budget as
+any absolute store, and the block reads those bytes with zero-page
+addressing (3 cycles each). The result byte is written by the block to a
+fixed zero-page slot; BASIC's `PEEK` reads it with the BASIC ROM's PEEK
+function (`LDA ($14),Y` at `$B818`).
+
+### Variations
+
+- **Named BASIC variables for addresses.** Assign service-block addresses
+  to BASIC variables (`WN=2304`) at program start. On subsequent SYS calls
+  BASIC looks up the variable instead of re-evaluating the float literal,
+  saving ~3,000 cycles per call.
+- **Multi-entry blocks.** A block can expose several entry points through a
+  JMP table at its base address. Pirates! uses `WN+0`, `WN+3`, `WN+6`,
+  `WN+9`, `WN+12`, `WN+15`, `WN+18` for seven distinct operations. BASIC
+  calls `SYS WN+9` etc.
+- **Program swap between phases.** Pirates! replaces the BASIC program for
+  the duel phase (381 lines, `$0801–$3B53`) with a different program for
+  the town phase (817 lines, `$0801–$847B`). The machine code service blocks
+  at `$9500–$9EFF` remain; only the BASIC script changes between phases.
+
+### In Pirates! (1987)
+
+Measured in VICE x64sc 3.10 on the maintainer's copy (a cracked release);
+rung 1 throughout, from `data/re/pirates/memory-map/findings.txt` and
+`data/re/pirates/menus/findings.txt`. Claims marked [C] were checked by
+the controller against bytes.
+
+BASIC is the game logic (`$01`=`$37`, BASIC ROM visible). Three service
+blocks handle low-level work:
+
+| Block | Address | Operations |
+|---|---|---|
+| Memory kernel | `$9500` | bank-swap, copy, fill, KERNAL trampoline |
+| Video/input | `$9600` | sprite pointer move, joystick read, fire flag |
+| Window | `$9980` | draw frame box, set screen pointer, menu text parser, recolour |
+
+The parameter convention is six consecutive zero-page bytes
+`$A5–$AA` (`A0..A5` in the BASIC listing, defined once as `A0=165` etc.).
+Line 30 of the BASIC program: `POKE A0,X:POKE A1,Y:POKE A2,DX:POKE A3,DY:POKE A4,CO:SYS WN:RETURN` [C, listing + wn.s]. Results are returned
+via `PEEK` on the same zero-page bytes.
+
+Memory protection: line 4 does `POKE 52,142:POKE 56,142:CLR`, capping
+`FRETOP` and `MEMSIZ` at `$8E00` [rung 1, rung 3 arithmetic; byte
+values confirmed in RAM dumps]. The service blocks at `$9500+` are above
+`$8E00` and the heap never reaches them.
+
+Program swap: the duel phase runs a 381-line program at `$0801–$3B53`
+(`VARTAB $3DDD`) [C]; the town phase loads a different 817-line program
+(`$0801–$847B`). The service blocks remain in place. Which file provides
+the town program was not identified (open item).
+
+### Recipes
+
+- `recipes/kickassembler/basic-ml-service-blocks.md` — a tokenized BASIC
+  program that POKEs five parameters into `$A5–$A9`, starts CIA2 timer A
+  on the same statement, SYSes a window-fill routine at `$0900` (2304),
+  and PEEKs the cell count from `$AA`; CIA2 timer A measures SYS overhead
+  (4,924 cycles PAL, dominated by BASIC float evaluation of `2304`) and
+  draw cost (3,381 cycles PAL for 50 cells); heap protected by
+  `POKE 52,9:POKE 56,9:CLR`; a 10 × 5 yellow solid-block rectangle at
+  screen row 8, column 5, PAL and NTSC
+
+### Sources
+
+- `data/re/pirates/memory-map/findings.txt` — memory layout, `$01`
+  states, service-block addresses and the BASIC parameter convention (local,
+  gitignored).
+- `data/re/pirates/menus/findings.txt` — window routine disassembly and
+  the BASIC line that calls it (local, gitignored).
