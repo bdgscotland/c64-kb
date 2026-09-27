@@ -1,0 +1,198 @@
+{
+  "game": "pirates",
+  "title": "Pirates!",
+  "page": "docs/game-design/studies/pirates.md",
+  "session": "docs/game-design/studies/sessions/pirates.json",
+  "image": {
+    "sha1": "ec94dbfb6908b9c0249958b4aed3dff452096ea3",
+    "file": "pirates!+",
+    "file_sha1": null,
+    "note": "nostalgia crack; sha1 of the D64"
+  },
+  "vice": "x64sc 3.10 windowless",
+  "model": "pal (-default: C64C, 8565, 8580, 8521)",
+  "note": "Addresses, raster lines, clocks and counts only; no game code, graphics, map or text bytes. Claims marked [C] in SYNTHESIS.txt were checked by the controller against bytes or traces. The copy is cracked; its start-up options menu patched five interpreter table entries ($31/$32/$33/$36/$39), so opcode meanings for those entries describe the modified copy. Evidence files stay on the maintainer's machine (data/re/pirates/).",
+  "observations": [
+    {
+      "id": "pirates#irq-1",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "one raster IRQ per PAL frame, handler $9681 via $0314; fires at raster line 0",
+      "handler": "$9681",
+      "via": ["irq_0314"],
+      "entry_period_cycles": 19656,
+      "source": "duel findings section 2.2; sailing findings section 2.9"
+    },
+    {
+      "id": "pirates#irq-2",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "IRQ handler cost 333 cycles entry-to-RTI (142 of 143 duel frames); does music, fine-scroll hand-off, one optional sprite, then JMP $EA31",
+      "cost_cycles_median": 333,
+      "source": "duel findings section 2.2"
+    },
+    {
+      "id": "pirates#snap-1",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "VIC state at duel in_play (clock 213,772,067): bank 3 ($DD00=$C0), screen $CC00 ($D018=$39), charset $E000, multicolour text ($D011=$1B, $D016=$D8), $01=$36 (BASIC ROM hidden)",
+      "clock": 213772067,
+      "vic_bank": 3,
+      "screen": "$CC00",
+      "charset": "$E000",
+      "d011": "$1B",
+      "d016": "$D8",
+      "d018": "$39",
+      "port01": "$36",
+      "source": "memory-map findings section 2F, snap-duel-inplay.json"
+    },
+    {
+      "id": "pirates#snap-2",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "VIC state at town (clock 398,407,556): same video mode as duel (bank 3, $CC00, $E000, $D018=$39, $D016=$D8); $01=$37 (BASIC ROM visible, town program running)",
+      "clock": 398407556,
+      "vic_bank": 3,
+      "screen": "$CC00",
+      "charset": "$E000",
+      "d018": "$39",
+      "port01": "$37",
+      "source": "memory-map findings section 2F, snap-town.json"
+    },
+    {
+      "id": "pirates#snap-3",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "VIC state at sailing (clock 552,950,245): bank 3, screen $E400 ($D018=$98), charset $E000, multicolour text; $01=$36",
+      "clock": 552950245,
+      "vic_bank": 3,
+      "screen": "$E400",
+      "charset": "$E000",
+      "d018": "$98",
+      "port01": "$36",
+      "source": "sailing findings section 2.2, io-sea1.bin"
+    },
+    {
+      "id": "pirates#mem-1",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "memory layout: BASIC $0801-$3B53 (381-line duel program), boot ML $3BA0-$3DDC; k-block $9500, vb $9600, wn $9980; code under BASIC ROM $A000-$BFFF; game DOS + RAM charset under KERNAL $E000-$FFFF",
+      "source": "memory-map findings sections 1 and 3"
+    },
+    {
+      "id": "pirates#mem-2",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "bank-swap trampoline at $9509 saves old $01 into operand of restore at $9524 (STA $9524); restore at $9523 is LDA #saved / STA $01 / CLI / RTS; nesting-safe",
+      "entry": "$9509",
+      "restore": "$9523",
+      "source": "memory-map findings section 2C"
+    },
+    {
+      "id": "pirates#mem-3",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "BASIC program swapped per phase: duel 381 lines $0801-$3B53 (VARTAB $3DDD); town 817 lines $0801-$847B (VARTAB $85AD)",
+      "duel_end": "$3B53",
+      "duel_vartab": "$3DDD",
+      "town_end": "$847B",
+      "town_vartab": "$85AD",
+      "source": "memory-map findings section 1 and 3"
+    },
+    {
+      "id": "pirates#mem-4",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "FRETOP/MEMSIZ high byte set to $8E (142) by line 4 POKE52,142:POKE56,142:CLR; BASIC heap tops at $8E00, protecting all ML above it",
+      "fretop_high": "$8E",
+      "source": "memory-map findings section 1"
+    },
+    {
+      "id": "pirates#vm-1",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "interpreter main loop $A486-$A4EB; opcode fetched LDA ($9E),Y at $A4A8; $00-$7F table opcodes dispatched via self-modifying JMP at $A4EF into 128-word table $A300; $80-$BF push channel state; $C0-$FF pop",
+      "loop_start": "$A486",
+      "opcode_fetch": "$A4A8",
+      "dispatch_jmp": "$A4EF",
+      "table_base": "$A300",
+      "table_entries": 128,
+      "source": "scene-vm findings section 2.1"
+    },
+    {
+      "id": "pirates#vm-2",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "interpreter timing: 89 passes per frame (duel), 100 passes per frame median (sailing); median 198 cycles per pass (duel), 174 cycles per pass (sailing); no frame sync, runs flat out",
+      "duel_passes_per_frame": 89,
+      "sailing_passes_per_frame_median": 100,
+      "pass_cost_duel_median_cycles": 198,
+      "pass_cost_sailing_median_cycles": 174,
+      "source": "scene-vm findings section 2.1; sailing findings section 2.9"
+    },
+    {
+      "id": "pirates#vm-3",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "joystick reads in the scene VM: $A64E (fire) and $A65E (directions) both LDY $A408,X / LDA $DC00,Y; duel used pointer read $A728 LDA ($61),Y ($61/$62=$00DC) once per ~332,000 cycles (16.9 frames)",
+      "fire_opcode_handler": "$A64E",
+      "dir_opcode_handler": "$A65E",
+      "duel_joy_interval_cycles": 332000,
+      "source": "scene-vm findings section 1; sailing findings section 2.5; duel findings section 1"
+    },
+    {
+      "id": "pirates#sail-1",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "ship fixed at screen centre: sprites 4 (hi-res) and 5 (multicolour) at hardware x=180, y=144; 16 headings as pointer pair $40+H/$50+H, H=0..15",
+      "sprite_x": 180,
+      "sprite_y": 144,
+      "headings": 16,
+      "ptr_hi_res_base": "$40",
+      "ptr_mcolor_base": "$50",
+      "source": "sailing findings section 1 and 2.4"
+    },
+    {
+      "id": "pirates#sail-2",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "one step ~102,700 cycles (~5.2 PAL frames): poll input, map redraw ($9BAE), scroll-register apply via dirty byte mp+$0C, sprite updates; world map static 3,048-byte block $C000-$CBE7",
+      "step_cycles": 102700,
+      "step_frames_approx": 5.2,
+      "map_base": "$C000",
+      "map_size_bytes": 3048,
+      "dirty_byte": "mp+$0C ($9B8C)",
+      "source": "sailing findings sections 1, 2.3, 2.9"
+    },
+    {
+      "id": "pirates#sail-3",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "scroll register writes: IRQ path $97BE-$97E1 writes $0288/$D018/$D016/$D011 from mp+$0A (fine X), mp+$0B (fine Y), mp+$0C (screen page + dirty); clears dirty byte after write; 898 traced register writes",
+      "irq_scroll_handler": "$97BE",
+      "fine_x_addr": "mp+$0A",
+      "fine_y_addr": "mp+$0B",
+      "dirty_page_addr": "mp+$0C",
+      "register_writes_traced": 898,
+      "source": "sailing findings section 2.3"
+    },
+    {
+      "id": "pirates#load-1",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "LOAD vector $0330 hooked to $02C3 (game's own loader at $F006 with KERNAL banked out); stock serial loader used only for initial 'pirates!+' load; 29 subsequent loads through the hook",
+      "hook_addr": "$0330",
+      "hook_target": "$02C3",
+      "game_loader": "$F006",
+      "source": "memory-map findings section 2B"
+    },
+    {
+      "id": "pirates#scene-1",
+      "basis": "measured-vice",
+      "rung": 1,
+      "what": "scene end: ML returns event code in A0; BASIC reads LN=PEEK(A0); ON LN dispatches: 1=ship sighted, 2=food shortage, 3=news, 4=arrival, 5=keep sailing",
+      "a0_addr": "$A5",
+      "source": "sailing findings section 2.8; SYNTHESIS.txt section 2"
+    }
+  ]
+}
