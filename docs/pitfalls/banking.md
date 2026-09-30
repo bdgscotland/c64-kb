@@ -491,11 +491,14 @@ the service block's address range.
 
 ### Mechanism
 
-Pirates! has a measured duel program ending at `$3B53` with VARTAB `$3DDD`,
-and a different town program ending at `$847B` with VARTAB `$85AD`; its
-service blocks begin at `$9500`. These measurements are from the VICE RAM
-dump documented in `game-design/studies/pirates.md` (rung 1). The BASIC
-string-heap cap (`FRETOP`/`MEMSIZ`) is a separate constraint.
+The cited Pirates! study records program and VARTAB addresses below `$9500`;
+it does not show a program overwriting the service blocks. The proposed
+corruption mechanism is therefore a rung 4 inference: if a BASIC program
+expands into a fixed-address service block, its writes could replace that
+machine code. No overwrite has been demonstrated by the cited study or the
+service-block recipe. The BASIC string-heap cap (`FRETOP`/`MEMSIZ`) is a
+separate constraint. An earlier version wrongly presented those low VARTAB
+measurements as evidence of a service-block overwrite.
 
 ### Fix
 
