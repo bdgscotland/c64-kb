@@ -96,8 +96,10 @@ async function recipeNotFound(name: string): Promise<RecipeLookupResult> {
   return { structured: empty, text };
 }
 
-export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
-  const f = await getFalkor();
+async function lookupTechnique(
+  name: string,
+  f: Awaited<ReturnType<typeof getFalkor>>,
+): Promise<RecipeLookupResult | null> {
   const techniqueRecipes = parseRows(
     z.object({ name: z.string() }),
     await f.roQuery(
@@ -106,22 +108,38 @@ export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
       { name },
     ),
   );
-  if (techniqueRecipes.length > 0) {
-    getAnalytics().logQuery({ tool: "c64_recipe_lookup", query: name, resultCount: techniqueRecipes.length });
-    const slugs = techniqueRecipes.map((r) => r.name);
-    const empty: RecipeLookupOutput = {
-      name: "",
-      toolchain: "",
-      output_format: "",
-      region: "",
-      source_doc: "",
-      documentation: [],
-    };
-    return {
-      structured: empty,
-      text: `\`${name}\` is a technique. Its recipes are: ${slugs.join(", ")}. Call recipe-lookup with a recipe slug.`,
-    };
-  }
+  const technique =
+    techniqueRecipes.length > 0
+      ? name
+      : parseRows(
+          z.object({ name: z.string() }),
+          await f.roQuery(`MATCH (t:Technique {name: $name}) RETURN t.name AS name`, { name }),
+        ).at(0)?.name;
+  if (!technique) return null;
+
+  const recipes = techniqueRecipes.map((r) => r.name);
+  getAnalytics().logQuery({ tool: "c64_recipe_lookup", query: name, resultCount: recipes.length });
+  const structured: RecipeLookupOutput = {
+    name: "",
+    technique,
+    recipes,
+    toolchain: "",
+    output_format: "",
+    region: "",
+    source_doc: "",
+    documentation: [],
+  };
+  const text =
+    recipes.length > 0
+      ? `\`${name}\` is a technique. Its recipes are: ${recipes.join(", ")}. Call recipe-lookup with a recipe slug.`
+      : `\`${name}\` is a technique. No recipe yet.`;
+  return { structured, text };
+}
+
+export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
+  const f = await getFalkor();
+  const techniqueResult = await lookupTechnique(name, f);
+  if (techniqueResult) return techniqueResult;
   const row = parseRows(
     RecipeRow,
     await f.roQuery(

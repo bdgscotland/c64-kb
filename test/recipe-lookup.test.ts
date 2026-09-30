@@ -26,6 +26,12 @@ describe("recipeLookup", () => {
       title: "Centred sprite map scroll",
       category: "scroll",
     });
+    await f.addTechnique({ name: "bank_swap_trampoline", title: "Bank swap trampoline", category: "memory" });
+    await f.addTechnique({
+      name: "single_recipe_technique",
+      title: "Single recipe technique",
+      category: "test",
+    });
     await f.addRecipe({
       name: "kickassembler-sine-scroller",
       toolchain: "kickassembler",
@@ -36,6 +42,15 @@ describe("recipeLookup", () => {
       claims_basis: "measured-vice",
     });
     await f.linkRecipeImplements("kickassembler-sine-scroller", "centred_sprite_map_scroll");
+    await f.linkRecipeImplements("kickassembler-sine-scroller", "single_recipe_technique");
+    await f.addRecipe({
+      name: "kickassembler-sine-scroller-alt",
+      toolchain: "kickassembler",
+      output_format: "prg",
+      region: "both",
+      source_doc: "recipes/kickassembler/sine-scroller.md",
+    });
+    await f.linkRecipeImplements("kickassembler-sine-scroller-alt", "centred_sprite_map_scroll");
     await f.linkClaims({
       owner: "kickassembler-sine-scroller",
       ownerKind: "Recipe",
@@ -67,6 +82,21 @@ describe("recipeLookup", () => {
     const r = await recipeLookup("centred_sprite_map_scroll");
     expect(r.text).toContain("kickassembler-sine-scroller");
     expect(r.text).toContain("Call recipe-lookup with a recipe slug");
+    expect(r.structured.technique).toBe("centred_sprite_map_scroll");
+    expect(r.structured.recipes).toEqual(["kickassembler-sine-scroller", "kickassembler-sine-scroller-alt"]);
+  });
+
+  it("returns No recipe yet and an empty structured list for a technique with no recipes", async () => {
+    const r = await recipeLookup("bank_swap_trampoline");
+    expect(r.text).toContain("No recipe yet");
+    expect(r.structured.technique).toBe("bank_swap_trampoline");
+    expect(r.structured.recipes).toEqual([]);
+  });
+
+  it("returns one recipe structurally for a technique with one recipe", async () => {
+    const r = await recipeLookup("single_recipe_technique");
+    expect(r.structured.technique).toBe("single_recipe_technique");
+    expect(r.structured.recipes).toEqual(["kickassembler-sine-scroller"]);
   });
 
   it("carries the page's Source listing so a caller with no file access can copy the code", async () => {

@@ -137,6 +137,10 @@ const RequiredDeviceSchema = z.object({
 
 export const RecipeLookupSchema = z.object({
   name: z.string(),
+  // Present when the lookup names a technique; recipes is then the complete
+  // IMPLEMENTS list, including an empty list when the technique has no recipe.
+  technique: z.string().optional(),
+  recipes: z.array(z.string()).optional(),
   toolchain: z.string(),
   output_format: z.string(),
   region: z.string(),
