@@ -5,7 +5,30 @@ Entries below start at the first public audit; earlier history is in git.
 
 ## Unreleased
 
-Data 848, schema 40, tools 2.20.1, package 0.30.0.
+Data 849, schema 40, tools 2.21.0, package 0.30.0.
+
+**What an agent building from the Pirates! pages could not find (data 849,
+tools 2.21.0).** SALTWIND's builder (GPT-6 Luna) logged these gaps; each is
+now fixed:
+- `bank_swap_trampoline` said nesting was safe "when every caller enters
+  with the same `$01`". That was wrong: a nested call always enters after
+  the outer call has switched `$01`, so the pair is not re-entrant at all.
+  Its new recipe measures both cases on screen: calls in sequence restore
+  `$37`, a nested call leaves `$35`. The recipe's first version was
+  reported as verified while its screenshot showed the failure; a Codex
+  review caught it. Its Cost is 45 cycles a round trip, where 33 was
+  given without the two `JSR`s.
+- The scene interpreter, the BASIC service blocks and the trampoline had
+  no pitfalls. They now carry those their recipes measured (operand
+  fetches clobbering Y, VARTAB overlap, the restore overwrite). A banking
+  overwrite that no run showed is marked as inference (rung 4).
+  `scene_bytecode_interpreter` and `basic_ml_service_blocks` gain
+  measured Cost lines, so `plan-budget` counts them.
+- `recipe-lookup` accepted only recipe ids. A technique name now returns
+  its recipes, in text and in structured output (CLI `--json`, MCP), or
+  "No recipe yet" when it has none.
+- `text_window_and_menu`'s 833 cycles a frame now says it was measured,
+  with the recipe's CIA 2 timer.
 
 **The second study: Pirates! (data 848).** The KB had no page for how a
 game with many modes is built. The Pirates! teardown found five
