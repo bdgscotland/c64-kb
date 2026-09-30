@@ -249,7 +249,7 @@ The MCP server and the CLI call the same functions.
 |---|---|
 | `c64_technique_lookup` | A technique: the registers and KERNAL routines it uses, what it requires and what requires it, the recipes that implement it, the pitfalls it avoids |
 | `c64_techniques_for` | Techniques filtered by category, chip, region, register, recipe, prerequisite or the hardware unit they claim |
-| `c64_recipe_lookup` | One recipe: metadata, the page, the machines it was verified on, the hardware units its listing claims |
+| `c64_recipe_lookup` | One recipe: metadata, the page, the machines it was verified on, the hardware units its listing claims. Given a technique name, the recipes that realise it, or "No recipe yet" |
 | `c64_recipes_for` | Recipes filtered by toolchain, region, technique, file format or verified machine |
 | `c64_toolchain_hint` | An idiomatic snippet for a toolchain and intent; Oscar64 by default. An intent that names a technique gets its recipe's listing, in KickAssembler when that technique's only recipe is KickAssembler |
 
