@@ -21,6 +21,11 @@ describe("recipeLookup", () => {
       region: "both",
       source_doc: "recipes/oscar64/hello-world.md",
     });
+    await f.addTechnique({
+      name: "centred_sprite_map_scroll",
+      title: "Centred sprite map scroll",
+      category: "scroll",
+    });
     await f.addRecipe({
       name: "kickassembler-sine-scroller",
       toolchain: "kickassembler",
@@ -30,6 +35,7 @@ describe("recipeLookup", () => {
       claims_stated: "stated",
       claims_basis: "measured-vice",
     });
+    await f.linkRecipeImplements("kickassembler-sine-scroller", "centred_sprite_map_scroll");
     await f.linkClaims({
       owner: "kickassembler-sine-scroller",
       ownerKind: "Recipe",
@@ -55,6 +61,12 @@ describe("recipeLookup", () => {
     expect(r.structured.name).toBe("oscar64-hello-world");
     expect(r.structured.toolchain).toBe("oscar64");
     expect(r.structured.region).toBe("both");
+  });
+
+  it("explains the recipe slugs when queried by technique name", async () => {
+    const r = await recipeLookup("centred_sprite_map_scroll");
+    expect(r.text).toContain("kickassembler-sine-scroller");
+    expect(r.text).toContain("Call recipe-lookup with a recipe slug");
   });
 
   it("carries the page's Source listing so a caller with no file access can copy the code", async () => {

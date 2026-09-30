@@ -98,6 +98,30 @@ async function recipeNotFound(name: string): Promise<RecipeLookupResult> {
 
 export async function recipeLookup(name: string): Promise<RecipeLookupResult> {
   const f = await getFalkor();
+  const techniqueRecipes = parseRows(
+    z.object({ name: z.string() }),
+    await f.roQuery(
+      `MATCH (r:Recipe)-[:IMPLEMENTS]->(t:Technique {name: $name})
+       RETURN r.name AS name ORDER BY r.name`,
+      { name },
+    ),
+  );
+  if (techniqueRecipes.length > 0) {
+    getAnalytics().logQuery({ tool: "c64_recipe_lookup", query: name, resultCount: techniqueRecipes.length });
+    const slugs = techniqueRecipes.map((r) => r.name);
+    const empty: RecipeLookupOutput = {
+      name: "",
+      toolchain: "",
+      output_format: "",
+      region: "",
+      source_doc: "",
+      documentation: [],
+    };
+    return {
+      structured: empty,
+      text: `\`${name}\` is a technique. Its recipes are: ${slugs.join(", ")}. Call recipe-lookup with a recipe slug.`,
+    };
+  }
   const row = parseRows(
     RecipeRow,
     await f.roQuery(
