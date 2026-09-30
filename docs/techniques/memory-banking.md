@@ -857,9 +857,9 @@ to the raster and sprite recipes landing in Phase 4+.
 **Demands:** kernal_rom_out
 **Claims:** none
 **Claims basis:** estimated
-**Cost:** cycles_per_frame=33
+**Cost:** cycles_per_frame=45
 **Cost basis:** arithmetic
-**Cost measured on:** kickassembler-bank-swap-trampoline (one call, instruction-table sum)
+**Cost measured on:** kickassembler-bank-swap-trampoline (45 cycles per call/return: 33 for both routines, plus 6 for each JSR)
 
 ### Why
 
@@ -879,7 +879,7 @@ The pair is two short routines placed in the same page as the banked-out work:
 // Bank-swap trampoline: entry saves the caller's $01 into the operand
 // of restore's LDA #, then sets the new banking value and returns.
 // restore reads back that saved value and writes it to $01.
-// All callers must enter with the same $01; see nesting note below.
+// Calls must not nest or run from an interrupt that can also use this pair.
 
 entry:
         sei
@@ -909,28 +909,20 @@ modifies the RAM byte that will be read as the immediate operand when `restore`
 is next executed, regardless of what `$01` currently selects. The save and the
 restore are one memory location (a code byte), not two.
 
-**Nesting.** The operand holds exactly one value. A second call to `entry`
-before `restore` runs overwrites whatever the first call stored. The mechanism
-is safe only when every caller holds the same `$01` at entry time:
-
-- **Safe:** every caller enters with `$01=$37`. The first call writes `$37` to
-  `restore+1`; a second call also writes `$37`. `restore` always loads `$37`.
-- **Unsafe across different callers:** a caller at `$01=$36` calls `entry` (writes
-  `$36` to `restore+1`), then before its `restore` runs, a second caller at
-  `$01=$37` calls `entry` (writes `$37`, overwriting `$36`). The first caller's
-  `restore` then loads `$37` instead of `$36`.
-- **Unsafe across an interrupt:** if the per-frame IRQ also calls `entry`, it
-  runs between the foreground's `entry` and `restore`. It saves the IRQ's `$01`
-  value (e.g. `$35`) to `restore+1`, overwriting the foreground's saved value.
-  The foreground's `restore` then loads `$35` instead of what the foreground
-  had at entry.
+**Nesting.** This pair is not re-entrant. A sequential call starting with
+`$01=$37` saves `$37` and restores `$37`. A nested call first saves `$37`, then
+the inner entry runs with `$01=$35` and overwrites the operand with `$35`; both
+exits therefore restore `$35`. Never nest calls or call it from an interrupt
+that may also use the pair. Use a per-call save location or a stack-based
+scheme when nested use is required. The recipe measures both cases on screen.
+An earlier version wrongly claimed equal incoming `$01` made nesting safe.
 
 In Pirates! (1987) the trampoline is at `$9509`/`$9523`. The entry is
 `SEI / LDA $01 / STA $9524 / LDA #$04 / STA $01 / RTS`, and `$9524` is the
 operand of the restore's `LDA #` (bytes read from a RAM dump in VICE x64sc
 3.10 on the maintainer's copy, rung 1). Which sites call it, and with which
 `$01`, was not traced; so the study does not show whether its callers
-always meet the invariant. An earlier version of this paragraph called
+nest. An earlier version of this paragraph called
 the study's instance "nesting-safe" and named `$02D0`/`$02C9` as a
 stack-based pair used by the IRQ. They are neither: see the fixed-value
 variation below.
