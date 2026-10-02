@@ -3118,5 +3118,13 @@
     "shots": {
       "pal": "screenshots/centred-sprite-map-scroll-step256.png"
     }
+  },
+  "kickassembler/rear-view-car-overlay": {
+    "cycles": 8000000,
+    "models": ["pal", "ntsc"],
+    "shots": {
+      "pal": "screenshots/rear-view-car-overlay.png",
+      "ntsc": "screenshots/rear-view-car-overlay-ntsc.png"
+    }
   }
 }

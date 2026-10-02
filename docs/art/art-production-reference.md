@@ -116,6 +116,8 @@ Hardware sprite stretching: $D01D doubles width (48 pixels); $D017 doubles heigh
 
 When software opens the side border, sprites can extend across the full visible width, including areas normally covered by the border color. Art for border-open productions must plan sprite layouts over that wider range.
 
+How to draw within these rules (hires overlays, colours chosen by luminance, the 2:1 pixel, light and outline, and racing cars seen from behind, with measurements from ripped game sprites) is in `../techniques/sprite-art.md`.
+
 ---
 
 ## Charset / Tilemap Art Principles
