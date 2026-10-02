@@ -329,6 +329,7 @@ int main(void)
                 title();
             break;
         }
+        player_x();                     // the player's car across, every step
         PON(3)
         if (state == ST_RACE || state == ST_GRID)
             hud_draw();

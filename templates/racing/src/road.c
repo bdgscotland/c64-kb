@@ -121,6 +121,7 @@ void road_wait_swap(void)
 static char phase;                      // 0: no picture under way
 static char p_set, p_en, p_who[3];
 static int  p_px[NCARS];                // cars' offsets across the road, pixels, at the start
+static int  pic_px[2];                  // per set: the player's offset its picture was drawn for
 static int p_dx0;                       // the camera lean the builder got (10.6 a line)
 static const char *p_zt;
 unsigned pictures;                      // pictures published during the race
@@ -309,6 +310,7 @@ static void picture_end(void)
 
     // ---- X from the centres the builder made ----
     SPR(X, set, 0) = 24 + 160 - 12;
+    pic_px[set] = px;                   // the player's own X: player_x, each step
     for (char s = 1; s < 3; s++)
     {
         if (!(en & (1 << s)))
@@ -346,5 +348,31 @@ static void picture_end(void)
         if (bend < curve_min) curve_min = bend;
         if (bend > curve_max) curve_max = bend;
     }
+    player_x();                         // its set's player X before it can be taken
     B(ASM_RB_READY) = 1;
+}
+
+// The player's car moves across the screen every step, not only when a
+// picture lands: its sprite is the screen's centre plus how far the car has
+// moved across since the picture on display (and the one waiting) began.
+// When the next picture lands, drawn around the car, its offset drops back
+// by the same amount, so the car keeps its place on the road. Before, the
+// car stood at the centre and the road moved under it only with a picture:
+// 4 or 5 frames after the stick, up to 68 pixels at once (a frame-by-frame
+// capture, VICE x64sc). Both sets are written; irq_blank and a take store
+// the shown set's (engine.asm take_picture), and the register is written
+// now, so the change shows on this frame's road.
+void player_x(void)
+{
+    int px = car_x[0] >> 4;
+    for (char set = 0; set < 2; set++)
+    {
+        int x = 24 + 160 - 12 + px - pic_px[set];
+        if (x < 24)
+            x = 24;
+        else if (x > 255)
+            x = 255;                    // (bit 8 stays 0: sprite 0 is the player's alone)
+        B(ASM_PL_X + set) = (char)x;
+    }
+    vic.spr_pos[0].x = B(ASM_PL_X + B(ASM_RB_FRONT));
 }

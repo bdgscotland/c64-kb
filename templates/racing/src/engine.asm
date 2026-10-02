@@ -207,6 +207,7 @@ spr_y:      .fill 6, 0
 spr_ptr:    .fill 6, 0
 spr_col:    .fill 6, 0
 spr_msb:    .byte 0, 0
+pl_x:       .byte 172, 172      // per set: the player's sprite X now (road.c player_x)
 spr_en:     .byte 0, 0
 
 // Per row, what the builder made (the back copy after rb_rows): the content
@@ -354,6 +355,8 @@ take_picture:
         sta SCREEN_B + $3f8 + s
     }
         ldx rb_front
+        lda pl_x, x             // the player's X for this set, from C each step
+        sta $d000
         rts
 
 // rb_take: the main loop's take of a finished picture, when the beam is

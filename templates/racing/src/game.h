@@ -104,6 +104,7 @@ extern char     hoff_min, hoff_max;     // the horizon's range during the race
 extern int      curve_min, curve_max;   // the shown centre's range at the horizon
 void road_init(void);
 void road_work(void);
+void player_x(void);                    // the player's sprite across, each step
 char phase_of_road(void);               // (debug) road.c phase
 void road_build_all(void);              // a whole picture, before the IRQ chain runs
 void road_final(void);                  // the picture of the state now, shown (the verdict)
