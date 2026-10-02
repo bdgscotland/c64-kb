@@ -130,7 +130,7 @@ void stage_step(void)
         {
             timer_s += t_bonus[stage];
             hud_message("checkpoint", 2 * fps);
-            sound_beep(1);
+            sound_check();
         }
         else
         {

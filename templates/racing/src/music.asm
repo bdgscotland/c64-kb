@@ -1,9 +1,10 @@
 // music.asm: the racer's tune, imported by engine.asm. The player is
 // c64-kb's recipes/kickassembler/music-player.md (its API, code and
 // instruments, unchanged but for the effects' data); the tune "Redline" is
-// this starter's own (from racing-port-110). sound.c plays it on the title
-// and between the stages only: in the race the SID is the engine and the
-// effects (sound.c), and the player costs nothing.
+// this starter's own (from racing-port-110). sound.c plays it on the title,
+// on the grid, in the race and between the stages, its effects (the
+// lights, a bump, a checkpoint, a crash) on voice 3, and engine_note (at
+// the end) keeps the car's engine on voice 3 whenever no effect has it.
 
 // ===========================================================================
 // The player. API:
@@ -916,3 +917,44 @@ tn_p4: .byte $83, $c0, $39, $3c, $40, $45, $40, $3c, $39, $3c, $40, $45, $48, $4
 // p5 lead held: A5:8 E5:8 | F5:8 C5:8 | G5:8 E5:8 | B5:8 D6:8
 tn_p5: .byte $82, $c7, $45, $40, $41, $3c, $43, $40, $47, $4a, $ff
 
+
+// ---- the engine note ---------------------------------------------------------------------
+// Voice 3, when no effect has it: a pulse at en_freq (sound.c: from the
+// speed), gated while en_on. Taking the voice back after an
+// effect sets its envelope.
+engine_note:
+        lda sfx_num
+        ora sfx_pending
+        beq en_mine
+        lda #0
+        sta en_owned            // an effect has the voice
+        rts
+en_mine:
+        lda en_owned
+        bne en_have
+        lda #$00                // attack 0, decay 0; sustain 15, release 6
+        sta $d413
+        lda #$f6
+        sta $d414
+        lda #$04
+        sta $d411               // pulse width $400 (25%)
+        lda #0
+        sta $d410
+        lda #1
+        sta en_owned
+en_have:
+        lda en_freq
+        sta $d40e
+        lda en_freq + 1
+        sta $d40f
+        lda en_on
+        beq en_off
+        lda #$41                // pulse, gate on
+        sta $d412
+        rts
+en_off: lda #$40
+        sta $d412
+        rts
+en_freq:  .word 0
+en_on:    .byte 0
+en_owned: .byte 0

@@ -144,6 +144,7 @@ void sound_init(void);
 void sound_frame(void);
 void sound_bump(void);
 void sound_crash(void);
+void sound_check(void);
 void sound_beep(char high);
 void sound_off(void);
 
