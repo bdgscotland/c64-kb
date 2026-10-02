@@ -74,6 +74,12 @@ rs_sk:      .fill 24, 0         // row_skey it was drawn with
 rs_gtlo:    .fill 24, 0         // the template and shear its dynamic glyphs were built for
 rs_gthi:    .fill 24, 0         // (0: none)
 rs_gsk:     .fill 24, 0
+rs_ob:      .fill 24, 0         // the posts it was drawn with (rb_obj)
+// rb_obj: C, each picture (road.c picture_begin): 1 when a roadside post
+// stands in that row's stretch of road, both sides
+rb_obj:     .fill 12, 0
+po_l:       .byte 0             // the row's first grass index each side (st_decode)
+po_r:       .byte 0
 
 // Slide cycles = remaining bytes R + 1 (R >= 1). For each kind of block,
 // slide = LINE - its cycles - lost (a badline also - BADLOSS), and the
@@ -708,6 +714,14 @@ row_pads:
 !nopad:
         lda row_same
         beq !+
+        ldx zp_R                // (its posts too)
+        txa
+        clc
+        adc buf12
+        tay
+        lda rb_obj, x
+        cmp rs_ob, y
+        bne !+
         jmp row_done
 !:
         // the row's character set: its static set, or the back copy's dynamic
@@ -758,8 +772,13 @@ draw_row:
         lda row_skey
         cmp rs_sk, y
         bne !draw+
+        lda rb_obj, x
+        cmp rs_ob, y
+        bne !draw+
         jmp row_done
-!draw:  lda zp_src
+!draw:  lda rb_obj, x
+        sta rs_ob, y
+        lda zp_src
         sta rs_tlo, y
         lda zp_src + 1
         sta rs_thi, y
@@ -823,6 +842,10 @@ st_decode:
         sty zp_t1
 !n2:    ldy zp_t4
         jsr codes               // n2 codes
+        lda zp_t0
+        sta po_l
+        lda zp_t1
+        sta po_r
         ldy zp_t0               // grass out to 40 and to 87
         lda #CH_GRASS
 !:      cpy #40
@@ -838,6 +861,23 @@ st_decode:
         iny
         bne !-
 !:
+        // a post each side, one grass column out from the kerb
+        ldx zp_R
+        lda rb_obj, x
+        beq !nopost+
+        ldy po_l
+        dey
+        cpy #40
+        bcc !+
+        lda #CH_POST
+        sta rowbuf, y
+!:      ldy po_r
+        iny
+        cpy #88
+        bcs !nopost+
+        lda #CH_POST | $80
+        sta rowbuf, y
+!nopost:
         lda row_mmax
         bne !+
         lda #ST_COPY
@@ -1055,10 +1095,12 @@ dg7:    DynLine(7)
         rts
         .errorif dg1 - dg0 != DG_LINE || dg0.src + 1 - dg0 != DG_SRC || dg0.t1 + 1 - dg0 != DG_T1 || dg0.t2 + 1 - dg0 != DG_T2, "dyn_glyph layout"
 
-gcls:       .fill 256, (i == 0 || i == $80) ? 0 : ((i == 1 || i == $81) ? 1 : (i < $80 ? 2 : 3))
+// (the post counts as road: a sheared row moves it by whole columns and
+// builds no glyph for it; dynamic glyphs for posts cost a frame a picture)
+gcls:       .fill 256, (i == 0 || i == $80) ? 0 : ((i == 1 || i == $81 || i == CH_POST || i == (CH_POST | $80)) ? 1 : (i < $80 ? 2 : 3))
 // Row R's 20 slots: ids 2-121 for rows 0-5, 130-249 for rows 6-11 (0, 1,
 // $80 and $81 are grass and road in both halves; 255 is under the vectors).
-.function dslotOf(r) { .return r < 6 ? 2 + 20 * r : 130 + 20 * (r - 6) }
+.function dslotOf(r) { .return r < 6 ? 6 + 20 * r : 134 + 20 * (r - 6) }   // (2-5 and $82-$85 kept: CH_POST)
 dslot:      .fill 12, dslotOf(i)
 dofs_lo:    .fill 12, <(dslotOf(i) * 8)
 dofs_hi:    .fill 12, >(dslotOf(i) * 8)

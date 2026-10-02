@@ -101,7 +101,8 @@
 .const zp_p     = $f7           // the row's phase: 0 centre on a column edge, 1 mid-column
 .const zp_t4    = $f8
 .const zp_g     = $fd           // 2: a glyph's bytes (builder.asm, sheared)
-.const GBASE    = 5             // the first road glyph id (glyphs.asm)
+.const GBASE    = 6             // the first road glyph id (glyphs.asm)
+.const CH_POST  = 5             // a roadside post, in every set (glyphs.asm, builder.asm)
 
 // Block layout (bytes from a block's start) and cycles before its slide.
 // Every block is entered on cycle 2 of its line. Four kinds, by the line's

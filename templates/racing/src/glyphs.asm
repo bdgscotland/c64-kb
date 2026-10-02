@@ -27,7 +27,7 @@
 
 .const HSTEP   = 2              // the horizon moves two lines at a time
 .const HN      = HOFF_N / HSTEP // 12 horizon offsets with glyphs
-.const GCAP    = 123            // left glyphs a set holds (5-127)
+.const GCAP    = 122            // left glyphs a set holds (6-127)
 .const KMAX    = 24             // template columns, k = 0-23
 
 // The road's half-width on road line i (0-95) under horizon offset h, from
@@ -186,9 +186,14 @@
     }
     .return g == 0 ? $ff : (g == 1 ? rise : fall)
 }
+// The roadside post (CH_POST, every set): a bar one pixel pair wide in the
+// centre-line colour (white), its top two lines in the kerb colour (red);
+// its mirror ($85) is the right side's.
+.function postByte(l) { .return l < 2 ? $20 : $30 }
 .function idByte(s, id, l) {
     .if (id == 0) .return 0
     .if (id == 1) .return $55
+    .if (id == CH_POST) .return postByte(l)
     .if (id < GBASE) .return hillByte(id - 2, l)
     .return keyBytes.get(setKeys.get(s).get(id - GBASE)).get(l)
 }
@@ -230,6 +235,8 @@ tpl_hi:     .fill HN * 24, >(tpl_data + tplOff.get(i))
 .align $100
 mirror_tab: .fill 256, mirrorByte(i)
 
+post8:      .fill 8, postByte(i)
+post8m:     .fill 8, mirrorByte(postByte(i))
 glyph_init:
         lda #$34
         sta $01
@@ -301,6 +308,11 @@ glyph_init:
         ldx #7
 !:      sta base + 8, x
         sta base + $408, x
+        lda post8, x            // and the post at CH_POST, its mirror at + $80
+        sta base + CH_POST * 8, x
+        lda post8m, x
+        sta base + $400 + CH_POST * 8, x
+        lda #$55
         dex
         bpl !-
     }

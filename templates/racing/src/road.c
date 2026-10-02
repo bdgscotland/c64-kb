@@ -116,8 +116,32 @@ static int p_dx0;                       // the camera lean the builder got (10.6
 static const char *p_zt;
 unsigned pictures;                      // pictures published during the race
 
+// The roadside posts: one each side of the road every POST_GAP units. Row
+// R shows them when a multiple of POST_GAP lies in its stretch of road (z
+// on its bottom line to z on its top, units of 8), so they come down the
+// screen a row at a time with the road. They are characters in the row
+// (builder.asm st_decode, glyphs.asm CH_POST): no sprite, no cost per frame.
+#define POST_GAP 256
+static void road_posts(void)
+{
+    const char *zt = ZTAB + (hoff >> 1) * ROAD_LINES;
+    for (char r = 0; r < 12; r++)
+    {
+        char on = 0;
+        char zf = zt[r * 8];
+        if (zf)                         // (0: the horizon's row, or above it)
+        {
+            unsigned a = cam_pos + zt[r * 8 + 7] * 8;
+            unsigned b = cam_pos + zf * 8;
+            on = (a / POST_GAP) != (b / POST_GAP);
+        }
+        B(ASM_RB_OBJ + r) = on;
+    }
+}
+
 static void picture_begin(void);
 static void picture_end(void);
+static void road_posts(void);
 
 // One piece of the next picture: its start (camera, sprites, rb_begin), one
 // row, or its end (the sprites' X; rb_ready). Nothing while the last picture
@@ -138,6 +162,10 @@ void road_work(void)
     {
     case 0:                             // the camera, the horizon, the sprites' lines
         picture_begin();
+        phase = 3;
+        break;
+    case 3:                             // the roadside posts' rows (a piece of its own)
+        road_posts();
         phase = 1;
         break;
     case 1:                             // the builder's start (its own piece: about
