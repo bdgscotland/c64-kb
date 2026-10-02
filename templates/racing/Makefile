@@ -23,8 +23,8 @@ KICK_SRC := src/engine.asm
 # Pinned after the verdict and the still it leaves (src/verdict.h), where
 # nothing on the screen changes: 90M and 100M, 100M and 110M gave identical
 # PAL pictures; 80M, 90M and 100M identical NTSC ones (VICE x64sc 3.10).
-SHOT_CYCLES_PAL  := 100000000
-SHOT_CYCLES_NTSC := 90000000
+SHOT_CYCLES_PAL  := 180000000
+SHOT_CYCLES_NTSC := 160000000
 
 # What the program may write, for make claims (claims-watch's own grammar).
 # - Oscar64's registers from $02, its temporaries from $43 up (make zp).

@@ -19,11 +19,11 @@
       "text": "FINISHED 1ST"
     },
     {
-      "name": "panel: the last lap, the position",
+      "name": "panel: the last stage",
       "type": "text",
       "row": 20,
       "col": 1,
-      "text": "LAP 2/2"
+      "text": "STAGE 2"
     },
     {
       "name": "panel: position",
@@ -33,21 +33,21 @@
       "text": "POS 1/4"
     },
     {
-      "name": "lap times, 50 frames a second (pinned from the run; the program checks them against its own count)",
+      "name": "stage times, 50 frames a second (pinned from the run; the program checks them against its own count)",
       "type": "text",
       "row": 21,
       "col": 14,
-      "text": "L1 0:37.3   L2 0:32.7",
+      "text": "S1 0:57.7   S2 1:02.0",
       "models": [
         "pal"
       ]
     },
     {
-      "name": "lap times, 60 frames a second: the same frame counts",
+      "name": "stage times, 60 frames a second (the game runs 6/5 as fast on NTSC)",
       "type": "text",
       "row": 21,
       "col": 14,
-      "text": "L1 0:31.1   L2 0:27.3",
+      "text": "S1 0:48.3   S2 0:51.6",
       "models": [
         "ntsc"
       ]

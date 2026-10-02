@@ -6,9 +6,9 @@
 // replay of the script.
 //
 //   bit  check
-//   0    two laps done, a finishing place 1-4
-//   1    the clock: each lap's frames equal the bot's own count (autopilot.h)
-//   2    the panel: L1 and L2 on screen are those counts as M:SS.T
+//   0    both stages done, a finishing place 1-4
+//   1    the clock: each stage's frames equal the bot's own count (autopilot.h)
+//   2    the panel: S1 and S2 on screen are those counts as M:SS.T
 //   3    contact: at least one bump
 //   4    the verge: at least one frame on the grass
 //   5    overtakes: at least one
@@ -22,6 +22,9 @@
 //   9    the cars' sizes: at least four of the six pictures were drawn
 //   10   the sprites: the VIC-II's registers are the set shown
 //   11   the meter recorded its 255 frames
+//   12   the checkpoints: all eight passed (three and the finish a stage),
+//        the countdown never ran out
+//   13   a crash: at least one
 // On a failure row 24 shows the failed bits in hex, row 23 the counts.
 
 static bool vic_matches_shown(void)
@@ -37,8 +40,8 @@ static bool vic_matches_shown(void)
     {
         if (!(B(ASM_SPR_EN + f) & (1 << s)))
             continue;
-        if (vic.spr_pos[s].x != B(ASM_SPR_X + base + s))
-            return false;
+        if (vic.spr_pos[s].x != (s ? B(ASM_SPR_X + base + s) : B(ASM_PL_X + f)))
+            return false;               // (the player's X: road.c player_x)
         if (vic.spr_pos[s].y != B(ASM_SPR_Y + base + s))
             return false;
         if (ptrs[s] != B(ASM_SPR_PTR + base + s))
@@ -79,11 +82,14 @@ static void photo(void)
 {
     static const unsigned ahead[NCARS] = { 0, 16, 120, 1500 };
     static const int across[NCARS] = { 20 * 16, -48 * 16, 48 * 16, 0 };
+    stage = 0;                          // stage 1's track and colours
+    stage_colours();
     for (char c = 0; c < NCARS; c++)
     {
-        car_pos[c] = (PHOTO_POS + ahead[c]) & LAP_MASK;
+        car_pos[c] = PHOTO_POS + ahead[c];
         car_x[c] = across[c];
     }
+    track_ring(car_pos[0]);
     road_snap = true;
     road_final();
 }
@@ -92,15 +98,15 @@ static void grade(void)
 {
     road_final();                       // the held picture: the final state's
     unsigned bad = 0;
-    if (car_lap[0] < LAPS || finished < 1 || finished > NCARS)
+    if (!stage_time[1] || finished < 1 || finished > NCARS)
         bad |= 1 << 0;
-    for (char l = 0; l < LAPS; l++)
-        if (!ap_lap[l] || lap_time[l] != ap_lap[l])
+    for (char l = 0; l < STAGES; l++)
+        if (!ap_stage[l] || stage_time[l] != ap_stage[l])
             bad |= 1 << 1;
     // the panel: the bot's counts, drawn on row 23, against row 21
-    for (char l = 0; l < LAPS; l++)
+    for (char l = 0; l < STAGES; l++)
     {
-        hud_time(23, 0, ap_lap[l]);
+        hud_time(23, 0, ap_stage[l]);
         for (char i = 0; i < 6; i++)
             if (HUDPAGE[23 * 40 + i] != HUDPAGE[21 * 40 + 17 + 12 * l + i])
                 bad |= 1 << 2;
@@ -124,6 +130,10 @@ static void grade(void)
         bad |= 1 << 10;
     if (meter_frames != PLAY_HOLD)
         bad |= 1 << 11;
+    if (cps_total != 4 * STAGES || time_up)
+        bad |= 1 << 12;
+    if (!crashes)
+        bad |= 1 << 13;
 
     state = ST_GRADED;
     hud_clear_row(24);
@@ -147,6 +157,8 @@ static void grade(void)
         hud_dec(23, 22, hoff_max - hoff_min, 2);
         hud_dec(23, 25, curve_max - curve_min, 3);
         hex4(HUDPAGE + 23 * 40 + 28, sizes_seen);
+        hud_dec(23, 33, cps_total, 1);
+        hud_dec(23, 35, crashes, 2);
         RESULT = 0x02;
         vic.color_border = VCOL_RED;
     }

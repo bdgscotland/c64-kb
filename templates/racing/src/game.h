@@ -2,6 +2,7 @@
 //
 //   main.c    the frame loop, the states (title, grid, race, finish), the meter
 //   road.c    the view: camera, horizon, curve, the three sprites, the builder
+//   stage.c   the stages: checkpoints, the countdown, the track ring, colours
 //   cars.c    the player's car, the three opponents, contact, laps, the clock
 //   art.c     the road characters, the car pictures at six sizes, the ROM font copy
 //   hud.c     the panel under the road: text, numbers, lap times
@@ -59,14 +60,11 @@
 #define L_NEAR      202
 #define ZN          24                  // world units from the camera to line 202
 #define W0          136                 // half-width at line 202, pixels
-#define SEGMENTS    64
-#define LAP_UNITS   16384u              // 64 segments of 256
-#define LAP_MASK    0x3fff
+#define STAGES      2
 
 // ---- cars -----------------------------------------------------------------------------
 #define NOPP        3                   // opponents
 #define NCARS       (NOPP + 1)          // car 0 is the player
-#define LAPS        2
 #define CAR_LEN     40                  // world units: contact along the road
 #define CAR_HALF    14                  // pixels at line 202: half a car's width
 #define CAR_BOTTOM  198                 // the player's car sits on this line
@@ -74,24 +72,36 @@
 #define VERGE_MAX   0x0400              // on the grass
 #define NSIZES      6                   // car pictures, smallest first
 
-enum State { ST_TITLE, ST_GRID, ST_RACE, ST_FINISH, ST_GRADED };
+enum State { ST_TITLE, ST_GRID, ST_RACE, ST_CLEAR, ST_OVER, ST_FINISH, ST_GRADED };
 
 // cars.c
-extern unsigned car_pos[NCARS];         // world position, 0-16383 (mod a lap)
-extern char     car_lap[NCARS];         // laps completed
+extern unsigned car_pos[NCARS];         // along the stage, world units from its start
 extern unsigned car_speed[NCARS];       // 8.8 units a frame
 extern int      car_x[NCARS];           // across the road, 1/16 pixel at line 202 (0 = centre)
 extern char     car_colour[NCARS];
 extern char     place;                  // the player's race position, 1-4
-extern unsigned lap_frames;             // frames in the lap being driven
-extern unsigned lap_time[LAPS];         // frames per finished lap
 extern unsigned race_frames;            // frames since the green light
-extern unsigned bumps, verge_frames, overtakes;
+extern unsigned bumps, verge_frames, overtakes, crashes;
+extern char     crash_t;                // frames left of a crash: stopped, no control
 extern char     bump_cool;
 extern bool     on_verge;
 extern char     finished;               // the player's finishing position, 0 until then
-void cars_reset(void);
+void cars_reset(bool race);
 void cars_step(char joy);
+
+// stage.c
+extern char     stage;                  // 0, 1
+extern unsigned stage_frames;           // frames into this stage
+extern unsigned stage_time[STAGES];     // each finished stage's frames
+extern char     cps, cps_total;         // checkpoints passed: this stage (4 is the finish), the race
+extern char     timer_s;                // the countdown, seconds
+extern bool     time_up, stage_done;
+void stage_start(void);
+void stage_step(void);
+void stage_colours(void);
+void track_ring(unsigned p);            // the curvature ring around position p
+void track_fill(void);
+char stage_hill(unsigned p);
 
 // road.c
 extern char     hoff;                   // horizon offset now (0-23)
@@ -125,6 +135,7 @@ void hud_clear_row(char row);
 void hud_dec(char row, char col, unsigned v, char digits);
 void hud_time(char row, char col, unsigned frames);
 void hud_draw(void);
+void hud_message(const char *s, char frames);   // row 22, cleared after frames
 extern char fps;                        // 50 PAL, 60 NTSC
 extern char fpt;                        // frames a tenth of a second: 5 PAL, 6 NTSC
 
@@ -142,6 +153,7 @@ extern char model;                      // 0 PAL, 1 NTSC
 
 // Oscar64 has no object linker: each file is pulled in here.
 #pragma compile("cars.c")
+#pragma compile("stage.c")
 #pragma compile("road.c")
 #pragma compile("art.c")
 #pragma compile("hud.c")

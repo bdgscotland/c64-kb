@@ -21,11 +21,15 @@
 #include "frame_meter.h"
 
 // ---- memory: the KickAssembler blob at its own address, C above it -----------
-// No malloc: no heap (c64-kb oscar64-reference, Memory layout). The stack
-// keeps Oscar64's 4 KB.
+// No malloc: no heap (c64-kb oscar64-reference, Memory layout). 2 KB of
+// stack: Oscar64's 4 KB left the stages' autopilot builds no room (the
+// MUTANT=7 build failed to place it), and the racer's deeper port used
+// under 256 bytes (racing-port-110's STACKPROBE build, VICE x64sc).
 #pragma heapsize(0)
 #if PIECETIME
 #pragma stacksize(3072)                 // (debug build only: its tables need the room)
+#else
+#pragma stacksize(2048)
 #endif
 // The C region starts on the page after the blob's end (build/asm.h).
 #define C_ORG ((ASM_END + 0xff) & 0xff00)
@@ -87,19 +91,40 @@ static char port_read(void)
 static void title(void)
 {
     state = ST_TITLE;
-    cars_reset();
+    stage = 0;
+    cars_reset(true);
     hud_init();
     hud_text(22, 8, "c64-kb racing starter");
     hud_text(23, 14, "press fire");
     sound_off();
 }
 
+// A stage's grid: the cars placed, the stage's track and colours, the
+// lights. The race's counts carry over to stage 2.
 static void grid(void)
 {
     state = ST_GRID;
-    cars_reset();
+    cars_reset(false);
+    stage_start();
     hud_init();
     timer = 0;
+}
+
+// Stage 1 done: the cars drive on while the panel says so, then stage 2.
+#define CLEAR_FRAMES 150
+static void clear(void)
+{
+    state = ST_CLEAR;
+    timer = 0;
+    hud_message("stage clear", CLEAR_FRAMES);
+}
+
+// The countdown ran out.
+static void over(void)
+{
+    state = ST_OVER;
+    timer = 0;
+    hud_message("time up", 250);
 }
 
 // The start lights: three beeps a second apart, then GO.
@@ -197,7 +222,8 @@ int main(void)
     __asm { jsr ASM_RB_INIT }
     sound_init();
     road_init();
-    cars_reset();                       // the grid, for the first pictures
+    cars_reset(true);                   // the grid, for the first pictures
+    stage_start();
     hud_init();
     for (char k = 0; k < 2; k++)        // both copies whole before the chain starts
     {
@@ -320,8 +346,36 @@ int main(void)
             PON(2)
             cars_step(joy);
             POFF(2)
-            if (finished)
-                finish();
+            stage_step();
+            if (time_up)
+                over();
+            else if (stage_done)
+            {
+                if (stage == 0)
+                    clear();
+                else
+                {
+                    finished = place;
+                    finish();
+                }
+            }
+            break;
+        case ST_CLEAR:
+            cars_step(0xff);            // coasting on
+            if (++timer == CLEAR_FRAMES)
+            {
+                stage = 1;
+                grid();
+            }
+            break;
+        case ST_OVER:
+            cars_step(0xff);
+#if !AUTOPILOT
+            if (++timer == 250)
+                title();
+#else
+            timer++;                    // (autopilot.h grades the run)
+#endif
             break;
         case ST_FINISH:
             cars_step(0xff);            // coasting past the line
@@ -331,7 +385,7 @@ int main(void)
         }
         player_x();                     // the player's car across, every step
         PON(3)
-        if (state == ST_RACE || state == ST_GRID)
+        if (state == ST_RACE || state == ST_GRID || state == ST_CLEAR)
             hud_draw();
 #if !NO_PLAYER                      // make watchtest: the build without it fails SID_FRAMES
         sound_frame();

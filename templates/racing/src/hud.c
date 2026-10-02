@@ -4,15 +4,16 @@
 // the ROM's upper-case glyphs.
 //
 //   row 19   a solid bar (its lines show no background: engine.asm's split)
-//   row 20   LAP 1/2   TIME 0:00.0   POS 4/4
-//   row 21   SPEED 000   L1 -:--.-   L2 -:--.-
-//   row 22   messages
+//   row 20   STAGE 1  0:00.0  TIME 28  POS 4/4   (the stage's clock, the countdown)
+//   row 21   SPEED 000    S1 -:--.-   S2 -:--.-   (each finished stage's time)
+//   row 22   messages (hud_message: cleared after their frames)
 //   row 24   AUTOPILOT: the verdict (columns 0-19) and the meter (20-39)
 #include "game.h"
 
 char fps = 50;
 
-static char shown_lap, shown_place, shown_speed, shown_times;
+static char shown_stage, shown_place, shown_speed, shown_times, shown_timer;
+static char msg_t;                      // frames before row 22 is cleared
 static unsigned clk_frames;             // the lap clock: frames shown so far
 static char clk_div, clk[4];            // frames into this tenth; M, S tens, S, tenths
 
@@ -72,23 +73,35 @@ void hud_init(void)
         COLOUR[i] = VCOL_WHITE;
     for (char c = 0; c < 40; c++)
         COLOUR[22 * 40 + c] = VCOL_YELLOW;
-    hud_text(20, 1, "lap 1/2");
-    hud_text(20, 12, "time 0:00.0");
+    hud_text(20, 1, "stage 1");
+    hud_text(20, 10, "0:00.0");
+    hud_text(20, 18, "time 00");
     hud_text(20, 28, "pos 4/4");
     hud_text(21, 1, "speed 000");
-    hud_text(21, 14, "l1 -:--.-");
-    hud_text(21, 26, "l2 -:--.-");
-    shown_lap = shown_place = shown_speed = 0xff;
+    hud_text(21, 14, "s1 -:--.-");
+    hud_text(21, 26, "s2 -:--.-");
+    shown_stage = shown_place = shown_speed = shown_timer = 0xff;
+    msg_t = 0;
     shown_times = 0;
     clk_frames = clk_div = clk[0] = clk[1] = clk[2] = clk[3] = 0;
 }
 
-// The lap clock on row 20 follows lap_frames a frame at a time, digit by
-// digit (c64-kb decimal_print): no division in a frame. A new lap
-// (lap_frames back below the count) starts it again from 0:00.0.
+void hud_message(const char *s, char frames)
+{
+    hud_clear_row(22);
+    char n = 0;
+    while (s[n])
+        n++;
+    hud_text(22, 20 - (n >> 1), s);
+    msg_t = frames;
+}
+
+// The stage's clock on row 20 follows stage_frames a frame at a time,
+// digit by digit (c64-kb decimal_print): no division in a frame. A new
+// stage (stage_frames back below the count) starts it again from 0:00.0.
 static void clock_put(void)
 {
-    char *p = HUDPAGE + 20 * 40 + 17;
+    char *p = HUDPAGE + 20 * 40 + 10;
     p[0] = '0' + clk[0];
     p[2] = '0' + clk[1];
     p[3] = '0' + clk[2];
@@ -97,12 +110,12 @@ static void clock_put(void)
 
 static void clock_follow(void)
 {
-    if (lap_frames < clk_frames)
+    if (stage_frames < clk_frames)
     {
         clk_frames = clk_div = clk[0] = clk[1] = clk[2] = clk[3] = 0;
         clock_put();
     }
-    while (clk_frames < lap_frames)
+    while (clk_frames < stage_frames)
     {
         clk_frames++;
         if (++clk_div < fpt)
@@ -128,15 +141,14 @@ static void clock_follow(void)
 // Only what changed: most frames that is the clock, every fifth or sixth.
 void hud_draw(void)
 {
-    char lap = car_lap[0] < LAPS ? car_lap[0] : LAPS - 1;
-    if (lap != shown_lap)
+    if (stage != shown_stage)
     {
-        shown_lap = lap;
-        HUDPAGE[20 * 40 + 5] = '1' + lap;
+        shown_stage = stage;
+        HUDPAGE[20 * 40 + 7] = '1' + stage;
     }
-    while (shown_times < LAPS && lap_time[shown_times])
+    while (shown_times < STAGES && stage_time[shown_times])
     {
-        hud_time(21, 17 + 12 * shown_times, lap_time[shown_times]);
+        hud_time(21, 17 + 12 * shown_times, stage_time[shown_times]);
         shown_times++;
     }
     if (place != shown_place)
@@ -144,12 +156,26 @@ void hud_draw(void)
         shown_place = place;
         HUDPAGE[20 * 40 + 32] = '0' + place;
     }
+    if (timer_s != shown_timer)
+    {
+        shown_timer = timer_s;
+        char t = timer_s, d = 0;
+        while (t >= 10)
+        {
+            t -= 10;
+            d++;
+        }
+        HUDPAGE[20 * 40 + 23] = '0' + d;
+        HUDPAGE[20 * 40 + 24] = '0' + t;
+    }
     char sp = car_speed[0] >> 8;
     if (sp != shown_speed)
     {
         shown_speed = sp;
         hud_dec(21, 7, sp * 48, 3);     // "km/h", in steps of 48: 11 values
     }
-    if (!finished)
+    if (msg_t && !--msg_t)
+        hud_clear_row(22);
+    if (!stage_done)
         clock_follow();
 }

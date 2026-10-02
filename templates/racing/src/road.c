@@ -26,12 +26,11 @@ static char wscale[256];                // w * 128 / W0, at most 128: offsets ac
 
 #define ZTAB     ((const char *)ASM_ZTAB)
 #define W_OF_Z   ((const char *)ASM_W_OF_Z)
-#define HILL     ((const char *)ASM_HILL)
 #define SPR(t, set, s)  B(ASM_SPR_##t + (set) * 3 + (s))
 
 char road_segment(unsigned p)
 {
-    return (p >> 8) & (SEGMENTS - 1);
+    return p >> 8;
 }
 
 // Row R's content centre in copy `set` (engine.asm's row_cref), signed
@@ -64,15 +63,6 @@ void road_init(void)
         unsigned sc = (w * 128 + W0 / 2) / W0;
         wscale[w] = sc > 128 ? 128 : sc;
     }
-#if MUTANT == 2
-    for (char s = 0; s < SEGMENTS; s++)
-    {
-        B(ASM_CURV_LO + s) = 0;
-        B(ASM_CURV_HI + s) = 0;
-        for (char q = 0; q < 4; q++)
-            B(ASM_CURVF + 4 * s + q) = 0;
-    }
-#endif
     hoff = HOFF_LEVEL;
     hoff_min = hoff_max = HOFF_LEVEL;
     curve_min = curve_max = 0;
@@ -201,13 +191,13 @@ void road_build_all(void)
 static void picture_begin(void)
 {
     // ---- camera, horizon, centre ----
-    cam_pos = (car_pos[0] - ZN) & LAP_MASK;
+    cam_pos = car_pos[0] - ZN;           // (below 0 at the start: the ring's entries 252-255)
 #if MUTANT == 3
     hoff = HOFF_LEVEL;
 #else
     // The road's glyphs exist for even offsets: the horizon moves two lines
     // at a time (glyphs.asm).
-    char want = HILL[road_segment(cam_pos + 512)] & ~1;
+    char want = stage_hill(cam_pos + 512) & ~1;
     if (road_snap)
         hoff = want;                    // a still: no easing in
     else if (hoff < want)
@@ -247,7 +237,7 @@ static void picture_begin(void)
     char line[NCARS];
     for (char c = 1; c < NCARS; c++)
     {
-        unsigned d = (car_pos[c] - cam_pos) & LAP_MASK;
+        unsigned d = car_pos[c] - cam_pos;
         dist[c] = d;
         char i = line_of(d, zt);
         line[c] = i;
