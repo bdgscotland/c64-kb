@@ -91,7 +91,7 @@ static void crash(void)
     crash_t = fps + fps / 2;
     crashes++;
     hud_message("crash", fps + fps / 2);
-    sound_bump();
+    sound_crash();
 }
 
 static void player(char joy)

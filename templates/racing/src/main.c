@@ -21,15 +21,15 @@
 #include "frame_meter.h"
 
 // ---- memory: the KickAssembler blob at its own address, C above it -----------
-// No malloc: no heap (c64-kb oscar64-reference, Memory layout). 2 KB of
-// stack: Oscar64's 4 KB left the stages' autopilot builds no room (the
-// MUTANT=7 build failed to place it), and the racer's deeper port used
-// under 256 bytes (racing-port-110's STACKPROBE build, VICE x64sc).
+// No malloc: no heap (c64-kb oscar64-reference, Memory layout). 1 KB of
+// stack: Oscar64's 4 KB, then 2 KB, left the autopilot builds no room (the
+// stages, then the tune), and the racer's deeper port used under 256 bytes
+// (racing-port-110's STACKPROBE build, VICE x64sc).
 #pragma heapsize(0)
 #if PIECETIME
 #pragma stacksize(3072)                 // (debug build only: its tables need the room)
 #else
-#pragma stacksize(2048)
+#pragma stacksize(1024)
 #endif
 // The C region starts on the page after the blob's end (build/asm.h).
 #define C_ORG ((ASM_END + 0xff) & 0xff00)

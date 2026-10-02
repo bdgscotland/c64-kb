@@ -517,6 +517,7 @@ detect_model:
 
 // ---- the builder: builder.asm ---------------------------------------------------------
 .import source "builder.asm"
+.import source "music.asm"
 .label rb_row_zp = zp_row       // the next row rb_rows builds (C reads it)
 
 // ---- tables -----------------------------------------------------------------------------

@@ -143,6 +143,7 @@ extern char fpt;                        // frames a tenth of a second: 5 PAL, 6 
 void sound_init(void);
 void sound_frame(void);
 void sound_bump(void);
+void sound_crash(void);
 void sound_beep(char high);
 void sound_off(void);
 
