@@ -125,7 +125,7 @@ static void player(char joy)
         x += STEER * v;
     // the eased curvature under the car, quarter units (track.asm curvf)
     int k4 = (signed char)B(ASM_CURVF + ((car_pos[0] >> 6) & 255));
-    x -= (k4 * v) / 4;
+    x -= (k4 * v * 3) / 8;              // (was / 4: a bend now pushes half as hard again)
     if (x > X_LIMIT || x < -X_LIMIT)
     {
         x = x > 0 ? X_LIMIT : -X_LIMIT;

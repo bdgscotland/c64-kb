@@ -201,9 +201,9 @@ static void picture_begin(void)
     if (road_snap)
         hoff = want;                    // a still: no easing in
     else if (hoff < want)
-        hoff += 2;
+        hoff += hoff + 4 <= want ? 4 : 2;     // a crest comes up two steps a picture
     else if (hoff > want)
-        hoff -= 2;
+        hoff -= hoff >= want + 4 ? 4 : 2;
 #endif
     if (state == ST_RACE)
     {

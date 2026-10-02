@@ -53,18 +53,26 @@
 // Stage 1, "Hill country": the circuit, then 32 segments of sweepers.
 .var s1 = List()
 .eval s1.addAll(circuit)
+// (the last 32: a blind crest into a dip, then an S-bend; the maintainer
+// after light-3: "it doesnt feel like lotus", hills and bends first)
 .eval s1.addAll(runs(List().add(
-    4, 0, 8,    4, -2, 8,   2, 0, 6,   2, 0, 3,   4, 0, 12,   4, 3, 8,
-    4, 0, 8,    4, -3, 10,  4, 0, 8)))
+    4, 0, 8,    2, 0, 16,   2, 0, 22,   2, 0, 4,   2, 0, 1,   2, 3, 8,
+    2, -3, 8,   2, 3, 8,    2, -3, 8,   4, 0, 8,   2, 0, 18,  2, 0, 8,
+    4, 0, 8)))
 
-// Stage 2, "Canyon run": tighter, hillier.
+// Stage 2, "Canyon run": tighter and much hillier: six blind crests (the
+// horizon to 22-23, the road gone beyond them) each into a dip (0-4, the
+// road climbing away), and S-bends of two-segment turns either way.
 .var s2 = runs(List().add(
-    6, 0, 8,    4, 3, 8,    4, -3, 8,   2, 0, 14,  2, 0, 20,  2, 0, 12,
-    4, 3, 8,    2, 0, 4,    2, 0, 2,    4, -3, 6,  4, 0, 8,   4, 2, 8,
-    4, -2, 8,   4, 3, 10,   2, 0, 16,   2, 0, 22,  2, -3, 14, 4, -3, 8,
-    4, 0, 8,    4, 3, 8,    2, -3, 8,   2, 3, 8,   2, -3, 8,  4, 0, 6,
-    2, 0, 3,    2, 0, 10,   4, 3, 16,   4, -2, 8,  4, -3, 8,  4, 0, 8,
-    4, 2, 8,    4, -3, 12,  2, 0, 18,   2, 0, 10,  4, 0, 8,   6, 0, 8))
+    6, 0, 8,    2, 0, 14,   2, 0, 22,   2, 0, 4,   2, 0, 0,   2, 3, 8,
+    2, -3, 8,   2, 3, 8,    2, -3, 10,  2, 0, 18,  2, 0, 23,  2, 0, 6,
+    2, 0, 2,    4, 3, 8,    4, -3, 8,   2, 0, 16,  2, 0, 22,  2, -3, 12,
+    2, 3, 4,    2, -3, 2,   2, 3, 8,    4, 0, 8,   2, 0, 20,  2, 0, 23,
+    2, 0, 2,    2, 0, 0,    2, 0, 10,   2, 3, 8,   2, -3, 8,  2, 3, 8,
+    2, -3, 8,   4, 0, 8,    2, 0, 16,   2, 2, 22,  2, -2, 14, 2, 0, 4,
+    2, 0, 1,    4, -3, 8,   4, 3, 8,    2, 0, 18,  2, 0, 23,  2, 0, 8,
+    12, 0, 8))
+.if (s2.size() != 224) .error "stage 2: 112 segments"
 .const PAD = 40
 .var pad = List()
 .for (var i = 0; i < PAD; i++) {
