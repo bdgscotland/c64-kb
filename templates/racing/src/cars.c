@@ -1,4 +1,4 @@
-// cars.c: the player's car, the three opponents, contact between them,
+// cars.c: the player's car, the four opponents, contact between them,
 // crashes. One step a frame (the game runs 6/5 as fast on NTSC, as
 // the other starters do: c64-kb pal_ntsc_tempo_mismatch).
 //
@@ -18,7 +18,7 @@
 unsigned car_pos[NCARS];                // along the stage, from its start
 unsigned car_speed[NCARS];
 int      car_x[NCARS];
-char     car_colour[NCARS] = { VCOL_WHITE, VCOL_RED, VCOL_YELLOW, VCOL_CYAN };
+char     car_colour[NCARS] = { VCOL_WHITE, VCOL_RED, VCOL_YELLOW, VCOL_CYAN, VCOL_PURPLE };
 static char     car_frac[NCARS];
 static int      car_lane[NCARS];        // where an opponent drives, 1/16 pixel
 char     place;
@@ -32,9 +32,9 @@ char     finished;
 // The grid: the player last, behind car 1 in the left lane; the opponents
 // ahead, lanes alternating. Their top speeds are below the player's, the
 // farthest the fastest, so the player catches them one at a time.
-static const unsigned grid_pos[NCARS] = { 0, 70, 140, 210 };
-static const int grid_x[NCARS] = { -48 * 16, -48 * 16, 48 * 16, -48 * 16 };
-static const unsigned opp_max[NCARS] = { 0, 0x0880, 0x0900, 0x0980 };
+static const unsigned grid_pos[NCARS] = { 0, 70, 140, 210, 280 };
+static const int grid_x[NCARS] = { -48 * 16, -48 * 16, 48 * 16, -48 * 16, 48 * 16 };
+static const unsigned opp_max[NCARS] = { 0, 0x0880, 0x0900, 0x0980, 0x09c0 };
 
 #define ACCEL      0x0010
 #define OPP_ACCEL  0x000c

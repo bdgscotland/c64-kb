@@ -30,7 +30,7 @@
       "type": "text",
       "row": 20,
       "col": 28,
-      "text": "POS 1/4"
+      "text": "POS 1/5"
     },
     {
       "name": "stage times, 50 frames a second (pinned from the run; the program checks them against its own count)",

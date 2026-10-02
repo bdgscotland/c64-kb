@@ -76,7 +76,7 @@ void hud_init(void)
     hud_text(20, 1, "stage 1");
     hud_text(20, 10, "0:00.0");
     hud_text(20, 18, "time 00");
-    hud_text(20, 28, "pos 4/4");
+    hud_text(20, 28, "pos 5/5");
     hud_text(21, 1, "speed 000");
     hud_text(21, 14, "s1 -:--.-");
     hud_text(21, 26, "s2 -:--.-");

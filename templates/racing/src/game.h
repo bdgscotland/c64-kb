@@ -3,7 +3,7 @@
 //   main.c    the frame loop, the states (title, grid, race, finish), the meter
 //   road.c    the view: camera, horizon, curve, the three sprites, the builder
 //   stage.c   the stages: checkpoints, the countdown, the track ring, colours
-//   cars.c    the player's car, the three opponents, contact, laps, the clock
+//   cars.c    the player's car, the four opponents, contact, crashes
 //   art.c     the road characters, the car pictures at six sizes, the ROM font copy
 //   hud.c     the panel under the road: text, numbers, lap times
 //   sound.c   the engine note, the bump, the start lights
@@ -63,7 +63,7 @@
 #define STAGES      2
 
 // ---- cars -----------------------------------------------------------------------------
-#define NOPP        3                   // opponents
+#define NOPP        4                   // opponents
 #define NCARS       (NOPP + 1)          // car 0 is the player
 #define CAR_LEN     40                  // world units: contact along the road
 #define CAR_HALF    14                  // pixels at line 202: half a car's width

@@ -155,7 +155,7 @@ static void finish(void)
     hud_clear_row(22);
     hud_text(22, 13, "finished");
     HUDPAGE[22 * 40 + 22] = '0' + finished;
-    static const char suffix[5][3] = { "", "st", "nd", "rd", "th" };
+    static const char suffix[6][3] = { "", "st", "nd", "rd", "th", "th" };
     hud_text(22, 23, suffix[finished]);
     hud_draw();
 }

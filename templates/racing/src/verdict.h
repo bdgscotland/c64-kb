@@ -75,13 +75,13 @@ static void hex4(char *p, unsigned v)
 // units into the left kink over the crest (segments 50-53: the horizon at
 // line 124, the road bending left from the bottom up); car 1 16 units ahead
 // in the left lane (a big picture), car 2 120 ahead in the right lane (a
-// small one), car 3 far enough to be left out; the player 20 pixels right
+// small one), cars 3 and 4 far enough to be left out; the player 20 pixels right
 // of the centre line.
 #define PHOTO_POS (50 * 256 + 64 + ZN)
 static void photo(void)
 {
-    static const unsigned ahead[NCARS] = { 0, 16, 120, 1500 };
-    static const int across[NCARS] = { 20 * 16, -48 * 16, 48 * 16, 0 };
+    static const unsigned ahead[NCARS] = { 0, 16, 120, 1500, 1700 };
+    static const int across[NCARS] = { 20 * 16, -48 * 16, 48 * 16, 0, 0 };
     stage = 0;                          // stage 1's track and colours
     stage_colours();
     for (char c = 0; c < NCARS; c++)
