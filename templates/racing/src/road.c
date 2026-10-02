@@ -142,6 +142,7 @@ static void road_posts(void)
 static void picture_begin(void);
 static void picture_end(void);
 static void road_posts(void);
+static void player_set(char set);
 
 // One piece of the next picture: its start (camera, sprites, rb_begin), one
 // row, or its end (the sprites' X; rb_ready). Nothing while the last picture
@@ -255,8 +256,8 @@ static void picture_begin(void)
     char en = 1;
     spr_line[0] = CAR_BOTTOM;
     spr_size[0] = NSIZES - 1;
-    SPR(Y, set, 0) = CAR_BOTTOM - 21;
-    SPR(PTR, set, 0) = SPR_BLOCK0 + NSIZES - 1;
+    SPR(Y, set, 0) = ASM_PL_Y;          // the car's left column, Y-expanded (engine.asm)
+    SPR(PTR, set, 0) = ASM_PL_PTR0 + 3 * player_lean;
     SPR(COL, set, 0) = car_colour[0];
 
     char near1 = 0, near2 = 0;
@@ -299,7 +300,9 @@ static void picture_begin(void)
 #endif
         char bottom = ROAD_TOP + i;
         char y = top_aligned(k) ? bottom - size_h[k] : bottom - 21;
-        if (y < ROAD_TOP || y > L_NEAR - 20)
+        // (and its sprite done before line 156, where sprites 1 and 2
+        // become the car's: engine.asm SPLIT_J; nearer, it is not drawn)
+        if (y < ROAD_TOP || y > SPLIT_LINE - 21)
             continue;
         spr_line[c] = bottom;
         spr_size[c] = k;
@@ -327,7 +330,7 @@ static void picture_end(void)
     int px = p_px[0];
 
     // ---- X from the centres the builder made ----
-    SPR(X, set, 0) = 24 + 160 - 12;
+    SPR(X, set, 0) = 24 + 160 - 36;
     pic_px[set] = px;                   // the player's own X: player_x, each step
     for (char s = 1; s < 3; s++)
     {
@@ -366,7 +369,7 @@ static void picture_end(void)
         if (bend < curve_min) curve_min = bend;
         if (bend > curve_max) curve_max = bend;
     }
-    player_x();                         // its set's player X before it can be taken
+    player_set(set);                    // its set's car before it can be taken
     B(ASM_RB_READY) = 1;
 }
 
@@ -380,17 +383,39 @@ static void picture_end(void)
 // capture, VICE x64sc). Both sets are written; irq_blank and a take store
 // the shown set's (engine.asm take_picture), and the register is written
 // now, so the change shows on this frame's road.
+// The car is three sprites: 0 here and at irq_blank, 1 and 2 by the split's
+// slots in each road copy (engine.asm), with the lean's pictures. Set s's
+// copy: from picture_end for a new picture, each step for the one shown
+// (both sets each step, in C, cost 470 cycles a frame: PROF=4 meter).
+static void player_set(char set)
+{
+    int x = 24 + 160 - 36 + (car_x[0] >> 4) - pic_px[set];
+    if (x < 24)
+        x = 24;
+    else if (x > 255 - 48)
+        x = 255 - 48;                   // (bit 8 stays 0 for all three: the split stores $D010 = 0)
+    char cx = (char)x, ptr = ASM_PL_PTR0 + 3 * player_lean;
+    __asm {
+        lda cx
+        ldy ptr
+        ldx set
+        jsr ASM_CAR_SET
+    }
+}
+
 void player_x(void)
 {
-    int px = car_x[0] >> 4;
-    for (char set = 0; set < 2; set++)
-    {
-        int x = 24 + 160 - 12 + px - pic_px[set];
-        if (x < 24)
-            x = 24;
-        else if (x > 255)
-            x = 255;                    // (bit 8 stays 0: sprite 0 is the player's alone)
-        B(ASM_PL_X + set) = (char)x;
-    }
-    vic.spr_pos[0].x = B(ASM_PL_X + B(ASM_RB_FRONT));
+    static int last_x;
+    static char last_l, last_f = 0xff, last_s;
+    char f = B(ASM_RB_FRONT), sw = B(ASM_RB_SWAPS);
+    int x = car_x[0] >> 4;
+    if (x == last_x && player_lean == last_l && f == last_f && sw == last_s)
+        return;                         // as it stands (most steps on a straight)
+    last_x = x;
+    last_l = player_lean;
+    last_f = f;
+    last_s = sw;
+    player_set(f);
+    vic.spr_pos[0].x = B(ASM_PL_X + f);
+    (f ? SCREEN_B : SCREEN_A)[0x3f8] = SPR(PTR, f, 0);
 }

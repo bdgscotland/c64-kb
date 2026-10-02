@@ -67,7 +67,8 @@
 #define NCARS       (NOPP + 1)          // car 0 is the player
 #define CAR_LEN     40                  // world units: contact along the road
 #define CAR_HALF    14                  // pixels at line 202: half a car's width
-#define CAR_BOTTOM  198                 // the player's car sits on this line
+#define CAR_BOTTOM  202                 // the player's car sits on this line (engine.asm PL_Y + 42)
+#define SPLIT_LINE  156                 // sprites 1-2 are the car's from here (engine.asm SPLIT_J)
 #define SPEED_MAX   0x0a00              // 8.8 world units a frame (10)
 #define VERGE_MAX   0x0400              // on the grass
 #define NSIZES      6                   // car pictures, smallest first
@@ -82,7 +83,8 @@ extern char     car_colour[NCARS];
 extern char     place;                  // the player's race position, 1-4
 extern unsigned race_frames;            // frames since the green light
 extern unsigned bumps, verge_frames, overtakes, crashes;
-extern char     crash_t;                // frames left of a crash: stopped, no control
+extern char     crash_t;
+extern char     player_lean;            // 0 straight, 1 left, 2 right: the car's picture                // frames left of a crash: stopped, no control
 extern char     bump_cool;
 extern bool     on_verge;
 extern char     finished;               // the player's finishing position, 0 until then

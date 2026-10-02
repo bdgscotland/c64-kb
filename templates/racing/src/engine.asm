@@ -161,6 +161,38 @@
 .const PRE_SIZE = 18
 .const bpos     = $ff           // the camera's position, even (C, each frame)
 
+// The player's car (road.c, art.c): sprites 0-2 side by side, Y-expanded,
+// from line PL_Y + 1 to 202. Sprite 0 is the player's alone (irq_blank
+// sets it); sprites 1 and 2 show an opponent each above the car, then on
+// four lines above it (SPLIT_J: 156-159; not an L block: the builder
+// writes its LDY operand, which slots would move) the blocks carry three
+// stores each (LDA #, STA abs: 18 cycles) that make them the car's middle
+// and right columns: Y, colour, pointer, X, $D010 and $D017 (Y-expanded).
+// An opponent whose sprite would still fetch on those lines is not drawn
+// (road.c). No sprite fetches on them, so their pads are fixed (rb_init).
+.const PL_Y     = 160           // the car shows on lines 161-202
+.const PL_PTR0  = 54            // its blocks: 54-56 straight, 57-59 leaning left, 60-62 right (art.c)
+.const SLOT0    = 9 + PROBE_B   // a block's first slot: after its colour stores
+.const SL_CYC   = 18
+.const SL_BYTES = 15
+.var SPLIT_J = List().add(49, 50, 51, 52)
+.function slotsOf(j, scrAddr) {
+    .if (j == 49) .return List().add(PL_Y, $d003, PL_Y, $d005, 7, $d017)
+    .if (j == 50) .return List().add(2, $d028, 2, $d029, 0, $d010)
+    .if (j == 51) .return List().add(160 + 24 - 12, $d002, 160 + 24 + 12, $d004, PL_PTR0 + 1, scrAddr + $3f9)
+    .return List().add(PL_PTR0 + 2, scrAddr + $3fa, 7, $d015, 0, slot_dummy)
+}
+.macro Slots(j, scrAddr) {
+    .var sl = slotsOf(j, scrAddr)
+    .for (var n = 0; n < 3; n++) {
+            lda #sl.get(n * 2)
+            sta sl.get(n * 2 + 1)
+    }
+}
+// The slide's entry for a slot line, PAL (rb_init takes 2 off on NTSC):
+// R = 63 - cycles - 1, no sprite on the line.
+.function slotOper(cyc, head) { .return (64 - head - SL_BYTES) - (63 - (cyc + SL_CYC) - 1) }
+
 // Calibration, found with the PROBE build (README, "The road's timing").
 .var SYNC_P   = cmdLineVars.containsKey("SYNCP")   ? cmdLineVars.get("SYNCP").asNumber()   : 40
 .var SYNC_N   = cmdLineVars.containsKey("SYNCN")   ? cmdLineVars.get("SYNCN").asNumber()   : 42
@@ -208,7 +240,8 @@ spr_y:      .fill 6, 0
 spr_ptr:    .fill 6, 0
 spr_col:    .fill 6, 0
 spr_msb:    .byte 0, 0
-pl_x:       .byte 172, 172      // per set: the player's sprite X now (road.c player_x)
+pl_x:       .byte 160 + 24 - 36, 160 + 24 - 36  // per set: the car's left sprite X now (road.c player_x)
+slot_dummy: .byte 0             // where an unused slot stores
 spr_en:     .byte 0, 0
 
 // Per row, what the builder made (the back copy after rb_rows): the content
@@ -312,6 +345,44 @@ irq_blank:
         sta $d012
         jmp irq_done
 
+// car_set: the car (sprites 0-2) in set X: A its left column's X, Y its
+// left picture. Its pl_x and pointer, and the split's slots in the set's
+// copy (X of sprites 1-2, their pointers). (In C it took 340 cycles a step.)
+car_x0:     .byte 0
+car_set:
+        sta pl_x, x
+        sta car_x0
+        tya
+        pha
+        lda set3, x
+        tax
+        pla
+        sta spr_ptr, x
+        cpx #0
+        bne !b+
+        iny
+        sty sl_p1_a
+        iny
+        sty sl_p2_a
+        lda car_x0
+        clc
+        adc #24
+        sta sl_x1_a
+        adc #24
+        sta sl_x2_a
+        rts
+!b:     iny
+        sty sl_p1_a + sl_copy
+        iny
+        sty sl_p2_a + sl_copy
+        lda car_x0
+        clc
+        adc #24
+        sta sl_x1_a + sl_copy
+        adc #24
+        sta sl_x2_a + sl_copy
+        rts
+
 // take_picture: a new picture when rb_ready (the other copy, screen and
 // sprite set), then the shown one's sync target, sprites and pointers. Safe
 // where the beam is below line 202 with no sprite fetching: after the panel
@@ -337,7 +408,9 @@ take_picture:
         sta sync_ntsc.go + 2
         lda spr_msb, x
         sta $d010
-        lda spr_en, x
+        lda spr_en, x           // the opponents' sprites, and 0 (the car); the split turns
+        ora #1                  // 1-2 on for the car (a sprite parked off the road on line 0
+                                // took about 300 cycles a frame from the step: its fetches)
 #if NOSPRITES
         lda #0                  // (debug) no sprites: the road's timing alone
 #endif
@@ -358,6 +431,8 @@ take_picture:
         ldx rb_front
         lda pl_x, x             // the player's X for this set, from C each step
         sta $d000
+        lda #1                  // sprite 0 Y-expanded (the car), 1-2 not (opponents)
+        sta $d017
         rts
 
 // rb_take: the main loop's take of a finished picture, when the beam is
@@ -576,8 +651,10 @@ ztab:
             lda d016 + n
 }
 .macro RoadCopy(scr, zl, d016) {
+    .var scrAddr = scr == 0 ? SCREEN_A : SCREEN_B
     .for (var j = 0; j < ROAD_LINES; j++) {
         .var k = (ROAD_TOP + j - 3) & 7         // the line's place in its row
+        .var sp = j >= 49 && j <= 52                          // SPLIT_J
         .var last = j + 1 == ROAD_LINES         // line 202: the panel is next
         .var nextY = last ? D018_HUD : scr | SET_BITS.get(rowSet.get(min(j + 1, ROAD_LINES - 1) >> 3))
         .if (k == 0) {
@@ -594,10 +671,18 @@ blk:        stx $d021
             lda #PROBE_COL
             sta $d021
 #endif
+          .if (sp) {
+            Slots(j, scrAddr)
+            NextLoads(zl, d016, j + 1)
+fbs:        .byte $d0, slotOper(FB_CYC, FB_HEAD)
+            Slide(FB_SLIDE - SL_BYTES)
+            .errorif fbs + 1 - blk != FB_OPER + SL_BYTES, "F block with slots"
+          } else {
             NextLoads(zl, d016, j + 1)
 fb:         .byte $d0, FB_SLIDE
             Slide(FB_SLIDE)
             .errorif fb + 1 - blk != FB_OPER, "F block layout"
+          }
         } else {
 blk:        sta $d016
             stx $d021
@@ -606,6 +691,7 @@ blk:        sta $d016
             lda #PROBE_COL
             sta $d021
 #endif
+          .if (sp) { Slots(j, scrAddr) }
           .if (k == 7) {
           .if (last) {
             lda zl + j              // (unused: the others' bytes and cycles)
@@ -622,14 +708,26 @@ blk:        sta $d016
           }
             lda d016 + min(j + 1, ROAD_LINES - 1)
 ly:         ldy #nextY
+          .if (sp) {
+lbs:        .byte $d0, slotOper(LB_CYC, LB_HEAD)
+            Slide(LB_SLIDE - SL_BYTES)
+            .errorif ly + 1 - blk != OFF_LY + SL_BYTES || lbs + 1 - blk != LB_OPER + SL_BYTES, "L block with slots"
+          } else {
 lb:         .byte $d0, LB_SLIDE
             Slide(LB_SLIDE)
             .errorif ly + 1 - blk != OFF_LY || lb + 1 - blk != LB_OPER, "L block layout"
+          }
           } else {
             NextLoads(zl, d016, j + 1)
+          .if (sp) {
+nbs:        .byte $d0, slotOper(NB_CYC, NB_HEAD)
+            Slide(NB_SLIDE - SL_BYTES)
+            .errorif nbs + 1 - blk != NB_OPER + SL_BYTES, "N block with slots"
+          } else {
 nb:         .byte $d0, NB_SLIDE
             Slide(NB_SLIDE)
             .errorif nb + 1 - blk != NB_OPER, "N block layout"
+          }
           }
         }
     }
@@ -662,3 +760,14 @@ pre_b:  PreBlock($10, road_b, zlc_b, d016_b)
 road_a: RoadCopy($00, zlc_a, d016_a)
 .align $100
 road_b: RoadCopy($10, zlc_b, d016_b)
+// the slots C rewrites each step (road.c player_x): X of sprites 1 and 2,
+// their pointers (the lean)
+.label sl_x1_a = road_a + 51 * 64 + SLOT0 + 1
+.label sl_x2_a = sl_x1_a + 5
+.label sl_p1_a = sl_x1_a + 10
+.label sl_p2_a = road_a + 52 * 64 + SLOT0 + 1
+.label sl_copy = road_b - road_a
+.label split_j0 = 49            // (roadcheck: the slot lines, 49-52)
+.label pl_ptr0 = PL_PTR0         // (for C: art.c, road.c)
+.label pl_y    = PL_Y
+.label slot0   = SLOT0

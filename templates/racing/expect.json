@@ -233,21 +233,21 @@
       "height": 1
     },
     {
-      "name": "road surface left of the centre line, line 200",
+      "name": "road surface left of the centre line, line 200 (to the car's left edge)",
       "type": "rect",
       "colour": 11,
       "vic_x": 32,
       "line": 200,
-      "width": 128,
+      "width": 116,
       "height": 1
     },
     {
-      "name": "centre line, line 200 (solid white, colour RAM)",
+      "name": "centre line, line 155, above the car (solid white, colour RAM)",
       "type": "rect",
       "colour": 1,
-      "vic_x": 160,
-      "line": 200,
-      "width": 8,
+      "vic_x": 150,
+      "line": 155,
+      "width": 4,
       "height": 1
     },
     {
@@ -260,42 +260,48 @@
       "height": 1
     },
     {
-      "name": "the player's car, picture 5 (24 x 16), at the screen's centre: its light-red lights on line 189",
+      "name": "the player's car (v11 art, three sprites, Y-expanded): its light-red lamps on lines 185-188",
       "type": "sprite",
       "colour": 10,
-      "vic_x": 174,
-      "line": 189,
-      "width": 20,
-      "height": 2
-    },
-    {
-      "name": "car 1, 16 units ahead: picture 3 (16 pixels wide), red body",
-      "type": "sprite",
-      "colour": 2,
-      "vic_x": 128,
-      "line": 167,
-      "width": 16,
-      "height": 8,
+      "vic_x": 150,
+      "line": 185,
+      "width": 68,
+      "height": 4,
       "search": {
-        "vic_x": 124,
-        "line": 156,
-        "width": 25,
-        "height": 22
+        "vic_x": 130,
+        "line": 183,
+        "width": 110,
+        "height": 8
       }
     },
     {
-      "name": "car 2, 120 units ahead: picture 0 (4 pixels wide), yellow, on the bend near the horizon",
+      "name": "the player's car: its black outline 72 x 42 from line 161 (sprites 0-2 side by side; 1-2 set by the split's stores at lines 156-159)",
+      "type": "sprite",
+      "colour": 0,
+      "vic_x": 148,
+      "line": 161,
+      "width": 72,
+      "height": 42,
+      "search": {
+        "vic_x": 100,
+        "line": 157,
+        "width": 180,
+        "height": 46
+      }
+    },
+    {
+      "name": "car 2, 160 units ahead: picture 0 (4 pixels wide), yellow, near the horizon (car 1, 104 ahead, reaches the split: not drawn)",
       "type": "sprite",
       "colour": 7,
-      "vic_x": 153,
-      "line": 135,
+      "vic_x": 147,
+      "line": 133,
       "width": 4,
-      "height": 3,
+      "height": 1,
       "search": {
-        "vic_x": 143,
-        "line": 135,
-        "width": 25,
-        "height": 22
+        "vic_x": 130,
+        "line": 120,
+        "width": 40,
+        "height": 30
       }
     },
     {

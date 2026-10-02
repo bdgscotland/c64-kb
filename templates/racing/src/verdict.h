@@ -19,7 +19,8 @@
 //   7    the hill: the horizon moved over at least 10 lines
 //   8    the bend: the farthest road row's centre, less where a straight
 //        road would put it, ranged over at least 60 pixels
-//   9    the cars' sizes: at least four of the six pictures were drawn
+//   9    the cars' sizes: at least two of the six pictures were drawn (the
+//        biggest come only nearer than line 156, where the car's sprites are)
 //   10   the sprites: the VIC-II's registers are the set shown
 //   11   the meter recorded its 255 frames
 //   12   the checkpoints: all eight passed (three and the finish a stage),
@@ -29,9 +30,15 @@
 
 static bool vic_matches_shown(void)
 {
+    // read above the road (lines 30-90): below line 156 sprites 1 and 2 are
+    // the car's (engine.asm's split)
+    while (vic.raster < 30 || vic.raster > 90 || (vic.ctrl1 & 0x80))
+        ;
     char f = B(ASM_RB_FRONT);
     char base = f * 3;
-    if ((vic.spr_enable & 7) != B(ASM_SPR_EN + f))
+    if ((vic.spr_enable & 7) != (B(ASM_SPR_EN + f) | 1))
+        return false;
+    if ((vic.spr_expand_y & 7) != 1)       // the car's left column only, until the split
         return false;
     if ((vic.spr_msbx & 7) != B(ASM_SPR_MSB + f))
         return false;
@@ -73,14 +80,14 @@ static void hex4(char *p, unsigned v)
 // The still the shots are pinned on, after the grade: the real projection
 // and builder, with the cars put where the checks want them. The camera 64
 // units into the left kink over the crest (segments 50-53: the horizon at
-// line 124, the road bending left from the bottom up); car 1 16 units ahead
-// in the left lane (a big picture), car 2 120 ahead in the right lane (a
-// small one), cars 3 and 4 far enough to be left out; the player 20 pixels right
+// line 124, the road bending left from the bottom up); car 1 104 units ahead
+// in the left lane (above line 156: nearer, it is not drawn), car 2 120 ahead in the right lane (a
+// smaller one, 160 ahead), cars 3 and 4 far enough to be left out; the player 20 pixels right
 // of the centre line.
 #define PHOTO_POS (50 * 256 + 64 + ZN)
 static void photo(void)
 {
-    static const unsigned ahead[NCARS] = { 0, 16, 120, 1500, 1700 };
+    static const unsigned ahead[NCARS] = { 0, 104, 160, 1500, 1700 };
     static const int across[NCARS] = { 20 * 16, -48 * 16, 48 * 16, 0, 0 };
     stage = 0;                          // stage 1's track and colours
     stage_colours();
@@ -124,7 +131,7 @@ static void grade(void)
         bad |= 1 << 7;
     if (curve_max - curve_min < 60)
         bad |= 1 << 8;
-    if (popcount6(sizes_seen) < 4)
+    if (popcount6(sizes_seen) < 2)     // (2: the cars nearer than line 156 are not drawn)
         bad |= 1 << 9;
     if (!vic_matches_shown())
         bad |= 1 << 10;

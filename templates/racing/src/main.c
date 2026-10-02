@@ -21,15 +21,16 @@
 #include "frame_meter.h"
 
 // ---- memory: the KickAssembler blob at its own address, C above it -----------
-// No malloc: no heap (c64-kb oscar64-reference, Memory layout). 1 KB of
-// stack: Oscar64's 4 KB, then 2 KB, left the autopilot builds no room (the
-// stages, then the tune), and the racer's deeper port used under 256 bytes
-// (racing-port-110's STACKPROBE build, VICE x64sc).
+// No malloc: no heap (c64-kb oscar64-reference, Memory layout). 512 bytes
+// of stack: Oscar64's 4 KB, then 2 KB and 1 KB, left the autopilot build no
+// room (the stages, the tune, the car art). The STACKPROBE build
+// (-dSTACKPROBE=1) fills the lower half and reads it back after the
+// verdict: untouched (README).
 #pragma heapsize(0)
 #if PIECETIME
 #pragma stacksize(3072)                 // (debug build only: its tables need the room)
 #else
-#pragma stacksize(1024)
+#pragma stacksize(512)
 #endif
 // The C region starts on the page after the blob's end (build/asm.h).
 #define C_ORG ((ASM_END + 0xff) & 0xff00)
@@ -112,11 +113,12 @@ static void grid(void)
 
 // Stage 1 done: the cars drive on while the panel says so, then stage 2.
 #define CLEAR_FRAMES 150
+// (The message comes a step later: in the step that ended the stage it
+// ran that step past the next frame on NTSC once a race.)
 static void clear(void)
 {
     state = ST_CLEAR;
     timer = 0;
-    hud_message("stage clear", CLEAR_FRAMES);
 }
 
 // The countdown ran out.
@@ -148,10 +150,16 @@ static void grid_frame(void)
     }
 }
 
+// (The message comes a step later, as clear's: in the step that ended the
+// race it ran that step past the next frame on NTSC once a race.)
 static void finish(void)
 {
     state = ST_FINISH;
     timer = 0;
+}
+
+static void finish_message(void)
+{
     hud_clear_row(22);
     hud_text(22, 13, "finished");
     HUDPAGE[22 * 40 + 22] = '0' + finished;
@@ -207,6 +215,9 @@ static void video_init(void)
 
 int main(void)
 {
+#if STACKPROBE
+    memset((char *)0xbe00, 0xaa, 0x100);    // (debug) the stack's lower half: read back after the verdict
+#endif
     __asm { sei }                       // the IRQ chain is the only interrupt
     cia1.icr = 0x7f;                    // no CIA1 interrupts
     char c = cia1.icr;
@@ -288,7 +299,22 @@ int main(void)
                         piece_own[kind] = t;
                 }
 #else
-                road_work();
+                // The tick is read again just before a piece: irq_blank
+                // (251) landing after the first read let a piece of up to
+                // 3,700 cycles start after the tick, and the step behind it
+                // ran past its frame once a race on NTSC (a checkpoint on
+                // irq_blank showed the next tick land in that step's sound;
+                // racing-port-110 found the same).
+                // NTSC: no piece starts in the 25 lines before the tick. One
+                // of up to 3,700 cycles started there pushed the step into the
+                // next road kernel: once a race it ran past its frame (a
+                // checkpoint on irq_blank), and the meter, which times from
+                // one step's end to the next, read 20,170 of 17,095. Pictures
+                // on NTSC: 9.3 frames each with no rule, 11.8 with it.
+                if (model && vic.raster >= 226 && !(vic.ctrl1 & 0x80))
+                    ;
+                else if (TICK == last)
+                    road_work();
 #endif
             }
             continue;
@@ -362,6 +388,8 @@ int main(void)
             break;
         case ST_CLEAR:
             cars_step(0xff);            // coasting on
+            if (timer == 1)
+                hud_message("stage clear", CLEAR_FRAMES);
             if (++timer == CLEAR_FRAMES)
             {
                 stage = 1;
@@ -379,13 +407,17 @@ int main(void)
             break;
         case ST_FINISH:
             cars_step(0xff);            // coasting past the line
+            if (timer == 1)
+                finish_message();
             if (++timer == 250)
                 title();
             break;
         }
         player_x();                     // the player's car across, every step
         PON(3)
-        if (state == ST_RACE || state == ST_GRID || state == ST_CLEAR)
+        // the panel every other step (light-7: the budget of 5 PAL frames a
+        // picture had 0.05 to find; the clock shows tenths, its digits catch up)
+        if ((state == ST_RACE || state == ST_GRID || state == ST_CLEAR) && (frame & 1))
             hud_draw();
 #if !NO_PLAYER                      // make watchtest: the build without it fails SID_FRAMES
         sound_frame();
@@ -425,6 +457,9 @@ int main(void)
         {
             slow += (char)(TICK - ticks);
             last = TICK;
+#if FRAME_METER
+            fold_irq_time(false);       // their IRQs are no step's: folded into the next
+#endif                                  // sample they read 20,477 on NTSC (two frames' IRQs)
         }
         frame++;
     }

@@ -18,7 +18,8 @@
 unsigned car_pos[NCARS];                // along the stage, from its start
 unsigned car_speed[NCARS];
 int      car_x[NCARS];
-char     car_colour[NCARS] = { VCOL_WHITE, VCOL_RED, VCOL_YELLOW, VCOL_CYAN, VCOL_PURPLE };
+char     car_colour[NCARS] = { VCOL_RED, VCOL_LT_BLUE, VCOL_YELLOW, VCOL_CYAN, VCOL_PURPLE };
+char     player_lean;
 static char     car_frac[NCARS];
 static int      car_lane[NCARS];        // where an opponent drives, 1/16 pixel
 char     place;
@@ -119,6 +120,7 @@ static void player(char joy)
     // steering needs speed; a bend pushes outwards
     char v = s >> 8;
     int x = car_x[0];
+    player_lean = !(joy & JOY_LEFT) ? 1 : !(joy & JOY_RIGHT) ? 2 : 0;
     if (!(joy & JOY_LEFT))
         x -= STEER * v;
     else if (!(joy & JOY_RIGHT))

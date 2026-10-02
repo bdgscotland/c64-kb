@@ -17,7 +17,9 @@ shifted right by the line's XSCROLL, in 38 columns (the border covers the
 seven and nine pixels at the sides), over the line's grass, road band and
 kerb colours (a register keeps its value until a block stores it: the
 badline and the row's second line keep the bands above them), sprites 0-2
-in front (a sprite whose Y register is y shows on lines y + 1 to y + 21),
+in front (a sprite whose Y register is y shows on lines y + 1 to y + 21,
+or 42 Y-expanded: the player's car, three sprites set at line 251 and by
+the split's slot stores on lines 156-159),
 and compares every pixel with the pinned exit screenshot of the same still
 (make shot).
 
@@ -144,8 +146,24 @@ def snapshot(args, model):
         for v in set(d018):
             base = BANK + ((v & 0x0E) << 10)
             snap["sets"][v] = vice.mem(base, 2048, bank=1)
-        ptrs = snap["screen"][0x3F8:0x3F8 + 3]
-        snap["sprites"] = [vice.mem(BANK + p * 64, 63) for p in ptrs]
+        # the sprites: the shown set's first uses (irq_blank stores them at
+        # line 251; the car's left column is pl_x), then the split's slot
+        # stores in the copy's blocks (engine.asm SPLIT_J: lines 156-159)
+        f3 = front * 3
+        snap["first"] = {
+            "x": list(vice.mem(lab["SPR_X"] + f3, 3)), "y": list(vice.mem(lab["SPR_Y"] + f3, 3)),
+            "ptr": list(vice.mem(lab["SPR_PTR"] + f3, 3)), "col": list(vice.mem(lab["SPR_COL"] + f3, 3)),
+            "msb": vice.mem(lab["SPR_MSB"] + front, 1)[0], "en": vice.mem(lab["SPR_EN"] + front, 1)[0] | 1,
+        }
+        snap["first"]["x"][0] = vice.mem(lab["PL_X"] + front, 1)[0]
+        blocks = vice.mem(code, ROAD_LINES * 64)
+        slots = {}
+        for j in range(lab["SPLIT_J0"], lab["SPLIT_J0"] + 4):
+            for n in range(3):
+                b = j * 64 + lab["SLOT0"] + n * 5
+                slots.setdefault(j, []).append((blocks[b + 3] | blocks[b + 4] << 8, blocks[b + 1]))
+        snap["slots"] = slots
+        snap["blocks_spr"] = vice.mem(BANK + 0x0C00, 1024)    # sprite blocks 48-63
         snap["result"] = vice.mem(0x02FF, 1)[0]
         return snap
     finally:
@@ -203,20 +221,49 @@ def draw(snap):
         pix = [bg] * xs + pix[:320 - xs]
         out[line] = pix
     border = vic[0x20] & 15
-    # sprites 0-2, sprite 0 in front
-    en, msb, mc = vic[0x15], vic[0x10], vic[0x1C]
+    # sprites 0-2, sprite 0 in front: the first uses from line 251 ($D017 = 1:
+    # the car's left column Y-expanded), the split's stores on their own lines
+    # (before that line's match); a use whose Y matches a line shows from the
+    # next, 21 lines (42 Y-expanded), from the pointer and X it has as each
+    # line is drawn
+    mc = vic[0x1C]
     mc0, mc1 = vic[0x25] & 15, vic[0x26] & 15
-    for s in (2, 1, 0):
-        if not en & (1 << s):
+    f = snap["first"]
+    reg = {"x": list(f["x"]), "y": list(f["y"]), "ptr": list(f["ptr"]), "col": [c & 15 for c in f["col"]],
+           "msb": f["msb"], "en": f["en"], "ye": 1}
+    ptr_base = SCREENS[snap["front"]] + 0x3F8
+    show = [None, None, None]           # (first line, expanded) of the use showing
+    rows = {}
+    for line in range(ROAD_TOP - 40, ROAD_TOP + ROAD_LINES):
+        for adr, val in snap["slots"].get(line - ROAD_TOP, []):
+            if 0xD000 <= adr <= 0xD005:
+                reg["xy"[adr & 1]][(adr - 0xD000) >> 1] = val
+            elif adr == 0xD010:
+                reg["msb"] = val
+            elif adr == 0xD015:
+                reg["en"] = val
+            elif adr == 0xD017:
+                reg["ye"] = val
+            elif 0xD027 <= adr <= 0xD029:
+                reg["col"][adr - 0xD027] = val & 15
+            elif ptr_base <= adr < ptr_base + 3:
+                reg["ptr"][adr - ptr_base] = val
+        for s in range(3):
+            if show[s]:
+                first, ex = show[s]
+                rr = (line - first) // (2 if ex else 1)
+                if rr < 21:
+                    rows.setdefault(line, []).append((s, rr, reg["ptr"][s],
+                                                      reg["x"][s] | ((reg["msb"] >> s) & 1) << 8, reg["col"][s]))
+                    continue
+                show[s] = None
+            if reg["en"] & (1 << s) and reg["y"][s] == line:
+                show[s] = (line + 1, bool(reg["ye"] & (1 << s)))
+    for line in sorted(rows):
+        if line not in out:
             continue
-        sx = vic[s * 2] | ((msb >> s) & 1) << 8
-        sy = vic[s * 2 + 1]
-        col = vic[0x27 + s] & 15
-        data = snap["sprites"][s]
-        for rr in range(21):
-            line = sy + 1 + rr
-            if line not in out:
-                continue
+        for s, rr, ptr, sx, col in sorted(rows[line], reverse=True):
+            data = snap["blocks_spr"][(ptr - 48) * 64:(ptr - 48) * 64 + 63]
             for b in range(3):
                 byte = data[rr * 3 + b]
                 for p in range(4):

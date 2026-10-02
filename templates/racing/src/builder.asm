@@ -105,6 +105,30 @@ po_r:       .byte 0
 !:      sta table, x
 }
 rb_init:
+        // the car: sprites 0-2 on every line from PL_Y, 42 (Y-expanded), for
+        // good (no other sprite reaches those lines: road.c SPLIT_LINE)
+        lda #7
+        ldx #41
+!:      sta lmask + PL_Y - ROAD_TOP, x
+        dex
+        bpl !-
+        // the slot lines: no sprite ever fetches there, their pads are fixed;
+        // the copies hold the PAL entries, NTSC's line has 2 cycles more
+    .for (var i = 0; i < SPLIT_J.size(); i++) {
+        lda #0
+        sta lmc + SPLIT_J.get(i)
+        sta lmc + ROAD_LINES + SPLIT_J.get(i)
+    }
+        lda rb_model
+        beq !pal+
+    .for (var i = 0; i < SPLIT_J.size(); i++) {
+      .var j = SPLIT_J.get(i)
+      .var kk = (ROAD_TOP + j - 3) & 7
+      .var op = (kk == 1 ? FB_OPER : kk == 7 ? LB_OPER : NB_OPER) + SL_BYTES
+        dec road_a + j * 64 + op
+        dec road_b + j * 64 + op
+    }
+!pal:
         ldx #7
 !:      PadFor(pad_nb, NB_CYC, NB_SLIDE, lost_set)
         PadFor(pad_fb, FB_CYC, FB_SLIDE, lost_set)
@@ -208,7 +232,7 @@ zlcp:   lda $ffff, y
         lda #0
     .for (var n = 0; n < 21; n++) { sta lmask + n, x }
 !nc:    dey
-        bpl !clr-
+        bne !clr-               // (sprites 2 and 1: 0 is the car's alone, set in rb_init)
         ldx back_idx
         lda set3, x
         sta zp_t2               // set * 3
@@ -217,7 +241,8 @@ zlcp:   lda $ffff, y
         lda #0
 #endif
         sta zp_t3               // enable bits
-        ldy #0                  // sprite s
+        lsr zp_t3               // (sprite 0: the car, below)
+        ldy #1                  // sprite s
 !spr:   lda #$c0
         sta spr_first, y
         lsr zp_t3
@@ -244,8 +269,7 @@ zlcp:   lda $ffff, y
         cpy #3
         beq !+
         jmp !spr-
-!:
-        lda #18
+!:      lda #18
         sta zp_row
         rts
 

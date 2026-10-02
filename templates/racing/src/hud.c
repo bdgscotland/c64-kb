@@ -174,8 +174,12 @@ void hud_draw(void)
         shown_speed = sp;
         hud_dec(21, 7, sp * 48, 3);     // "km/h", in steps of 48: 11 values
     }
-    if (msg_t && !--msg_t)
-        hud_clear_row(22);
+    if (msg_t)                          // (called every other step: two frames a call)
+    {
+        msg_t = msg_t > 2 ? msg_t - 2 : 0;
+        if (!msg_t)
+            hud_clear_row(22);
+    }
     if (!stage_done)
         clock_follow();
 }
