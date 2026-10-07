@@ -32,3 +32,6 @@ scripts/__pycache__/
 
 # Local tool builds (a windowless VICE from `npm run vice:headless`)
 .tools/
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
